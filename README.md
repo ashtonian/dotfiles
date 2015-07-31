@@ -1,9 +1,9 @@
 # Windows Bootstrapper
-This is a bootstrap script for windows 
+This is a bootstrap script for windows.
 
 ## Choco
 
-##### Development
+###### Development: 
 ```
 choco install poshgit
 choco install git.install
@@ -26,7 +26,7 @@ choco install curl
 # choco install webstorm
 ```
 
-##### Standard Util
+###### Standard Util:
 ```
 choco install filezilla
 choco install winscp.install
@@ -47,7 +47,7 @@ choco install dropbox
 choco install googledrive
 ```
 
-##### Extended Util
+###### Extended Util:
 ```
 choco install putty
 choco install malwarebytes
@@ -60,7 +60,7 @@ choco install virtualclonedrive
 choco install imgburn
 ```
 
-##### Entertainment/Other
+###### Entertainment/Other:
 ```
 choco install evernote
 choco install spotify
@@ -69,13 +69,13 @@ choco install handbrake.install
 ```
 
 ## OneGet (Choco repo is currently broken) 
-##### OnGet Resources: 
+###### OnGet Resources: 
 - https://github.com/PowerShell/PackageManagementProviderResource
 - https://github.com/OneGet/oneget/wiki/cmdlets
 - https://technet.microsoft.com/en-us/library/dn890703.aspx
 - https://chocolatey.org/
 
-##### Starter Code: 
+###### Starter Code: 
 ```
 Get-PackageProvider –Name Chocolatey -ForceBootstrap
 Set-PackageSource -Name chocolatey -Trusted 
