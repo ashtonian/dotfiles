@@ -2,6 +2,9 @@
 This is a bootstrap script for windows.
 
 ## Choco
+```
+choco feature enable -n allowGlobalConfirmation
+```
 
 ###### Development: 
 ```
@@ -10,54 +13,54 @@ choco install git.install
 choco install hg
 choco install posh-hg
 choco install sourcetree
-choco install wireshark
-choco install fiddler
-choco install nodejs.install
-choco install beyondcompare
-choco install nugetpackageexplorer
-choco install python
-choco install procexp
-choco install conemu
-choco install curl
 # choco install visualstudio2013ultimate
 # choco install resharper
 # choco install ncrunch-vs2015
+choco install beyondcompare
+choco install babun
+choco install conemu
+choco install wireshark
+choco install fiddler
+choco install nodejs.install
+choco install nugetpackageexplorer
+choco install procexp
+choco install curl
+choco install python
 # choco install pycharm
 # choco install webstorm
 ```
 
 ###### Standard Util:
 ```
-choco install filezilla
-choco install winscp.install
-choco install ccleaner
+choco install google-chrome-x64
+choco install f.lux
 choco install windirstat
-choco install flashplayerplugin
-choco install flashplayeractivex
 choco install javaruntime
-choco install adobereader
 choco install 7zip.install
 choco install vlc
 choco install paint.net
-choco install google-chrome-x64
-choco install notepadplusplus.install
-choco install sublimetext3
-choco install f.lux
 choco install dropbox
 choco install googledrive
+choco install sublimetext3
+choco install filezilla
+choco install winscp.install
+choco install adobereader
+choco install ccleaner
+choco install flashplayerplugin
+choco install flashplayeractivex
 ```
 
 ###### Extended Util:
 ```
-choco install putty
-choco install malwarebytes
-choco install avastfreeantivirus
 choco install cpu-z
-choco install chocolateygui
-choco install virtualbox
 choco install deluge
+choco install putty
 choco install virtualclonedrive
 choco install imgburn
+choco install malwarebytes
+choco install avastfreeantivirus
+choco install chocolateygui
+choco install virtualbox
 ```
 
 ###### Entertainment/Other:
