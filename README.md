@@ -27,7 +27,6 @@ choco install procexp
 choco install curl
 choco install python
 # choco install pycharm
-# choco install webstorm
 ```
 
 ###### Standard Util:
