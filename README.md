@@ -25,8 +25,6 @@ choco install nodejs.install
 choco install nugetpackageexplorer
 choco install procexp
 choco install curl
-choco install python
-# choco install pycharm
 ```
 
 ###### Standard Util:
