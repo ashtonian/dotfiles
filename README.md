@@ -1,4 +1,4 @@
-# Windows Bootstrapper
+# Windows Post Install Script
 This is a bootstrap script for windows.
 
 ## Choco
