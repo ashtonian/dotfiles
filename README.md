@@ -6,21 +6,25 @@ This is a bootstrap script for windows.
 choco feature enable -n allowGlobalConfirmation
 ```
 
-###### Development: 
+###### Standard Development: 
 ```
 choco install poshgit
 choco install git.install
 choco install hg
 choco install posh-hg
 choco install sourcetree
-# choco install visualstudio2013ultimate
+# choco install visualstudio2015community
 # choco install resharper
 # choco install ncrunch-vs2015
 choco install beyondcompare
+choco install fiddler
+```
+
+###### Extended Development: 
+```
 choco install babun
 choco install conemu
 choco install wireshark
-choco install fiddler
 choco install nodejs.install
 choco install nugetpackageexplorer
 choco install procexp
@@ -36,19 +40,15 @@ choco install javaruntime
 choco install 7zip.install
 choco install vlc
 choco install paint.net
-choco install dropbox
 choco install googledrive
-choco install sublimetext3
+choco install atom
 choco install filezilla
 choco install winscp.install
-choco install adobereader
-choco install ccleaner
-choco install flashplayerplugin
-choco install flashplayeractivex
 ```
 
 ###### Extended Util:
 ```
+choco install dropbox
 choco install cpu-z
 choco install deluge
 choco install putty
@@ -58,6 +58,10 @@ choco install malwarebytes
 choco install avastfreeantivirus
 choco install chocolateygui
 choco install virtualbox
+choco install adobereader
+choco install ccleaner
+choco install flashplayerplugin
+choco install flashplayeractivex
 ```
 
 ###### Entertainment/Other:
