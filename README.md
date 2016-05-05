@@ -10,6 +10,7 @@ choco feature enable -n allowGlobalConfirmation
 ```
 choco install poshgit
 choco install git.install
+choco install conemu
 choco install hg
 choco install posh-hg
 choco install sourcetree
