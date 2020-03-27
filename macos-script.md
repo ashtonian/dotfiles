@@ -24,4 +24,7 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 
 # set zsh as default shell for user 
 chsh -s /bin/zsh
+
+# for py
+pip install ipython
 ```
