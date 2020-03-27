@@ -1,5 +1,5 @@
 # this file can be generated with brew bundle dump
-# then can install the following with brew install Brewfile
+# then can install the following with brew bundle Brewfile
 
 tap "homebrew/bundle"
 tap "homebrew/cask"
