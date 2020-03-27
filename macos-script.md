@@ -13,8 +13,15 @@
 # prereq
 sudo xcode-select --install
 
-#install homebrew 
+# install homebrew 
 /usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"
 
+# install brewfile dependencies including zsh
+brew bundle
 
+# install oh my zsh
+sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+# set zsh as default shell for user 
+chsh -s /bin/zsh
 ```
