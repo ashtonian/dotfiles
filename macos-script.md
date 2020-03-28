@@ -1,16 +1,25 @@
 
+TODO: 
 * Install macos. 
 * verify trim, mem size, apfs. 
 * update macos and sign into apple + google accounts. 
-* cleanup dock
+* cleanup dock using dockutil - setting fixed apps, trashcan, dividers, Applications, Utilities, Home Folder, Downloads, set folder types
+* cleanup finder - rm tags, add all drives including os x to locations, add clouds in one place, on left add favorites, apps, utilities, desktop, docs, home, videos, downloads, projects, ect..  
 * adjust energy settings
-* adjust topbar
-* homewbrew
-* brew install
 * mackup restore
 
+Notes: 
 * package manager preference brew/cask -> mas - don't use app store gui, use `mas`
 
+TODO: 
+* downloads org
+* downloads sync 
+* shell history persistence, search, sync
+* remote access, share keyboard/mouse 
+* record screens and audio
+* backup
+* setup startup apps
+* 
 
 ```zsh
 # prereq
