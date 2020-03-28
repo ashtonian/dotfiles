@@ -9,6 +9,9 @@
 * brew install
 * mackup restore
 
+* package manager preference brew/cask -> mas - don't use app store gui, use `mas`
+
+
 ```zsh
 # prereq
 sudo xcode-select --install
