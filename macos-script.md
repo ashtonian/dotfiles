@@ -13,13 +13,28 @@ Notes:
 
 TODO: 
 * downloads org
-* downloads sync 
+* downloads sync
 * shell history persistence, search, sync
-* remote access, share keyboard/mouse 
+* remote access, share keyboard/mouse
 * record screens and audio
 * backup
 * setup startup apps
-* 
+* set default browser
+* desktop/screen saver sync/setup
+* chrome/ff extensions
+* vscode extensions
+* vim extensions
+* zsh extensions
+* applications/shell scripts overview
+* .ssh backup/sync
+* time machine + backup solution
+* setup golang,.net,frontend + backend .js, python
+* document core accounts: 1password, chrome, apple, firefox, dropbox, github 
+* maintenance schedules - updates, cache clear/clean, optimze spoltlight, fetch git sources, fetch docker sources
+* git/projects backup/auto sync
+* more granular file changes for < x amount of changes ie solution for inbetween commits automagically
+* antivirus + other
+
 
 ```zsh
 # prereq
