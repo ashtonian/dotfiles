@@ -72,6 +72,12 @@ sudo systemsetup -settimezone "America/Chicago"
 # get list of potential zones 
 # sudo systemsetup -listtimezones.
 
+# enable stealth mode to disable ping response ect.. 
+sudo defaults write /Library/Preferences/com.apple.alf stealthenabled -int 1
+
+# enable basic firewall
+sudo defaults write /Library/Preferences/com.apple.alf globalstate -int 1
+
 # connect trackpad physcially and setup
 # tap to click, double tap/click for right click 
 # 3 finger drag enabled
