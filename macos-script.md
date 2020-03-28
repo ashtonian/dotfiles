@@ -28,12 +28,13 @@ sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/too
 # set zsh as default shell for user 
 chsh -s /bin/zsh
 
-
 # have a look at potential menu bar options 
-ls /System/Library/CoreServices/Menu\ Extras/ 
+# ls /System/Library/CoreServices/Menu\ Extras/ 
 
 # edit plist manually with Xcode 
-# open -a Xcode ~/Library/Preferences/com.apple.systemuiserver.plist  
+# open -a Xcode ~/Library/Preferences/com.apple.systemuiserver.plist
+
+# read settings with something like defaults read com.apple.AppleMultitouchTrackpad
 
 # fix menu bar - warning if system doesn't have one of these like AirPort or Bluetooth it will break
 defaults write com.apple.systemuiserver menuExtras -array \
@@ -60,7 +61,21 @@ sudo systemsetup -settimezone "America/Chicago"
 # sudo systemsetup -gettimezone
 
 # get list of potential zones 
-sudo systemsetup -listtimezones.
+# sudo systemsetup -listtimezones.
+
+# connect trackpad physcially and setup
+# tap to click, double tap/click for right click 
+# 3 finger drag enabled
+# 3 finger spread/ collapse for desktop and applications page
+# 4 finger swipe between apps 
+defaults write com.apple.AppleMultitouchTrackpad ActualStrength -int 0
+defaults write com.apple.AppleMultitouchTrackpad Clicking -int 1
+defaults write com.apple.AppleMultitouchTrackpad FirstClickThreshold -int 0
+defaults write com.apple.AppleMultitouchTrackpad SecondClickThreshold -int 0
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 0
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 0
+defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
 
 # for py
 pip install ipython
