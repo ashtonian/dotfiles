@@ -50,6 +50,14 @@ defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm:ss"
 # refresh ui
 killall SystemUIServer
 
+# set timezone 
+sudo systemsetup -settimezone "America/Chicago"
+
+# get current zone 
+# sudo systemsetup -gettimezone
+
+# get list of potential zones 
+sudo systemsetup -listtimezones.
 
 # for py
 pip install ipython
