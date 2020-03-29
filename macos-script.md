@@ -5,7 +5,6 @@ TODO:
 * update macos and sign into apple + google accounts. 
 * cleanup dock using dockutil - setting fixed apps, trashcan, dividers, Applications, Utilities, Home Folder, Downloads, set folder types
 * cleanup finder - rm tags, add all drives including os x to locations, add clouds in one place, on left add favorites, apps, utilities, desktop, docs, home, videos, downloads, projects, ect..  
-* adjust energy settings
 * mackup restore
 
 Notes: 
