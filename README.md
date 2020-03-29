@@ -1,4 +1,4 @@
-# $Home
+# $HOME
 
 This is my cross platform `home` folder - which contains post install scripts for MacOS (OS X) and Windows 10. As well as my home lab server and network appliance install scripts, configs and docker files. 
 
