@@ -1,3 +1,9 @@
+# $Home
+
+This is my cross platform `home` folder - which contains post install scripts for MacOS (OS X) and Windows 10. As well as my home lab server and network appliance install scripts, configs and docker files. 
+
+// TODO: ToC 
+
 ## Mac OS Setup
 
 This will initialize a freshly installed Mac OS (catalina) instance with all of applications, cli tools, and adjust some basic operating system settings. 
@@ -42,7 +48,7 @@ Highlight TODO:
 * applications/shell scripts overview
 
 
-## macos.sh
+### macos.sh
 
 ```zsh
 
@@ -197,10 +203,10 @@ pip install ipython
 
 
 
-# Windows Post Install Script
+## Windows Post Install Script
 This is a bootstrap script for windows.
 
-## Choco
+### Choco
 ```
 choco feature enable -n allowGlobalConfirmation
 ```
@@ -272,7 +278,7 @@ choco install steam
 choco install handbrake.install
 ```
 
-## OneGet (Choco repo is currently broken) 
+### OneGet (Choco repo is currently broken) 
 ###### OnGet Resources: 
 - https://github.com/PowerShell/PackageManagementProviderResource
 - https://github.com/OneGet/oneget/wiki/cmdlets
