@@ -34,6 +34,16 @@ Notes:
 * enable "hard drives display on desktop" option
 * setup default browser `system preferences -> general`
 
+Highlight TODO:
+
+* chrome/ff extensions
+* vscode extensions
+* vim extensions
+* zsh extensions
+* applications/shell scripts overview
+
+
+## macos.sh
 
 ```zsh
 
@@ -156,17 +166,13 @@ dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort date
 # for py
 pip install ipython
 ```
-* chrome/ff extensions
-* vscode extensions
-* vim extensions
-* zsh extensions
-* applications/shell scripts overview
 
-Automation dreams and TODO: 
+
+#### Automation dreams and TODO
+
 * downloads sync, org
 * shell history persistence, search, sync
 * setup startup apps
-
 * figure out backup solution - encrypt, chunk, sync, consider time machine sync
 * remote access, keyboard/mouse share
 * find software to record screen(s) and audio 
