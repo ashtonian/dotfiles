@@ -3,7 +3,6 @@ TODO:
 * Install macos. 
 * verify trim, mem size, apfs. 
 * update macos and sign into apple + google accounts. 
-* cleanup dock using dockutil - setting fixed apps, trashcan, dividers, Applications, Utilities, Home Folder, Downloads, set folder types
 * cleanup finder - rm tags, add all drives including os x to locations, add clouds in one place, on left add favorites, apps, utilities, desktop, docs, home, videos, downloads, projects, ect..  
 * mackup restore
 
@@ -114,7 +113,7 @@ sudo pmset -b displaysleep 2 disksleep 3 sleep 4 womp 0 ring 0
 # sets the system to shutdown after x minutes, the ups is reporting <=y% battery or <=z minutes remaining
 sudo pmset -u haltafter 2 haltlevel 25 haltremain 60
 
-## Setup Trackpad 
+## Trackpad 
 # tap to click, double tap/click for right click 
 # 3 finger drag enabled
 # 3 finger spread/ collapse for desktop and applications page
@@ -127,6 +126,32 @@ defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -int 1
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 0
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 0
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
+
+## Dock 
+# Remove all to initially reset dock
+dockutil --remove all --allhomes
+
+# add apps 
+dockutil --add '/System/Applications/System Preferences.app' --allhomes  
+dockutil --add '/Applications/iTerm.app' --allhomes
+dockutil --add '/Applications/Visual Studio Code.app' --allhomes
+dockutil --add '/Applications/Google Chrome.app' --allhomes  
+dockutil --add '/Applications/Firefox.app' --allhomes  
+dockutil --add '/Applications/Notion.app' --allhomes  
+dockutil --add '/Applications/Todoist.app' --allhomes
+dockutil --add '/System/Applications/Calendar.app' --allhomes
+dockutil --add '/System/Applications/Contacts.app' --allhomes
+dockutil --add '/Applications/Pocket.app' --allhomes  
+dockutil --add '/Applications/Signal.app' --allhomes  
+dockutil --add '/Applications/Pulse SMS.app' --allhomes  
+dockutil --add '/Applications/Spotify.app' --allhomes
+
+# add folders 
+dockutil --add '~/' --view grid --sort name
+dockutil --add '/Applications' --view grid --display folder --allhomes --sort name
+dockutil --add '/Applications/Utilities' --view grid --display folder --allhomes --sort name
+dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort dateadded
+
 
 ## Setup Py Env
 # for py
