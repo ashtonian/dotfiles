@@ -173,15 +173,15 @@ Automation dreams and TODO:
 * desktop background + screen saver sync + setup per res
 * .ssh backup/sync - security
 * setup startup env for languages
-** node - nvm, npm, web 
-** golang 
-** docker, terraform 
-** .net core
-** python
+ * node - nvm, npm, web 
+ * golang 
+ * docker, terraform 
+ * .net core
+ * python
 * Figure out maintenance scripts
-** update/clean sys files
-** update/clean search (spotlight + related)
-** fetch updates for cli (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others) 
+ * update/clean sys files
+ * update/clean search (spotlight + related)
+ * fetch updates for cli (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others)
 * antivirus install + other hardening 
 * git/projects backup/auto sync
 * more granular file changes for < x amount of changes ie solution for inbetween commits automagically
