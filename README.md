@@ -1,6 +1,6 @@
 # $HOME
 
-This is my cross platform `home` folder - which contains post install scripts for MacOS (OS X) and Windows 10. As well as my home lab server and network appliance install scripts, configs and docker files. 
+This is my cross platform `$HOME` folder - which contains post install scripts for MacOS (OS X) and Windows 10. As well as my home lab server and network appliance install scripts, configs and docker files. 
 
 // TODO: ToC 
 
@@ -166,6 +166,19 @@ dockutil --add '/Applications' --view grid --display folder --allhomes --sort na
 dockutil --add '/Applications/Utilities' --view grid --display folder --allhomes --sort name
 dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort dateadded
 
+
+## configure git basics
+git config --global diff.tool bc3
+git config --global merge.tool bc3
+git config --global mergetool.bc3.trustExitCode true
+
+git config --global core.autocrlf input
+
+git config --global user.name "ashtonian" 
+git config --global user.email "github@ashtonkinslow.com"
+
+git config --global core.excludesfile ~/.gitignore
+echo .DS_Store >> ~/.gitignore
 
 ## Setup Py Env
 # for py
