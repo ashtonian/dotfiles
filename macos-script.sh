@@ -1,3 +1,4 @@
+### Intended for Catalina to be ran in this repo with bundle file.  
 
 ## Initial Setup
 # prereq - initializes xcode 
