@@ -1,14 +1,38 @@
 
-TODO: 
-* Install macos. 
-* verify trim, mem size, apfs. 
-* update macos and sign into apple + google accounts. 
-* cleanup finder - rm tags, add all drives including os x to locations, add clouds in one place, on left add favorites, apps, utilities, desktop, docs, home, videos, downloads, projects, ect..  
-* mackup restore
+## Mac OS Setup
+
+This will initialize a freshly installed Mac OS (catalina) instance with all of applications, cli tools, and adjust some basic operating system settings. 
+
+### Instructions: 
+
+* Update macos and sign into apple, google accounts. 
+* run `macos.sh`
+* setup mackup backing cloud (dropbox)
+* run `mackup restore`
+
+At this point most of the applications, cli tools, and background services should be installed and configured. Some may require additional first time setup. 
 
 Notes: 
-* package manager preference brew/cask -> mas - don't use app store gui, use `mas`
-* # read settings with something like defaults read com.apple.AppleMultitouchTrackpad
+* package manager preference brew/cask -> mas - don't use app store gui, use `mas`when possible
+* `defaults` - read settings with something like `defaults read com.apple.AppleMultitouchTrackpad`
+ 
+### Things you still have to do manually
+// TODO: find bash solution to script these out.
+* finder sidebar 
+  * rm tags section 
+  * add 'OS X' aka local mac install drive to finder sidebar
+  * adjust favorites
+    * (home folder)
+    * Projects
+    * Recents
+    * Downloads
+    * Desktop
+    * Documents
+    * Applications 
+    * Utilities
+    * cloud accounts...
+* enable "hard drives display on desktop" option
+* setup default browser `system preferences -> general`
 
 
 ```zsh
@@ -132,32 +156,37 @@ dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort date
 # for py
 pip install ipython
 ```
-
-
-TODO: 
-* downloads org
-* downloads sync
-* shell history persistence, search, sync
-* remote access, share keyboard/mouse
-* record screens and audio
-* backup
-* setup startup apps
-* set default browser
-* desktop/screen saver sync/setup
 * chrome/ff extensions
 * vscode extensions
 * vim extensions
 * zsh extensions
 * applications/shell scripts overview
-* .ssh backup/sync
-* time machine + backup solution
-* setup golang,.net,frontend + backend .js, python
-* document core accounts: 1password, chrome, apple, firefox, dropbox, github 
-* maintenance schedules - updates, cache clear/clean, optimze spoltlight, fetch git sources, fetch docker sources
+
+Automation dreams and TODO: 
+* downloads sync, org
+* shell history persistence, search, sync
+* setup startup apps
+
+* figure out backup solution - encrypt, chunk, sync, consider time machine sync
+* remote access, keyboard/mouse share
+* find software to record screen(s) and audio 
+* desktop background + screen saver sync + setup per res
+* .ssh backup/sync - security
+* setup startup env for languages
+** node - nvm, npm, web 
+** golang 
+** docker, terraform 
+** .net core
+** python
+* Figure out maintenance scripts
+** update/clean sys files
+** update/clean search (spotlight + related)
+** fetch updates for cli (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others) 
+* antivirus install + other hardening 
 * git/projects backup/auto sync
 * more granular file changes for < x amount of changes ie solution for inbetween commits automagically
 * antivirus + other
 * code snippets solution 
-* regex tool 
+* regex tool solution
 * multi screen/tiling improvement
 
