@@ -73,6 +73,12 @@ Highlight TODO:
 * zsh extensions
 * applications/shell scripts overview
 
+### Regen Create Brewfile
+
+```sh
+brew bundle dump -f
+cat Brewfile| pbcopy
+```
 
 ### macos.sh
 
