@@ -43,6 +43,7 @@ Notes:
 * enable "hard drives display on desktop" option
 * sync spotify playlists
 * setup default browser `system preferences -> general`
+* https://github.com/iamadamdev/bypass-paywalls-chrome.git git clone - chrome://extensions - load 
 * Startup Aps
  * Horo timer
  * Rescue Time
