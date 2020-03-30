@@ -399,3 +399,15 @@ choco install uplay
 choco install battle.net
 choco install goggalaxy
 ```
+
+#### TODO
+
+* settings sync between all apps
+* shell sync, search, backup
+* enable windows features for dev
+* enable any networking protocols
+* secuirty settings to lock down box
+  * silent mode
+  * fw on
+  * no sharing script
+  *
