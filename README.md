@@ -23,6 +23,10 @@ Notes:
  
 ### Things you still have to do manually
 // TODO: find bash solution to script these out.
+* apps
+ * run monolingual to save space on language packs and architectures
+ * setup vscode sync 
+ * sign into 1Password, Chrome, Firefox, Spotify, rescueTime, DropBox, OneDrive, Google Drive, Steam, Battle.NET, Pulse, Todoist, Notion, Office Ap, GitKraken, Pocket, Dash, Discord, Signal
 * finder sidebar 
   * rm tags section 
   * add 'OS X' aka local mac install drive to finder sidebar
@@ -37,7 +41,29 @@ Notes:
     * Utilities
     * cloud accounts...
 * enable "hard drives display on desktop" option
+* sync spotify playlists
 * setup default browser `system preferences -> general`
+* Startup Aps 
+ * Horo timer 
+ * Rescue Time 
+ * BTT 
+ * Lightshot 
+ * Dash 
+ * Google Cloud
+ * Dropbox
+ * One Drive
+ * NordVPN
+ * Flux 
+ * Pulse SMS
+ * RescueTime
+ * Docker
+ * 1440 
+ * Notion
+ * CheatSheet
+ * 1Password7 
+ * Pocket
+ * Todist
+ * Cal / COntacts 
 
 Highlight TODO:
 
