@@ -146,9 +146,10 @@ mas "1440", id: 1483764819
 mas "BetterSnapTool", id: 417375580
 mas "Disk Speed Test", id: 425264550
 mas "Horo", id: 1437226581
-mas "Lightshot Screenshot", id: 526298438
+# mas "Lightshot Screenshot", id: 526298438
 mas "OhMyStar", id: 1218642292
 mas "Pocket", id: 568494494
 mas "Todoist", id: 585829637
 mas "Xcode", id: 497799835
+mas "Monosnap", id: 540348655 
 
