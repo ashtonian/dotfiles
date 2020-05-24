@@ -24,6 +24,7 @@ Notes:
 ### Things you still have to do manually
 // TODO: find bash solution to script these out.
 * apps
+* add dev apps to security, privacy "dev tools" category to avoid security policiy. 
  * run monolingual to save space on language packs and architectures
  * setup vscode sync
  * sign into 1Password, Chrome, Firefox, Spotify, rescueTime, DropBox, OneDrive, Google Drive, Steam, Battle.NET, Pulse, Todoist, Notion, Office Ap, GitKraken, Pocket, Dash, Discord, Signal
