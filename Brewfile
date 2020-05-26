@@ -1,6 +1,5 @@
 # this file can be generated with brew bundle dump
 # then can install the following with brew bundle Brewfile
-
 tap "caskroom/cask"
 tap "homebrew/bundle"
 tap "homebrew/cask"
@@ -134,6 +133,7 @@ cask "rescuetime"
 cask "selfcontrol"
 cask "signal"
 cask "slack"
+cask "soundflower"
 cask "spotify"
 cask "spotify-notifications"
 cask "steam"
@@ -152,10 +152,15 @@ cask "wireshark"
 cask "wkhtmltopdf"
 mas "1440", id: 1483764819
 mas "BetterSnapTool", id: 417375580
+mas "Day One", id: 1055511498
 mas "Disk Speed Test", id: 425264550
 mas "Horo", id: 1437226581
 mas "Lightshot Screenshot", id: 526298438
+mas "Monosnap", id: 540348655
 mas "OhMyStar", id: 1218642292
 mas "Pocket", id: 568494494
+mas "Spark", id: 1176895641
 mas "Todoist", id: 585829637
+mas "Woven", id: 1455876530
 mas "Xcode", id: 497799835
+mas "Yoink", id: 457622435
