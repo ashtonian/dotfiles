@@ -37,6 +37,7 @@ sudo systemsetup -settimezone "America/Chicago"
 
 
 # fix menu bar - warning if system doesn't have one of these like AirPort or Bluetooth it will break
+## Laptop
 defaults write com.apple.systemuiserver menuExtras -array \
 "/System/Library/CoreServices/Menu Extras/AirPort.menu" \
 "/System/Library/CoreServices/Menu Extras/Bluetooth.menu" \
@@ -44,8 +45,12 @@ defaults write com.apple.systemuiserver menuExtras -array \
 "/System/Library/CoreServices/Menu Extras/Displays.menu" \
 "/System/Library/CoreServices/Menu Extras/Volume.menu" \
 
-# refresh ui
-killall SystemUIServer
+
+## DESKTOP
+defaults write com.apple.systemuiserver menuExtras -array \
+"/System/Library/CoreServices/Menu Extras/Bluetooth.menu" \
+"/System/Library/CoreServices/Menu Extras/Clock.menu" \
+"/System/Library/CoreServices/Menu Extras/Volume.menu" \
 
 # change clock format 
 defaults write com.apple.menuextra.clock IsAnalog -bool false
@@ -53,7 +58,6 @@ defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm:ss"
 
 # refresh ui
 killall SystemUIServer
-
 
 ## Security
 # enable stealth mode to disable ping response ect.. 
@@ -89,7 +93,7 @@ defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGe
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 0
 defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 0
 
-## Dock 
+## Dockutil dependency installed in with brewfile 
 # Remove all to initially reset dock
 dockutil --remove all --allhomes
 
