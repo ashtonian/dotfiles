@@ -40,9 +40,28 @@ https://github.com/mathiasbynens/dotfiles
 https://github.com/webpro/awesome-dotfiles
 https://github.com/dotfiles/dotfiles.github.com
 https://github.com/atomantic/dotfiles/blob/master/install.sh
+https://medium.com/@jeantimex/how-to-configure-iterm2-and-vim-like-a-pro-on-macos-e303d25d5b5cß
+https://medium.com/@rafavinnce/iterm2-zsh-oh-my-zsh-material-design-the-most-power-full-terminal-on-macos-332b1ee364a5
+* neofetch
+* https://medium.com/@jeantimex/how-to-configure-iterm2-and-vim-like-a-pro-on-macos-e303d25d5b5c
 
 
 
+## iTerm2 Highlights
+* Preferences -> profile -> keymap -> load presets natural typing
+* add ctrl + cmd + f -> toggle full screen
+* For Alt + Shift + ←, choose "Move Start of Selection Back" and "Move by Word".
+* For Alt + Shift + →, choose "Move End of Selection Forward" and "Move by Word".
+* ⌥ + ← | Action: Move start of selection back > Move by character
+* ⌥ + → | Action: Move end of selection forward > Move by characte
+
+⌘+z Send Hex Codes:
+0x1f
+Redo
+Typically not bound in bash, zsh or readline, so we can set it to a unused hexcode which we can then fix in zsh.
+⇧+⌘+Z or ⌘+y Send Hex Codes:
+0x18 0x1f
+Stolen from: http://stackoverflow.com/questions/6205157/iterm2-how-to-get-jump-to-beginning-end-of-line-in-bash-shell#answer-29403520
 
 
 
