@@ -4,19 +4,20 @@ This is my cross platform home folder - which contains post install scripts and 
 
 
 
-// TODO: 
-// alias .macup.cfg to home 
-// install brew 
-// macup restore 
+// TODO:
+// alias .macup.cfg to home
+// install brew
+// macup restore
 // os init 2 (settings based on apps)
-// cron jobs 
-// git sync 
-// brewfile sync n save. 
+// cron jobs
+// git sync
+// brewfile sync n save.
 // rename dotfiles
+// finder favorites
 
 
 ```sh
-# initializes xcode & git 
+# initializes xcode & git
 sudo xcode-select --install
 mkdir ~/Projects
 git clone https://github.com/Ashtonian/-HOME.git
@@ -28,16 +29,16 @@ git clone https://github.com/Ashtonian/-HOME.git
 
 
 
-## Manual Annoyances 
+## Manual Annoyances
 
 * Init.sh uses comments to deliniate between laptop / desktop setups
-* 1password global shortcut cmd + \ conflicts with vscode split pane 
+* 1password global shortcut cmd + \ conflicts with vscode split pane
 
-## Inspiration and related 
-https://gist.github.com/brandonb927/3195465 
+## Inspiration and related
+https://gist.github.com/brandonb927/3195465
 https://github.com/mathiasbynens/dotfiles
 https://github.com/webpro/awesome-dotfiles
-https://github.com/dotfiles/dotfiles.github.com 
+https://github.com/dotfiles/dotfiles.github.com
 https://github.com/atomantic/dotfiles/blob/master/install.sh
 
 
@@ -67,7 +68,7 @@ Notes:
 ### Things you still have to do manually
 // TODO: find bash solution to script these out.
 * apps
-* add dev apps to security, privacy "dev tools" category to avoid security policiy. 
+* add dev apps to security, privacy "dev tools" category to avoid security policiy.
  * run monolingual to save space on language packs and architectures
  * setup vscode sync
  * sign into 1Password, Chrome, Firefox, Spotify, rescueTime, DropBox, OneDrive, Google Drive, Steam, Battle.NET, Pulse, Todoist, Notion, Office Ap, GitKraken, Pocket, Dash, Discord, Signal
@@ -87,7 +88,7 @@ Notes:
 * enable "hard drives display on desktop" option
 * sync spotify playlists
 * setup default browser `system preferences -> general`
-* https://github.com/iamadamdev/bypass-paywalls-chrome.git git clone - chrome://extensions - load 
+* https://github.com/iamadamdev/bypass-paywalls-chrome.git git clone - chrome://extensions - load
 * Startup Aps
  * Horo timer
  * Rescue Time
