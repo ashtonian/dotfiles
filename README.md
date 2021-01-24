@@ -1,6 +1,49 @@
 # $HOME
 
-This is my cross platform `$HOME` folder - which contains post install scripts and related dotfiles for MacOS Catalina(OS X) and Windows 10. As well as my home lab server (Ubuntu), and network appliance install scripts, configs and docker files.
+This is my cross platform home folder - which contains post install scripts and related dotfiles for MacOS Catalina(OS X) and Windows 10. As well as my homelab setup, and network appliance install scripts, configs and docker files.
+
+
+
+// TODO: 
+// alias .macup.cfg to home 
+// install brew 
+// macup restore 
+// os init 2 (settings based on apps)
+// cron jobs 
+// git sync 
+// brewfile sync n save. 
+// rename dotfiles
+
+
+```sh
+# initializes xcode & git 
+sudo xcode-select --install
+mkdir ~/Projects
+git clone https://github.com/Ashtonian/-HOME.git
+./~/Projects/-Home/catalina/init1.sh
+```
+
+
+
+
+
+
+## Manual Annoyances 
+
+* Init.sh uses comments to deliniate between laptop / desktop setups
+* 1password global shortcut cmd + \ conflicts with vscode split pane 
+
+## Inspiration and related 
+https://gist.github.com/brandonb927/3195465 
+https://github.com/mathiasbynens/dotfiles
+https://github.com/webpro/awesome-dotfiles
+https://github.com/dotfiles/dotfiles.github.com 
+https://github.com/atomantic/dotfiles/blob/master/install.sh
+
+
+
+
+
 
 // TODO: ToC
 
