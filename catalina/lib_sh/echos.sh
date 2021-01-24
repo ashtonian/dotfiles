@@ -1,5 +1,5 @@
-# Sourced from https://github.com/atomantic/dotfiles/blob/master/lib_sh/echos.sh 
 #!/usr/bin/env bash
+# Sourced from https://github.com/atomantic/dotfiles/blob/master/lib_sh/echos.sh 
 
 ###
 # some colorized echo helpers
