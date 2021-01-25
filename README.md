@@ -7,6 +7,12 @@ macOS & windows dotfiles & post install scripts - better defaults, no os noise, 
 This will initialize a freshly installed Mac OS (catalina) instance with all of applications, cli tools, and adjust some basic operating system settings.
 
 ### Instructions:
+
+* https://gist.github.com/vraravam/5e28ca1720c9dddacdc0e6db61e093fe
+* https://gist.github.com/vraravam/8c9eae91a3750bed86b81e3a4711f842
+* increase dock icon size
+* decrease desktop grid
+* verify finder list / open pannels
 TODO:
 * curl init.sh
 * alias .macup.cfg to home
@@ -79,11 +85,14 @@ git clone https://github.com/Ashtonian/-HOME.git
 
 ## Software I want to checkout or configure
 
+* ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
+* https://github.com/webpro/awesome-dotfiles
 * cask_args appdir: '/Applications'
 * https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst
 * https://rogueamoeba.com/loopback/
 * https://krisp.ai/
 * brew install thefuck
+* optional remove dockutil and others
 * brew install git-extras
 * brew install gh or hub?
 * brew install direnv
@@ -161,10 +170,14 @@ drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-funct
 * regex tool solution
 * multi screen/tiling improvement
 * script hide all apps, empty trash
+* opensource pocket, notion, todoist
 
 Highlight:
 
-* chrome/ff extensions
+* chrome
+  ** replace toby?
+  ** cluster?
+* ff extensions
 * vscode extensions
 * vim extensions
 * zsh extensions

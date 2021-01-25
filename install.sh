@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 #######################################################################################################################################
-# macOS 10.15+ (Catalina) Install script                                              
+# macOS 10.15+ (Catalina) Install script
 # originally sourced from https://github.com/mathiasbynens/dotfiles/commit/ea68bda80a455e149d29156071d4c8472f6b93cb last-sync 21-1-24
 # bot code inspired from https://github.com/atomantic/dotfiles/commit/5ed89376558b23f9ba0a4c361586ab888f6e29a2 last-sync 21-1-24
 #######################################################################################################################################
@@ -22,34 +22,34 @@ bot "Configuring brew taps, casks & apps + mas apps + oh-my-zsh."
 # cat Brewfile| pbcopy
 # ```
 
-running "Installing oh my zsh."
-sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-ok
+# running "Installing oh my zsh."
+# sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+# ok
 
-running "Turn off brew analytics."
-brew analytics off
-ok 
+# running "Turn off brew analytics."
+# brew analytics off
+# ok
 
-running "brew doctor & update."
-brew doctor
-brew update
-ok 
+# running "brew doctor & update."
+# brew doctor
+# brew update
+# ok
 
-running "Install brew bundle."
-brew bundle
-ok
+# running "Install brew bundle."
+# brew bundle
+# ok
 
-running "Cleanup homebrew."
-brew cleanup --force > /dev/null 2>&1
-rm -f -r /Library/Caches/Homebrew/* > /dev/null 2>&1
-ok
+# running "Cleanup homebrew."
+# brew cleanup --force > /dev/null 2>&1
+# rm -f -r /Library/Caches/Homebrew/* > /dev/null 2>&1
+# ok
 
 #######################################################################################################################################
 bot "Configuring mackup."
 #######################################################################################################################################
 
 ## Mackup uses
-## TODO: move to end? or elsehwere, maybe ask user? how do submodules work with this 
+## TODO: move to end? or elsehwere, maybe ask user? how do submodules work with this
 # // TODO: // alias .macup.cfg to home dir
 # TODO: mackup restore
 
@@ -65,117 +65,121 @@ bot "Configuring mackup."
 
 running "Disable the sound effects on boot."
 sudo nvram SystemAudioVolume=" "
-ok 
+ok
 
 running "Disable transparency in the menu bar and elsewhere on Yosemite."
 defaults write com.apple.universalaccess reduceTransparency -bool true
-ok 
+ok
 
 running "Set highlight color to green."
 defaults write NSGlobalDomain AppleHighlightColor -string "0.764700 0.976500 0.568600"
-ok 
+ok
 
 running "Set sidebar icon size to medium."
 defaults write NSGlobalDomain NSTableViewDefaultSizeMode -int 2
-ok 
+ok
 
 running "Always show scrollbars."
 # Possible values: `WhenScrolling`, `Automatic` and `Always`
 defaults write NSGlobalDomain AppleShowScrollBars -string "Always"
-ok 
+ok
 
 running "Disable the over-the-top focus ring animation."
 defaults write NSGlobalDomain NSUseAnimatedFocusRing -bool false
-ok 
+ok
 
 running "Adjust toolbar title rollover delay."
 defaults write NSGlobalDomain NSToolbarTitleViewRolloverDelay -float 0
-ok 
+ok
 
 # running "Disable smooth scrolling (Uncomment if you’re on an older Mac that messes up the animation)."
 # defaults write NSGlobalDomain NSScrollAnimationEnabled -bool false
-# ok 
+# ok
 
 running "Increase window resize speed for Cocoa applications."
 defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
-ok 
+ok
 
 running "Expand save panel by default."
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode -bool true
 defaults write NSGlobalDomain NSNavPanelExpandedStateForSaveMode2 -bool true
-ok 
+ok
 
 running "Expand print panel by default."
 defaults write NSGlobalDomain PMPrintingExpandedStateForPrint -bool true
 defaults write NSGlobalDomain PMPrintingExpandedStateForPrint2 -bool true
-ok 
+ok
 
 running "Save to disk (not to iCloud) by default."
 defaults write NSGlobalDomain NSDocumentSaveNewDocumentsToCloud -bool false
-ok 
+ok
 
 running "Automatically quit printer app once the print jobs complete."
 defaults write com.apple.print.PrintingPrefs "Quit When Finished" -bool true
-ok 
+ok
 
 running "Disable the “Are you sure you want to open this application?” dialog."
 defaults write com.apple.LaunchServices LSQuarantine -bool false
-ok 
+ok
 
 running "Remove duplicates in the “Open With” menu (also see `lscleanup` alias)."
 /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -kill -r -domain local -domain system -domain user
-ok 
+ok
 
 running "Display ASCII control characters using caret notation in standard text views."
 # Try e.g. `cd /tmp; unidecode "\x{0000}" > cc.txt; open -e cc.txt`
 defaults write NSGlobalDomain NSTextShowsControlCharacters -bool true
-ok 
+ok
 
-running "Disable Resume system-wide."
+running "Disable Resume system-wide (saving window state)."
 defaults write com.apple.systempreferences NSQuitAlwaysKeepsWindows -bool false
-ok 
+ok
+
+running "Disable Windows which were open prior to logging from reopening after logging in"
+defaults write com.apple.finder RestoreWindowState -bool false
+ok
 
 running "Disable automatic termination of inactive apps."
 defaults write NSGlobalDomain NSDisableAutomaticTermination -bool true
-ok 
+ok
 
 # running "Disable the crash reporter."
 # defaults write com.apple.CrashReporter DialogType -string "none"
-# ok 
+# ok
 
 running "Set Help Viewer windows to non-floating mode."
 defaults write com.apple.helpviewer DevMode -bool true
-ok 
+ok
 
 # running "Fix for the ancient UTF-8 bug in QuickLook (https://mths.be/bbo)."
 # Commented out, as this is known to cause problems in various Adobe apps :(
 # See https://github.com/mathiasbynens/dotfiles/issues/237
 #echo "0x08000100:0" > ~/.CFUserTextEncoding
-# ok 
+# ok
 
 running "Reveal IP address, hostname, OS version, etc. when clicking the clock in the login window."
 sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
-ok 
+ok
 
 # running "Disable Notification Center and remove the menu bar icon."
 # launchctl unload -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist 2> /dev/null
-# ok 
+# ok
 
 running "Disable automatic capitalization as it’s annoying when typing code."
 defaults write NSGlobalDomain NSAutomaticCapitalizationEnabled -bool false
-ok 
+ok
 
 running "Disable smart dashes as they’re annoying when typing code."
 defaults write NSGlobalDomain NSAutomaticDashSubstitutionEnabled -bool false
-ok 
+ok
 
 running "Disable automatic period substitution as it’s annoying when typing code."
 defaults write NSGlobalDomain NSAutomaticPeriodSubstitutionEnabled -bool false
-ok 
+ok
 
 running "Disable smart quotes as they’re annoying when typing code."
 defaults write NSGlobalDomain NSAutomaticQuoteSubstitutionEnabled -bool false
-ok 
+ok
 
 # running "Set a custom wallpaper image. `DefaultDesktop.jpg` is already a symlink, and all wallpapers are in `/Library/Desktop Pictures/`. The default is `Wave.jpg`."
 # rm -rf ~/Library/Application Support/Dock/desktoppicture.db
@@ -238,8 +242,8 @@ defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
 ok
 
 running "Set a blazingly fast keyboard repeat rate."
-defaults write NSGlobalDomain KeyRepeat -int 2
-defaults write NSGlobalDomain InitialKeyRepeat -int 10
+defaults write NSGlobalDomain KeyRepeat -int 3
+defaults write NSGlobalDomain InitialKeyRepeat -int 13
 ok
 
 running "Set language and text formats (english/US)."
@@ -253,6 +257,9 @@ ok
 # defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 # ok
 
+// TODO:
+defaults write -g CheckSpellingWhileTyping -bool true
+
 ### get current zone
 # sudo systemsetup -gettimezone
 
@@ -261,15 +268,15 @@ ok
 
 running "Set Time format to 24h + month + day of week."
 defaults write com.apple.menuextra.clock DateFormat -string "EEE d MMM HH:mm:ss"
-ok 
+ok
 
 running "Set timezone."
 sudo systemsetup -settimezone America/Chicago
-ok 
+ok
 
 running "Refresh ui."
 killall SystemUIServer
-ok 
+ok
 
 running  "Enable trackpad tap-and-a-half drag."
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad Dragging -int 1
@@ -289,13 +296,13 @@ ok
 
 running "Enable Drag lock."
 defaults write com.apple.AppleMultitouchTrackpad DragLock -bool true
-ok 
+ok
 
 running "Enable trackpad right click."
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
 defaults -currentHost write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true
 defaults write com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
-ok 
+ok
 
 running "Enable swipe between pages."
 defaults write NSGlobalDomain AppleEnableSwipeNavigateWithScrolls -bool true
@@ -305,7 +312,7 @@ ok
 # defaults -currentHost write NSGlobalDomain com.apple.trackpad.threeFingerVertSwipeGesture -int 2
 # defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 2
 # defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 2
-# ok 
+# ok
 
 running "Enable trackpad mission control swipe up 4 finger."
 defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerVertSwipeGesture -int 2
@@ -323,10 +330,10 @@ running "Enable trackpad swipe between apps 4 finger."
 defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerHorizSwipeGesture -int 2
 defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
-ok 
+ok
 
 # MacBook Trackpad (built-in)
-# TODO: when to use com.apple.trackpad vs com.apple.driver.applebluetoothmultitouch.trackpad 
+# TODO: when to use com.apple.trackpad vs com.apple.driver.applebluetoothmultitouch.trackpad
 # TODO: defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 0
 
 # TODO: update apple mouse settings for laptop
@@ -342,14 +349,14 @@ defaults write com.apple.BluetoothAudioAgent "Apple Initial Bitpool Min (editabl
 defaults write com.apple.BluetoothAudioAgent "Negotiated Bitpool" 80
 defaults write com.apple.BluetoothAudioAgent "Negotiated Bitpool Max" 80
 defaults write com.apple.BluetoothAudioAgent "Negotiated Bitpool Min" 80
-ok 
+ok
 
 running "Reseting audio service."
 sudo killall coreaudiod
 ok
 
 #######################################################################################################################################
-bot "Configuring Battery & Power."                                                             
+bot "Configuring Battery & Power."
 #######################################################################################################################################
 
 ## Set Energy Saver Settings
@@ -359,43 +366,43 @@ bot "Configuring Battery & Power."
 
 running "Enable lid wakeup."
 sudo pmset -a lidwake 1
-ok 
+ok
 
 running "Restart automatically on power loss."
 sudo pmset -a autorestart 1
-ok 
+ok
 
 running "Restart automatically if the computer freezes."
 sudo systemsetup -setrestartfreeze on
-ok 
+ok
 
 running "Sleep the display after 5 minutes."
 sudo pmset -a displaysleep 5
-ok 
+ok
 
 running "Sleep the display after 5 minutes on battery."
 sudo pmset -b displaysleep 5
-ok 
+ok
 
 # running "Disable machine sleep while charging."
 # sudo pmset -c sleep 0
-# ok 
+# ok
 
 running "Set machine sleep to 15 minutes."
 sudo pmset -a sleep 15
-ok 
+ok
 
 running "Set machine sleep to 5 minutes on battery."
 sudo pmset -b sleep 5
-ok 
+ok
 
 # running "Set standby delay to 24 hours (default is 1 hour)."
 # sudo pmset -a standbydelay 86400
-# ok 
+# ok
 
 # running "Never go into computer sleep mode."
 # sudo systemsetup -setcomputersleep Off > /dev/null
-# ok 
+# ok
 
 # Hibernation mode
 # 0: Disable hibernation (speeds up entering sleep mode)
@@ -440,10 +447,10 @@ running "Disable shadow in screenshots."
 defaults write com.apple.screencapture disable-shadow -bool true
 ok
 
-running "Enable subpixel font rendering on non-Apple LCDs."
+# running "Enable subpixel font rendering on non-Apple LCDs."
 # Reference: https://github.com/kevinSuttle/macOS-Defaults/issues/17#issuecomment-266633501
 # defaults write NSGlobalDomain AppleFontSmoothing -int 2
-ok
+# ok
 
 running "Enable HiDPI display modes (requires restart)."
 # sudo defaults write /Library/Preferences/com.apple.windowserver DisplayResolutionEnabled -bool true
@@ -465,116 +472,116 @@ ok
 running "Set Desktop as the default location for new Finder windows."
 defaults write com.apple.finder NewWindowTarget -string "PfDe"
 defaults write com.apple.finder NewWindowTargetPath -string "file://${HOME}/Desktop/"
-ok 
+ok
 
 running "Show icons for hard drives, servers, and removable media on the desktop"
 defaults write com.apple.finder ShowExternalHardDrivesOnDesktop -bool true
 defaults write com.apple.finder ShowHardDrivesOnDesktop -bool true
 defaults write com.apple.finder ShowMountedServersOnDesktop -bool true
 defaults write com.apple.finder ShowRemovableMediaOnDesktop -bool true
-ok 
+ok
 
-# running "Finder: show hidden files by default."
-# defaults write com.apple.finder AppleShowAllFiles -bool true
-# ok 
+running "Finder: show hidden files by default."
+defaults write com.apple.finder AppleShowAllFiles -bool true
+ok
 
 running "Finder: show all filename extensions."
 defaults write NSGlobalDomain AppleShowAllExtensions -bool true
-ok 
+ok
 
 running "Finder: show status bar."
 defaults write com.apple.finder ShowStatusBar -bool true
-ok 
+ok
 
 running "Finder: show path bar."
 defaults write com.apple.finder ShowPathbar -bool true
-ok 
+ok
 
 running "Display full POSIX path as Finder window title."
 defaults write com.apple.finder _FXShowPosixPathInTitle -bool true
-ok 
+ok
 
 running "Keep folders on top when sorting by name."
 defaults write com.apple.finder _FXSortFoldersFirst -bool true
-ok 
+ok
 
 running "When performing a search, search the current folder by default."
 defaults write com.apple.finder FXDefaultSearchScope -string "SCcf"
-ok 
+ok
 
 running "Disable the warning when changing a file extension."
 defaults write com.apple.finder FXEnableExtensionChangeWarning -bool false
-ok 
+ok
 
 running "Enable spring loading for directories."
 defaults write NSGlobalDomain com.apple.springing.enabled -bool true
-ok 
+ok
 
 running "Remove the spring loading delay for directories."
 defaults write NSGlobalDomain com.apple.springing.delay -float 0
-ok 
+ok
 
 running "Avoid creating .DS_Store files on network or USB volumes."
 defaults write com.apple.desktopservices DSDontWriteNetworkStores -bool true
 defaults write com.apple.desktopservices DSDontWriteUSBStores -bool true
-ok 
+ok
 
 running "Disable disk image verification."
 defaults write com.apple.frameworks.diskimages skip-verify -bool true
 defaults write com.apple.frameworks.diskimages skip-verify-locked -bool true
 defaults write com.apple.frameworks.diskimages skip-verify-remote -bool true
-ok 
+ok
 
 running "Automatically open a new Finder window when a volume is mounted."
 defaults write com.apple.frameworks.diskimages auto-open-ro-root -bool true
 defaults write com.apple.frameworks.diskimages auto-open-rw-root -bool true
 defaults write com.apple.finder OpenWindowForNewRemovableDisk -bool true
-ok 
+ok
 
 running "Show item info near icons on the desktop and in other icon views."
 /usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:showItemInfo true" ~/Library/Preferences/com.apple.finder.plist
-ok 
+ok
 
 running "Show item info to the right of the icons on the desktop."
 /usr/libexec/PlistBuddy -c "Set DesktopViewSettings:IconViewSettings:labelOnBottom false" ~/Library/Preferences/com.apple.finder.plist
-ok 
+ok
 
 running "Enable snap-to-grid for icons on the desktop and in other icon views."
 /usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:arrangeBy grid" ~/Library/Preferences/com.apple.finder.plist
-ok 
+ok
 
 running "Increase grid spacing for icons on the desktop and in other icon views."
 /usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:gridSpacing 100" ~/Library/Preferences/com.apple.finder.plist
-ok 
+ok
 
 running "Increase the size of icons on the desktop and in other icon views."
 /usr/libexec/PlistBuddy -c "Set :DesktopViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :FK_StandardViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
 /usr/libexec/PlistBuddy -c "Set :StandardViewSettings:IconViewSettings:iconSize 80" ~/Library/Preferences/com.apple.finder.plist
-ok 
+ok
 
+# Four-letter codes for the other view modes: Flwv ▸ Cover Flow View Nlsv ▸ List View clmv ▸ Column View icnv ▸ Icon View
 running "Use list view in all Finder windows by default."
-# Four-letter codes for the other view modes: `icnv`, `clmv`, `glyv`
 defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
-ok 
+ok
 
 running "Disable the warning before emptying the Trash."
 defaults write com.apple.finder WarnOnEmptyTrash -bool false
-ok 
+ok
 
 running "Enable AirDrop over Ethernet and on unsupported Macs running Lio.n."
 defaults write com.apple.NetworkBrowser BrowseAllInterfaces -bool true
-ok 
+ok
 
 running "Show the ~/Library folder."
 chflags nohidden ~/Library && xattr -d com.apple.FinderInfo ~/Library
-ok 
+ok
 
 running "Show the /Volumes folder."
 sudo chflags nohidden /Volumes
@@ -583,7 +590,7 @@ ok
 running "Remove Dropbox’s green checkmark icons in Finder."
 file=/Applications/Dropbox.app/Contents/Resources/emblem-dropbox-uptodate.icns
 [ -e "${file}" ] && mv -f "${file}" "${file}.bak"
-ok 
+ok
 
 running "Expand the following File Info panes:."
 # “General”, “Open with”, and “Sharing & Permissions”
@@ -591,45 +598,50 @@ defaults write com.apple.finder FXInfoPanesExpanded -dict \
 	General -bool true \
 	OpenWith -bool true \
 	Privileges -bool true
-ok 
+ok
 
+running "Show preview pane" Y
+  defaults write com.apple.finder ShowPreviewPane -bool true
+okf
+
+# TODO: ds_store
 #######################################################################################################################################
 bot "Configuring Dock, Dashboard, and hot corners, Menu bar"
 #######################################################################################################################################
 
 running "Enable highlight hover effect for the grid view of a stack (Dock)."
 defaults write com.apple.dock mouse-over-hilite-stack -bool true
-ok 
+ok
 
-running "Set the icon size of Dock items to 36 pixels."
-defaults write com.apple.dock tilesize -int 36
-ok 
+running "Set the icon size of Dock items to 60 pixels."
+defaults write com.apple.dock tilesize -int 60
+ok
 
 running "Change minimize/maximize window effect."
 defaults write com.apple.dock mineffect -string "scale"
-ok 
+ok
 
 running "Minimize windows into their application’s icon."
 defaults write com.apple.dock minimize-to-application -bool true
-ok 
+ok
 
 running "Enable spring loading for all Dock items."
 defaults write com.apple.dock enable-spring-load-actions-on-all-items -bool true
-ok 
+ok
 
 running "Show indicator lights for open applications in the Dock."
 defaults write com.apple.dock show-process-indicators -bool true
-ok 
+ok
 
 # running "Wipe all (default) app icons from the Dock."
 # This is only really useful when setting up a new Mac, or if you don’t use
-# the Dock to launch apps. 
+# the Dock to launch apps.
 # defaults write com.apple.dock persistent-apps -array
 # ok
 
 # running "Show only open applications in the Dock."
 # defaults write com.apple.dock static-only -bool true.
-# ok 
+# ok
 
 running "Don’t animate opening applications from the Dock."
 defaults write com.apple.dock launchanim -bool false
@@ -646,56 +658,56 @@ ok
 
 running "Disable Dashboard."
 defaults write com.apple.dashboard mcx-disabled -bool true
-ok 
+ok
 
 running "Don’t show Dashboard as a Space."
 defaults write com.apple.dock dashboard-in-overlay -bool true
-ok 
+ok
 
 running "Don’t automatically rearrange Spaces based on most recent use."
 defaults write com.apple.dock mru-spaces -bool false
-ok 
+ok
 
 running "Remove the auto-hiding Dock delay."
 defaults write com.apple.dock autohide-delay -float 0
-ok 
+ok
 
 running "Remove the animation when hiding/showing the Dock."
 defaults write com.apple.dock autohide-time-modifier -float 0
-ok 
+ok
 
 running "Automatically hide and show the Dock."
 defaults write com.apple.dock autohide -bool true
-ok 
+ok
 
 running "Make Dock icons of hidden applications translucent."
 defaults write com.apple.dock showhidden -bool true
-ok 
+ok
 
 running "Don’t show recent applications in Dock."
 defaults write com.apple.dock show-recents -bool false
-ok 
+ok
 
 # running "Disable the Launchpad gesture (pinch with thumb and three fingers)."
 # defaults write com.apple.dock showLaunchpadGestureEnabled -int 0
-# ok 
+# ok
 
 # running "Reset Launchpad, but keep the desktop wallpaper intact"
 # find "${HOME}/Library/Application Support/Dock" -name "*-*.db" -maxdepth 1 -delete
-# ok 
+# ok
 
 # running "Add iOS & Watch Simulator to Launchpad"
 # sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator.app" "/Applications/Simulator.app"
 # sudo ln -sf "/Applications/Xcode.app/Contents/Developer/Applications/Simulator (Watch).app" "/Applications/Simulator (Watch).app"
-# ok 
+# ok
 
 # running "Add a spacer to the left side of the Dock (where the applications are)."
 # defaults write com.apple.dock persistent-apps -array-add '{tile-data={}; tile-type="spacer-tile";}'
-# ok 
+# ok
 
 # running "Add a spacer to the right side of the Dock (where the Trash is)."
 # defaults write com.apple.dock persistent-others -array-add '{tile-data={}; tile-type="spacer-tile";}'
-# ok 
+# ok
 
 
 # Hot corners
@@ -721,12 +733,12 @@ ok
 # # Bottom left screen corner → Start screen saver
 # defaults write com.apple.dock wvous-bl-corner -int 5
 # defaults write com.apple.dock wvous-bl-modifier -int 0
-# ok 
+# ok
 
 ## Dockutil dependency installed in with brewfile
 running "Make dock empty."
 dockutil --remove all --allhomes
-ok 
+ok
 
 # add apps
 running "Add apps to dock."
@@ -743,7 +755,7 @@ dockutil --add '/Applications/Pocket.app' --allhomes
 dockutil --add '/Applications/Signal.app' --allhomes
 dockutil --add '/Applications/Pulse SMS.app' --allhomes
 dockutil --add '/Applications/Spotify.app' --allhomes
-ok 
+ok
 
 # // TODO: folder for chat apps
 
@@ -777,7 +789,7 @@ defaults write com.apple.systemuiserver menuExtras -array \
 "/System/Library/CoreServices/Menu Extras/Bluetooth.menu" \
 "/System/Library/CoreServices/Menu Extras/Clock.menu" \
 "/System/Library/CoreServices/Menu Extras/Volume.menu" \
-ok 
+ok
 
 running "refresh ui."
 killall SystemUIServer
@@ -886,15 +898,15 @@ ok
 # defaults write com.apple.SafariTechnologyPreview WebKitMediaPlaybackAllowsInline -bool false
 # defaults write com.apple.Safari com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
 # defaults write com.apple.SafariTechnologyPreview com.apple.Safari.ContentPageGroupIdentifier.WebKit2AllowsInlineMediaPlayback -bool false
-# ok 
+# ok
 
 running "Enable Do Not Track."
 defaults write com.apple.Safari SendDoNotTrackHTTPHeader -bool true
-ok 
+ok
 
 running "Update extensions automaticall."
 defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true
-ok 
+ok
 
 #######################################################################################################################################
 bot "Configuring Mail."
@@ -933,7 +945,7 @@ bot "Configuring Spotlight."
 
 # running "Hide Spotlight tray-icon (and subsequent helper)."
 # sudo chmod 600 /System/Library/CoreServices/Search.bundle/Contents/MacOS/Search
-# ok 
+# ok
 
 # Use `sudo mdutil -i off "/Volumes/foo"` to stop indexing any volume.
 # running "Disable Spotlight indexing for any volume that gets mounted and has not yet been indexed."
@@ -975,15 +987,15 @@ defaults write com.apple.spotlight orderedItems -array \
 
 running "Load new settings before rebuilding the index."
 killall mds > /dev/null 2>&1
-ok 
+ok
 
 running "Make sure indexing is enabled for the main volume."
 sudo mdutil -i on / > /dev/null
-ok 
+ok
 
 running "Rebuild the index from scratch."
 sudo mdutil -E / > /dev/null
-ok 
+ok
 
 #######################################################################################################################################
 bot "Time Machine."
@@ -1076,19 +1088,19 @@ bot "Configuring Address Book, Dashboard, iCal, TextEdit, and Disk Utility."
 
 running "Enable the debug menu in Address Book"
 defaults write com.apple.addressbook ABShowDebugMenu -bool true
-ok 
+ok
 
 running "Enable Dashboard dev mode (allows keeping widgets on the desktop)"
 defaults write com.apple.dashboard devmode -bool true
-ok 
+ok
 
 running "Enable the debug menu in iCal (pre-10.8)"
 defaults write com.apple.iCal IncludeDebugMenu -bool true
-ok 
+ok
 
 running "Use plain text mode for new TextEdit documents"
 defaults write com.apple.TextEdit RichText -int 0
-ok 
+ok
 
 running "Open and save files as UTF-8 in TextEdit"
 defaults write com.apple.TextEdit PlainTextEncoding -int 4
@@ -1098,11 +1110,11 @@ ok
 running "Enable the debug menu in Disk Utility"
 defaults write com.apple.DiskUtility DUDebugMenuEnabled -bool true
 defaults write com.apple.DiskUtility advanced-image-options -bool true
-ok 
+ok
 
 running "Auto-play videos when opened with QuickTime Player"
 defaults write com.apple.QuickTimePlayerX MGPlayMovieOnOpen -bool true
-ok 
+ok
 
 #######################################################################################################################################
 bot "Configuring Mac App Store."
@@ -1110,35 +1122,35 @@ bot "Configuring Mac App Store."
 
 running "Enable the WebKit Developer Tools in the Mac App Store."
 defaults write com.apple.appstore WebKitDeveloperExtras -bool true
-ok 
+ok
 
 running "Enable Debug Menu in the Mac App Store."
 defaults write com.apple.appstore ShowDebugMenu -bool true
-ok 
+ok
 
 running "Enable the automatic update check."
 defaults write com.apple.SoftwareUpdate AutomaticCheckEnabled -bool true
-ok 
+ok
 
 running "Check for software updates daily, not just once per week."
 defaults write com.apple.SoftwareUpdate ScheduleFrequency -int 1
-ok 
+ok
 
 running "Download newly available updates in background."
 defaults write com.apple.SoftwareUpdate AutomaticDownload -int 1
-ok 
+ok
 
 # running "Install System data files & security updates."
 # defaults write com.apple.SoftwareUpdate CriticalUpdateInstall -int 1
-# ok 
+# ok
 
 # running "Automatically download apps purchased on other Macs."
 # defaults write com.apple.SoftwareUpdate ConfigDataInstall -int 1
-# ok 
+# ok
 
 # running "Turn on app auto-update."
 # defaults write com.apple.commerce AutoUpdate -bool true
-# ok 
+# ok
 
 # running "Allow the App Store to reboot machine on macOS updates."
 # defaults write com.apple.commerce AutoUpdateRestartRequired -bool true
@@ -1150,7 +1162,7 @@ bot "Configuring Photos."                                                       
 
 running "Prevent Photos from opening automatically when devices are plugged in."
 defaults -currentHost write com.apple.ImageCapture disableHotPlug -bool true
-ok 
+ok
 
 #######################################################################################################################################
 bot "Configuring Messages."
@@ -1175,25 +1187,25 @@ bot "Configuring Google Chrome & Google Chrome Canary"                          
 running "Disable the all too sensitive backswipe on trackpads."
 defaults write com.google.Chrome AppleEnableSwipeNavigateWithScrolls -bool false
 defaults write com.google.Chrome.canary AppleEnableSwipeNavigateWithScrolls -bool false
-ok 
+ok
 
 running "Disable the all too sensitive backswipe on Magic Mouse."
 defaults write com.google.Chrome AppleEnableMouseSwipeNavigateWithScrolls -bool false
 defaults write com.google.Chrome.canary AppleEnableMouseSwipeNavigateWithScrolls -bool false
-ok 
+ok
 
 running "Use the system-native print preview dialog."
 defaults write com.google.Chrome DisablePrintPreview -bool true
 defaults write com.google.Chrome.canary DisablePrintPreview -bool true
-ok 
+ok
 
 running "Expand the print dialog by default."
 defaults write com.google.Chrome PMPrintingExpandedStateForPrint2 -bool true
 defaults write com.google.Chrome.canary PMPrintingExpandedStateForPrint2 -bool true
-ok 
+ok
 
 #######################################################################################################################################
-bot "Configuring Security."                                                                  
+bot "Configuring Security."
 #######################################################################################################################################
 # Based on:
 # https://github.com/drduh/macOS-Security-and-Privacy-Guide
@@ -1205,26 +1217,26 @@ bot "Configuring Security."
 #   2 = on for essential services
 running "Enable firewall."
 sudo defaults write /Library/Preferences/com.apple.alf globalstate -int 1
-ok 
+ok
 
 # Source: https://support.apple.com/kb/PH18642
 
 running "Enable firewall stealth mode (no response to ICMP / ping requests)."
 sudo defaults write /Library/Preferences/com.apple.alf stealthenabled -int 1
-ok 
+ok
 
 # running "Enable firewall logging."
 # sudo defaults write /Library/Preferences/com.apple.alf loggingenabled -int 1
-# ok 
+# ok
 
 running "Do not automatically allow signed software to receive incoming connections."
 #sudo defaults write /Library/Preferences/com.apple.alf allowsignedenabled -bool false
-ok 
+ok
 
 # running "Log firewall events for 90 days."
 # sudo perl -p -i -e 's/rotate=seq compress file_max=5M all_max=50M/rotate=utc compress file_max=5M ttl=90/g' "/etc/asl.conf"
 # sudo perl -p -i -e 's/appfirewall.log file_max=5M all_max=50M/appfirewall.log rotate=utc compress file_max=5M ttl=90/g' "/etc/asl.conf"
-# ok 
+# ok
 
 # (uncomment if above is not commented out)
 # running "Reload the firewall."
@@ -1232,7 +1244,7 @@ ok
 # sudo launchctl unload /System/Library/LaunchDaemons/com.apple.alf.agent.plist
 # sudo launchctl load /System/Library/LaunchDaemons/com.apple.alf.agent.plist
 # launchctl load /System/Library/LaunchAgents/com.apple.alf.useragent.plist
-# ok 
+# ok
 
 # running "Disable IR remote control."
 # sudo defaults write /Library/Preferences/com.apple.driver.AppleIRController DeviceEnabled -bool false
@@ -1242,19 +1254,19 @@ ok
 # sudo defaults write /Library/Preferences/com.apple.Bluetooth ControllerPowerState -int 0
 # sudo launchctl unload /System/Library/LaunchDaemons/com.apple.blued.plist
 # sudo launchctl load /System/Library/LaunchDaemons/com.apple.blued.plist
-# ok 
+# ok
 
 # running "Disable wifi captive portal."
 #sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.captive.control Active -bool false
-# ok 
+# ok
 
 running "Disable remote apple events."
 sudo systemsetup -setremoteappleevents off
-ok 
+ok
 
 running "Disable remote login."
 sudo systemsetup -setremotelogin off
-ok 
+ok
 
 # running "Disable wake-on modem."
 # sudo systemsetup -setwakeonmodem off
@@ -1262,12 +1274,12 @@ ok
 
 # running "Disable wake-on LAN."
 # sudo systemsetup -setwakeonnetworkaccess off
-# ok 
+# ok
 
 # running "Disable file-sharing via AFP or SMB."
 # sudo launchctl unload -w /System/Library/LaunchDaemons/com.apple.AppleFileServer.plist
 # sudo launchctl unload -w /System/Library/LaunchDaemons/com.apple.smbd.plist
-# ok 
+# ok
 
 running "Display login window as name and password."
 #sudo defaults write /Library/Preferences/com.apple.loginwindow SHOWFULLNAME -bool true
@@ -1317,7 +1329,7 @@ ok
 
 running "Disable the Are you sure you want to open this application? dialog"
 defaults write com.apple.LaunchServices LSQuarantine -bool false
-ok 
+ok
 
 running "Empty Trash securely by default."
 defaults write com.apple.finder EmptyTrashSecurely -bool true
