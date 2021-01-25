@@ -16,20 +16,30 @@ bot "Hi! I'm going to install tooling and tweak your system settings."
 bot "Configuring brew taps, casks & apps + mas apps + oh-my-zsh."
 #######################################################################################################################################
 
-running "install oh my zsh."
+# TODO: exit if no brew
+# ```sh
+# brew bundle dump -f
+# cat Brewfile| pbcopy
+# ```
+
+running "Installing oh my zsh."
 sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 ok
 
-// TODO: 
-brew doctor
+running "Turn off brew analytics."
 brew analytics off
-brew update
+ok 
 
-running "brewfile install."
+running "brew doctor & update."
+brew doctor
+brew update
+ok 
+
+running "Install brew bundle."
 brew bundle
 ok
 
-running "cleanup homebrew."
+running "Cleanup homebrew."
 brew cleanup --force > /dev/null 2>&1
 rm -f -r /Library/Caches/Homebrew/* > /dev/null 2>&1
 ok
