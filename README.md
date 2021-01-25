@@ -1,6 +1,6 @@
 # dotfiles
 
-macOS & windows dotfiles & post install scripts - better defaults, no os noise, awesome tools. 
+macOS & windows dotfiles & post install scripts - better defaults, no os noise, awesome tools.
 
 ## macOS Setup
 
@@ -8,7 +8,7 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 ### Instructions:
 TODO:
-* curl init.sh 
+* curl init.sh
 * alias .macup.cfg to home
 * install brew
 * macup restore
@@ -28,16 +28,16 @@ git clone https://github.com/Ashtonian/-HOME.git
 
 ### Keymap
 
-* Preferences -> profile -> keymap -> load presets -> natural typing - gives use of things like <kbd>⌥</kbd> + <kbd>←</kbd>,<kbd>→</kbd> 
+* Preferences -> profile -> keymap -> load presets -> natural typing - gives use of things like <kbd>⌥</kbd> + <kbd>←</kbd>,<kbd>→</kbd>
 * add <kbd>⌃</kbd><kbd>⌘</kbd><kbd>f</kbd> | Action: toggle full screen
 * add <kbd>⌥</kbd><kbd>⇧</kbd><kbd>←</kbd> | Action: Move Start of Selection Back > Move by Word.
 * add <kbd>⌥</kbd><kbd>⇧</kbd><kbd>→</kbd> | Action: Move End of Selection Forward > Move by Word.
 * add <kbd>⌥</kbd><kbd>←</kbd> | Action: Move start of selection back > Move by character.
 * add <kbd>⌥</kbd><kbd>→</kbd> | Action: Move end of selection forward > Move by character.
-* add <kbd>⌘</kbd><kbd>z</kbd> | Action: Send Hex Codes > `0x1f` 
+* add <kbd>⌘</kbd><kbd>z</kbd> | Action: Send Hex Codes > `0x1f`
 * add <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Z</kbd> Action: Send Hex Codes > `0x18 0x1f`
   * Typically not bound in bash, zsh or readline, so we can set it to a unused hexcode which we can then fix in zsh. [Stack overflow](http://stackoverflow.com/questions/6205157/iterm2-how-to-get-jump-to-beginning-end-of-line-in-bash-shell#answer-29403520):
-  * ```sh  
+  * ```sh
     # adds redo
     $ echo 'bindkey "^X^_" redo' >> ~/.zshrc
 
@@ -77,11 +77,22 @@ git clone https://github.com/Ashtonian/-HOME.git
 * [jaywcjlove/awesome-mac](https://github.com/jaywcjlove/awesome-mac#readme)
 * [serhii-londar/open-source-mac-os-apps](https://github.com/serhii-londar/open-source-mac-os-apps#readme)
 
-## Software I want to checkout or configure 
+## Software I want to checkout or configure
 
+* cask_args appdir: '/Applications'
+* https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst
+* https://rogueamoeba.com/loopback/
+* https://krisp.ai/
+* brew install thefuck
+* brew install git-extras
+* brew install gh or hub?
+* brew install direnv
+* set beyondcompare as merge tool
+* brew install diff-so-fancy
+* brew install asciinema
 * tmux
 * powerline or zsh theme
-* fsh 
+* fsh
 * FZF
 * neofetch
 * maybe [meeting notifier](https://github.com/leits/MeetingBar)
@@ -97,7 +108,7 @@ git clone https://github.com/Ashtonian/-HOME.git
 * [displayplacer](https://github.com/jakehilborn/displayplacer) cli to adjust monitor placement
 * (quick-look-plugins)[https://github.com/sindresorhus/quick-look-plugins]
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
-* source some cool [functions](https://github.com/mathiasbynens/dotfiles/blob/main/.functions) like local http 
+* source some cool [functions](https://github.com/mathiasbynens/dotfiles/blob/main/.functions) like local http
 * [FinderSidebarEditor](https://github.com/robperc/FinderSidebarEditor)
 * Alfred alternative or workflows [awesome-workflows](https://github.com/alfred-workflows/awesome-alfred-workflows),[workflows](https://github.com/zenorocha/alfred-workflows)
 * brew install gs
@@ -127,13 +138,14 @@ echo -e "\e[1;40m" ; clear ; characters=$( jot -c 94 33 | tr -d '\n' ) ; while :
 
 ## Automation dreams and TODO
 
-* Wake on keyboard not mouse  
-* Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup 
+* defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
+* Wake on keyboard not mouse
+* Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
 * Last login: Sun Jan 24 18:55:04 on ttys000
 [oh-my-zsh] Insecure completion-dependent directories detected:
 drwxrwxr-x  7 ashtonian  admin  224 Jan 23 16:11 /usr/local/share/zsh
 drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-functions
-* adjust default apps for mac extensions and default to vscode  
+* adjust default apps for mac extensions and default to vscode
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
 * init.sh uses comments to deliniate between laptop / desktop setups
 * shell sync, search, backup
@@ -157,5 +169,4 @@ Highlight:
 * vim extensions
 * zsh extensions
 * applications/shell scripts overview
-* brew + brewfile, mackup, mas, dockutil, sidebar util 
-
+* brew + brewfile, mackup, mas, dockutil, sidebar util
