@@ -164,6 +164,7 @@ Extensions:
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * cli journal ? jyputer
 * numi alt
+* doc alfred flows
 * review zsh plugins
 * completions search
 * setup vscode sync
