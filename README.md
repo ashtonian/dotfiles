@@ -143,7 +143,7 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 * [raycast](https://raycast.com/) - cool alfred like but for web apps, only a few apps.
 * [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
 * [VimMotion](https://github.com/dwarvesf/VimMotionApp)
-s
+
 Extensions:
 
 * [Chrome extension Source Viewer](https://chrome.google.com/webstore/detail/chrome-extension-source-v/jifpbeccnghkjeaalbbjmodiffmgedin?hl=en-US)
@@ -184,5 +184,39 @@ Extensions:
 * desktop background + screen saver sync + setup per res
 * vscode snippets solution
 * script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
-* way to clone and archive n sync all star'd repos* cron fetch (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others
+* way to clone and archive n sync all star'd repos* cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
+* horo workflow
+* alfred monosnap workflow
+* ohmystar workflow
 # * git/projects dir auto fetchs
+
+Alfred:
+
+* https://github.com/ruedap/alfred-font-awesome-workflow
+* https://www.packal.org/workflow/numi
+* https://www.packal.org/workflow/flush-dns-106-110
+* https://github.com/deanishe/alfred-stackexchange
+* https://github.com/gharlan/alfred-github-workflow
+* https://www.packal.org/workflow/pocket-alfred
+* https://github.com/deanishe/alfred-repos
+* https://github.com/willfarrell/alfred-pkgman-workflow
+* https://github.com/willfarrell/alfred-encode-decode-workflow
+* http://www.packal.org/workflow/funnel
+* https://github.com/deanishe/alfred-convert
+* https://github.com/moranje/alfred-workflow-todoist
+* https://github.com/SamVerschueren/alfred-fkill
+* https://www.alfredapp.com/blog/productivity/dash-quicker-api-documentation-search/
+* http://www.packal.org/workflow/screenshots
+* https://github.com/isaacpz/Alfred-WordSearch
+* https://github.com/vitorgalvao/alfred-workflows/tree/master/CalmNotifications
+* https://github.com/otherguy/alfred-passwords-workflow
+* https://github.com/wrjlewis/notion-search-alfred-workflow/
+* https://github.com/fniephaus/alfred-pocket
+* https://www.packal.org/workflow/moment
+* https://github.com/vitorgalvao/alfred-workflows/tree/master/StrongPassword
+* https://www.alfredworkflows.store/workflows/vscode
+* homebrew
+* https://github.com/deanishe/alfred-sshs
+* https://github.com/tilmanginzel/alfred-bluetooth-workflow
+* https://github.com/stuartcryan/advanced-google-maps-alfred-workflow ?
+* https://github.com/stve/alfred-vpn
