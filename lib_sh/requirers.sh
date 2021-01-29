@@ -8,6 +8,8 @@
 
 # source ./echos.sh
 
+## TODO: add no install checks that can be used to skip questions if the user didn't install something
+
 function require_apm() {
     running "checking atom plugin: $1"
     apm list --installed --bare | grep $1@ > /dev/null

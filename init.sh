@@ -73,10 +73,10 @@ if ! xcode-select --print-path &> /dev/null; then
 
     sudo xcodebuild -license
     print_result $? 'Agree with the XCode Command Line Tools licence'
-fi;ok 
+fi;ok
 
 # ###########################################################
-# install homebrew 
+# install homebrew
 # ###########################################################
 running "checking homebrew..."
 brew_bin=$(which brew) 2>&1 > /dev/null
@@ -181,3 +181,30 @@ if [[ $? = 0 ]]; then
     sed -i 's/GITHUBUSER/'$githubuser'/' ./homedir/.gitconfig
   fi
 fi
+
+
+# TODO:s
+# * finder sidebar
+#   * rm tags section
+#   * add 'OS X' aka local mac install drive to finder sidebar
+#   * adjust favorites
+#     * [FinderSidebarEditor](https://github.com/robperc/FinderSidebarEditor)
+#     * (home folder)
+#     * Projects
+#     * Recents
+#     * Downloads
+#     * Desktop
+#     * Documents
+#     * Applications
+#     * Utilities
+#     * cloud accounts...
+#     * run monolingual
+# * after init.sh option to remove dockutil and others
+#
+# * defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
+# * Last login: Sun Jan 24 18:55:04 on ttys000
+# [oh-my-zsh] Insecure completion-dependent directories detected:
+# drwxrwxr-x  7 ashtonian  admin  224 Jan 23 16:11 /usr/local/share/zsh
+# drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-functions
+# * init.sh uses comments to deliniate between laptop / desktop setups
+# * config f.lux, including rm annon stats

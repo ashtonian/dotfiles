@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sourced from https://github.com/atomantic/dotfiles/blob/master/lib_sh/echos.sh 
+# Sourced from https://github.com/atomantic/dotfiles/blob/master/lib_sh/echos.sh
 
 ###
 # some colorized echo helpers
@@ -15,6 +15,9 @@ COL_YELLOW=$ESC_SEQ"33;01m"
 COL_BLUE=$ESC_SEQ"34;01m"
 COL_MAGENTA=$ESC_SEQ"35;01m"
 COL_CYAN=$ESC_SEQ"36;01m"
+
+# TODO: add ask -> to ask user and wrap with default
+# TODO: add always ask -> to always ask user even when with assumed run
 
 function ok() {
     echo -e "$COL_GREEN[ok]$COL_RESET "$1

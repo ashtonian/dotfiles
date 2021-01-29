@@ -14,6 +14,7 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 ### Global Shortcuts
 
+//TODO:
 * Timer (horo)
 * Screenshot
 * Record
@@ -125,89 +126,62 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 ## Evaluation & Watch List
 
-* [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
-* [Privacy Single Use physical or Digital cards](https://privacy.com/card-issuing)
-* [macOS GateKeeper Helper](https://github.com/wynioux/macOS-GateKeeper-Helper)
-* [VimMotion](https://github.com/dwarvesf/VimMotionApp)
-* [brew-file](https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst)
-* [krisp.ai](https://krisp.ai/pricing/) - Mute background noise, $$ tho
-* [raycast](https://raycast.com/) - cool alfred like but for web apps, only a few apps.
-* [moom](https://manytricks.com/moom/),[divvy](https://mizage.com/divvy/),[rectangle](https://rectangleapp.com/) or [Amethyst](https://github.com/ianyh/Amethyst) - tiling solution potentially with solution to move screens/spaces across monitor.
-* [espanso](https://github.com/federico-terzi/espanso) - text expander
-* [micktagger](https://micktagger.app/) - easy to add song to multiple sptofiy playlists
-* [findergo](https://github.com/onmyway133/FinderGo) - add open to term to finder
-* [ferdi](https://getferdi.com/) - unified notifications - no signal
-* [neovim](https://neovim.io/)
-* [musicbrainz](https://picard.musicbrainz.org/) - music file tagger
 * [asdf](https://asdf-vm.com/#/) - multi-cli version manager
+* [brew-file](https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst)
+* [espanso](https://github.com/federico-terzi/espanso) - text expander
+* [ferdi](https://getferdi.com/) - unified notifications - no signal
+* [findergo](https://github.com/onmyway133/FinderGo) - add open to term to finder
+* [krisp.ai](https://krisp.ai/pricing/) - Mute background noise, $$ tho
+* [macOS GateKeeper Helper](https://github.com/wynioux/macOS-GateKeeper-Helper)
+* [micktagger](https://micktagger.app/) - easy to add song to multiple sptofiy playlists
+* [moom](https://manytricks.com/moom/),[divvy](https://mizage.com/divvy/),[rectangle](https://rectangleapp.com/) or [Amethyst](https://github.com/ianyh/Amethyst) - tiling solution potentially with solution to move screens/spaces across monitor.
+* [musicbrainz](https://picard.musicbrainz.org/) - music file tagger
+* [neovim](https://neovim.io/)
 * [pre-commit hooks](https://pre-commit.com/hooks.html)
 * [prettyping](https://denilson.sa.nom.br/prettyping/) - wrap around ping
-
+* [Privacy Single Use physical or Digital cards](https://privacy.com/card-issuing)
+* [raycast](https://raycast.com/) - cool alfred like but for web apps, only a few apps.
+* [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
+* [VimMotion](https://github.com/dwarvesf/VimMotionApp)
+s
 Extensions:
 
 * [Chrome extension Source Viewer](https://chrome.google.com/webstore/detail/chrome-extension-source-v/jifpbeccnghkjeaalbbjmodiffmgedin?hl=en-US)
 * [ChromeWebStoreSorter](https://github.com/ugur1yildiz/ChromeWebStoreSorter/blob/main/sorter.js)
 * [Cluster Window Tab Manager](https://chrome.google.com/webstore/detail/cluster-window-tab-manage/aadahadfdmiibmdhfmpbeeebejmjnkef?hl=en) - move tabs between windows
 * [Fakespot Fake Amazon Reviews and eBay Sellers](https://chrome.google.com/webstore/detail/fakespot-fake-amazon-revi/nakplnnackehceedgkgkokbgbmfghain)
+* [fruitjuice](http://fruitjuiceapp.com/) - $$
+* [hidden](https://github.com/dwarvesf/hidden) - bartender alt opensource
 * [Keepa](https://chrome.google.com/webstore/detail/keepa-amazon-price-tracke/neebplgakaahbhdphmkckjjcegoiijjo?hl=en)
 * [Tab Wrangler](https://chrome.google.com/webstore/detail/tab-wrangler/egnjhciaieeiiohknchakcodbpgjnchh?hl=en)
 * [Toby](https://chrome.google.com/webstore/detail/toby-for-chrome/hddnkoipeenegfoeaoibdmnaalmgkpip?hl=en) - nice tab 'session' manager.
 * [vimium](https://chrome.google.com/webstore/detail/vimium/dbepggeogbaibhgnhhndojpepiihcmeb?hl=en-US) - [source](https://github.com/philc/vimium/blob/master/README.md)
-* [hidden](https://github.com/dwarvesf/hidden) - bartender alt opensource
-* [fruitjuice](http://fruitjuiceapp.com/) - $$
 
 ## Automation dreams and TODO
-
 
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
 * auto install https://github.com/iamadamdev/bypass-paywalls-chrome.git git clone - chrome://extensions - load https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * cli journal ? jyputer
 * numi alt
-* run monolingual
+* review zsh plugins
+* completions search
 * setup vscode sync
-* finder sidebar
-  * rm tags section
-  * add 'OS X' aka local mac install drive to finder sidebar
-  * adjust favorites
-    * [FinderSidebarEditor](https://github.com/robperc/FinderSidebarEditor)
-    * (home folder)
-    * Projects
-    * Recents
-    * Downloads
-    * Desktop
-    * Documents
-    * Applications
-    * Utilities
-    * cloud accounts...
 * Cal/Contacts/Mail Account
 * apple Account signin
 * darkreader site settings
 * set beyondcompare as merge tool
 * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
 * cask_args appdir: '/Applications'
-* after init.sh option to remove dockutil and others
 * powerline or zsh theme
-* brew install fzf $(brew --prefix)/opt/fzf/install
-* neofetch
-* config f.lux, including rm annon stats
-* battery health informer maybe
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * source some cool [functions](https://github.com/mathiasbynens/dotfiles/blob/main/.functions) like local http
-
-* defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
 * Wake on keyboard not mouse
 * Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
-* Last login: Sun Jan 24 18:55:04 on ttys000
-[oh-my-zsh] Insecure completion-dependent directories detected:
-drwxrwxr-x  7 ashtonian  admin  224 Jan 23 16:11 /usr/local/share/zsh
-drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-functions
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
-* init.sh uses comments to deliniate between laptop / desktop setups
 * shellsync, search, backup, history persistence, search, sync
 * desktop background + screen saver sync + setup per res
-* cron fetch (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others)
-* git/projects dir auto fetch
 * vscode snippets solution
 * script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
-* way to clone and archive n sync all star'd repos
+* way to clone and archive n sync all star'd repos* cron fetch (docker, git, gohome, npm, zsh, ohmyzsh, vim, + others
+# * git/projects dir auto fetchs
