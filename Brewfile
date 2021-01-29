@@ -7,166 +7,74 @@ tap "homebrew/cask-fonts"
 tap "homebrew/core"
 tap "homebrew/services"
 tap "isen-ng/dotnet-sdk-versions"
+tap "jakehilborn/jakehilborn"
 
-brew "awscli"
-brew "azure-cli"
-
+# Package Managers & Sys tools
+brew "dockutil"
 brew "mackup"
 brew "mas"
-brew "dockutil"
+cask "displayplacer"
+cask "mysides"
 
-brew "git"
-brew "git-lfs"
-brew "git-credential-manager"
-brew "zsh-git-prompt"
-cask "gitkraken"
+# Fun & Social
+cask "battle-net"
+cask "discord"
+cask "pulse-sms"
+cask "signal"
+cask "slack"
+cask "spotify-notifications"
+cask "spotify"
+cask "steam"
+cask "vlc"
+cask "vox"
 
-brew "grep"
-brew "moreutils"
-brew "findutils"
-brew "wget --with-iri"
-brew "autojump"
-brew "ssh-copy-id", link: true
-
-cask "docker"
-brew "docker-compose", link: false
-brew "docker-completion"
-brew "docker-compose-completion"
-brew "docker-machine-completion"
-
-brew "gnupg"
-brew "gnu-sed --with-default-names"
-brew "ack"
-brew "unbound"
-brew "blackbox"
-brew "sdl2"
-brew "freetds"
-brew "openjdk"
-brew "fzf"
-brew "highlight"
-brew "httrack"
-brew "lftp"
-
-
-
-brew "go"
-cask "goland"
-brew "golang-migrate"
-brew "swagger-codegen"
-brew "terraform"
-brew "wakatime-cli"
-
-brew "postgresql"
-brew "libpq"
-brew "vim --with-override-system-vi"
-brew "tree"
-
-brew "nvm"
-
-brew "gmp"
-brew "openssh"
-brew "screen"
-brew "php"
-brew "rsync"
-brew "scrcpy"
-brew "telnet"
-brew "tldr"
-
-brew "zsh"
-brew "zsh-history-substring-search"
-brew "zsh-lovers"
-brew "zsh-navigation-tools"
-
-brew "apm-bash-completion"
-brew "cargo-completion"
-brew "django-completion"
-brew "gem-completion"
-brew "gradle-completion"
-brew "grunt-completion"
-
+# Productivity & General
 brew "p7zip"
 cask "1password"
-cask "bartender"
-cask "alfred"
 cask "brave-browser"
-cask "cakebrew"
-cask "cheatsheet"
-cask "disk-inventory-x"
-cask "discord"
-cask "battle-net"
 cask "dropbox"
-cask "vlc"
 cask "flux"
 cask "google-backup-and-sync"
-cask "pulse-sms"
-cask "spotify"
-cask "spotify-notifications"
-cask "steam"
-cask "little-snitch"
-cask "macs-fan-control"
-cask "micro-snitch"
 cask "microsoft-office"
 cask "nordvpn"
 cask "notion"
 cask "numi"
-cask "onyx"
-cask "monolingual"
-
-
-# Fun & Social
-# Productivity 
-# Power User 
-# Dev
-
-
-
-cask "android-file-transfer"
-cask "android-platform-tools"
-cask "balenaetcher"
-cask "beyond-compare"
-cask "cyberduck"
-cask "dash"
-cask "dotnet-sdk"
-cask "dotnet-sdk-2.2.400"
-cask "font-firacode-nerd-font"
-cask "imageoptim"
-cask "insomnia"
-cask "iterm2"
-cask "java"
-cask "mysides"
-
-cask "opera"
-cask "pomodone"
-cask "postico"
-cask "protonmail-bridge"
-cask "provisionql"
-cask "qbittorrent"
 cask "quicken"
-cask "rcloneosx"
 cask "rescuetime"
 cask "selfcontrol"
-cask "signal"
-cask "slack"
-cask "soundflower"
+mas "1440", id: 1483764819
+mas "Day One", id: 1055511498
+mas "Horo", id: 1437226581
+mas "Monosnap", id: 540348655
+mas "Pocket", id: 568494494
+mas "Todoist", id: 585829637
+mas "Yoink", id: 457622435
 
-cask "suspicious-package"
-cask "thunderbird"
+# Power User
+cask "alfred"
+cask "balenaetcher"
+cask "bartender"
+cask "cakebrew"
+cask "cheatsheet"
+cask "disk-inventory-x"
+cask "imageoptim"
+cask "little-snitch"
+cask "macs-fan-control"
+cask "micro-snitch"
+cask "monolingual"
+cask "onyx"
+cask "soundflower"
 cask "tor-browser"
 cask "tunnelblick"
 cask "uhk-agent"
-cask "unetbootin"
-cask "viscosity"
-cask "visual-studio-code"
 cask "vmware-fusion"
-cask "vox"
-cask "wireshark"
-cask "wkhtmltopdf"
+cask "wkhtmltopdf" # Renders html to pdf
+mas "Disk Speed Test", id: 425264550
 
-# Quicklook plugins 
-cask "quicklook-csv"
-cask "quicklook-json"
-cask "quicklook-pat"
-cask "quicklookapk"
+# Quicklook plugins
+cask "apparency"
+cask "jupyter-notebook-ql"
+cask "provisionql"
 cask "qladdict"
 cask "qlcolorcode"
 cask "qlcommonmark"
@@ -180,17 +88,81 @@ cask "qlprettypatch"
 cask "qlstephen"
 cask "qlswift"
 cask "qlvideo"
+cask "quicklook-csv"
+cask "quicklook-json"
+cask "quicklook-pat"
+cask "quicklookapk"
+cask "suspicious-package"
 cask "webpquicklook"
-cask "jupyter-notebook-ql"
 
-
-mas "1440", id: 1483764819
-mas "Day One", id: 1055511498
-mas "Disk Speed Test", id: 425264550
-mas "Horo", id: 1437226581
-mas "Monosnap", id: 540348655
+# Dev
+brew "ack"
+brew "autojump"
+brew "awscli"
+brew "findutils"
+brew "fzf"
+brew "gmp"
+brew "gnu-sed --with-default-names"
+brew "gnupg"
+brew "grep"
+brew "lftp"
+brew "moreutils"
+brew "nvm"
+brew "openjdk"
+brew "openssh"
+brew "php"
+brew "rsync"
+brew "scrcpy"
+brew "ssh-copy-id", link: true
+brew "telnet"
+brew "tldr"
+brew "tree"
+brew "vim --with-override-system-vi"
+brew "wget --with-iri"
+cask "dash"
+cask "font-firacode-nerd-font"
+cask "insomnia"
+cask "iterm2"
+cask "java"
+cask "visual-studio-code"
+cask "wireshark"
 mas "OhMyStar", id: 1218642292
-mas "Pocket", id: 568494494
-mas "Todoist", id: 585829637
 mas "Xcode", id: 497799835
-mas "Yoink", id: 457622435
+
+brew "libpq"
+brew "postgresql"
+cask "postico"
+
+brew "go"
+brew "golang-migrate"
+brew "swagger-codegen"
+brew "terraform"
+brew "wakatime-cli"
+cask "goland"
+
+brew "git-credential-manager"
+brew "git-extras"
+brew "git-lfs"
+brew "git"
+brew "zsh-git-prompt"
+cask "beyond-compare"
+cask "diff-so-fancy"
+cask "gitkraken"
+
+brew "zsh-history-substring-search"
+brew "zsh-lovers"
+brew "zsh-navigation-tools"
+brew "zsh"
+
+brew "apm-bash-completion"
+brew "cargo-completion"
+brew "django-completion"
+brew "gem-completion"
+brew "gradle-completion"
+brew "grunt-completion"
+
+brew "docker-completion"
+brew "docker-compose-completion"
+brew "docker-compose", link: false
+brew "docker-machine-completion"
+cask "docker"
