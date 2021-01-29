@@ -53,8 +53,10 @@ git clone https://github.com/Ashtonian/-HOME.git
 
 ### Manual Things
 
+* enable cmd shft f ring central 
 * auto install https://github.com/iamadamdev/bypass-paywalls-chrome.git git clone - chrome://extensions - load
 * add dev apps to security, privacy "dev tools" category to avoid security policiy.
+* fix "are you sure you want to open app" 
 * run monolingual to save space on language packs and architectures
 * setup vscode sync
 * finder sidebar
@@ -72,6 +74,9 @@ git clone https://github.com/Ashtonian/-HOME.git
     * cloud accounts...
 * setup default browser `system preferences -> general`
 * 1password global shortcut cmd + \ conflicts with vscode split pane
+* Cal/Contacts/Mail Account
+* apple Account signin
+* darkreader site settings
 
 ## Inspiration and related
 
@@ -82,6 +87,7 @@ git clone https://github.com/Ashtonian/-HOME.git
 * [iCHAIT/awesome-macOS](https://github.com/iCHAIT/awesome-macOS)
 * [jaywcjlove/awesome-mac](https://github.com/jaywcjlove/awesome-mac#readme)
 * [serhii-londar/open-source-mac-os-apps](https://github.com/serhii-londar/open-source-mac-os-apps#readme)
+* [awesome macos command line](https://github.com/herrbischoff/awesome-macos-command-line)
 
 ## Software I want to checkout or configure
 
@@ -171,6 +177,14 @@ drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-funct
 * multi screen/tiling improvement
 * script hide all apps, empty trash
 * opensource pocket, notion, todoist
+* degoogle
+  * destore android 
+* kiwi mobile 
+* default zoom rate
+* amazon/shop price compare extension
+* extension review
+* alias for quickly initing repo with known gitignore and pushing to gh,bb,gitlab
+* way to clone and archive n sync all star'd repos
 
 Highlight:
 
@@ -183,3 +197,69 @@ Highlight:
 * zsh extensions
 * applications/shell scripts overview
 * brew + brewfile, mackup, mas, dockutil, sidebar util
+
+Watchlist: 
+
+* [Keepa](https://chrome.google.com/webstore/detail/keepa-amazon-price-tracke/neebplgakaahbhdphmkckjjcegoiijjo?hl=en)
+* [ChromeWebStoreSorter](https://github.com/ugur1yildiz/ChromeWebStoreSorter/blob/main/sorter.js)
+* [Fakespot Fake Amazon Reviews and eBay Sellers](https://chrome.google.com/webstore/detail/fakespot-fake-amazon-revi/nakplnnackehceedgkgkokbgbmfghain)
+* [Privacy Single Use physical or Digital cards](https://privacy.com/card-issuing)
+* [Tab Wrangler](https://chrome.google.com/webstore/detail/tab-wrangler/egnjhciaieeiiohknchakcodbpgjnchh?hl=en)
+* [Cluster Window Tab Manager](https://chrome.google.com/webstore/detail/cluster-window-tab-manage/aadahadfdmiibmdhfmpbeeebejmjnkef?hl=en) - move tabs between windows
+* [Toby](https://chrome.google.com/webstore/detail/toby-for-chrome/hddnkoipeenegfoeaoibdmnaalmgkpip?hl=en) - nice tab 'session' manager. 
+* [vimium](https://chrome.google.com/webstore/detail/vimium/dbepggeogbaibhgnhhndojpepiihcmeb?hl=en-US) - [source](https://github.com/philc/vimium/blob/master/README.md)
+* [Chrome extension Source Viewer](https://chrome.google.com/webstore/detail/chrome-extension-source-v/jifpbeccnghkjeaalbbjmodiffmgedin?hl=en-US)
+
+Brave Extensions: 
+
+* [extension manager (aka switcher)](https://chrome.google.com/webstore/detail/extensions-manager-aka-sw/lpleipinonnoibneeejgjnoeekmbopbc?hl=en-US) - [fork](https://gitlab.com/jcrben-not-mine/extensions-manager-aka-switcher)
+* [1password extension (Desktop version)](https://chrome.google.com/webstore/detail/1password-extension-deskt/aomjjhallfgjeglblehebfpbcfeobpgk)
+* [bypass paywalls (source only)](https://github.com/iamadamdev/bypass-paywalls-chrome)
+* [Adblock for youtube](https://chrome.google.com/webstore/detail/adblock-for-youtube/cmedhionkhpnakcndndgjdbohmhepckk/related)
+* [simple-allow-copy](https://chrome.google.com/webstore/detail/simple-allow-copy/aefehdhdciieocakfobpaaolhipkcpgc) - [source](https://github.com/FallenMax/chrome-extension-allow-copy)
+* [ublock origin](https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm?hl=en) - [source](https://github.com/gorhill/uBlock#ublock-origin)
+* [Smile Always](https://chrome.google.com/webstore/detail/smile-always/jgpmhnmjbhgkhpbgelalfpplebgfjmbf?hl=en)
+* [clearURLS](https://chrome.google.com/webstore/detail/clearurls/lckanjgmijmafbedllaakclkaicjfmnk?hl=en)
+* [dark reader](https://chrome.google.com/webstore/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh/related?hl=en)
+* [decentraleyes](https://chrome.google.com/webstore/detail/decentraleyes/ldpochfccmkkmhdbclfhpagapcfdljkj?hl=en)
+* [privacy badger](https://chrome.google.com/webstore/detail/privacy-badger/pkehgijcmpdhfbdbbnkijodmdjhbjlgp?hl=en-US) - [source](https://github.com/EFForg/privacybadger/)
+* [dont fuck with paste](https://chrome.google.com/webstore/detail/dont-fuck-with-paste/nkgllhigpcljnhoakjkgaieabnkmgdkb?hl=en-US) - [source](https://github.com/jswanner/DontFuckWithPaste)
+* [https everywhere](https://chrome.google.com/webstore/detail/https-everywhere/gcbommkclmclpchllfjekcdonpmejbdp/related?hl=en) - [source]( https://github.com/efforg/https-everywhere)
+* [json viewer](https://chrome.google.com/webstore/detail/json-viewer/gbmdgpbipfallnflgajpaliibnhdgobh?hl=en-US) - [source](https://github.com/tulios/json-viewer)
+* [just read](https://chrome.google.com/webstore/detail/just-read/dgmanlpmmkibanfdgjocnabmcaclkmod/related?hl=en) - [source](https://github.com/ZachSaucier/Just-Read)
+* [nordvpn](https://chrome.google.com/webstore/detail/nordvpn-%E2%80%94-1-vpn-chrome-ex/fjoaledfpmneenckfbpdfhkmimnjocfa?hl=en)
+* [notion web clipper](https://chrome.google.com/webstore/detail/notion-web-clipper/knheggckgoiihginacbkhaalnibhilkk?hl=en) - [source](https://github.com/webclipper/web-clipper)
+* [octotree](https://chrome.google.com/webstore/detail/octotree-github-code-tree/bkhaagjahfmjljalopjnoealnfndnagc) - [source](https://github.com/ovity/octotree)
+* [Reddit Enhancement Suite](https://chrome.google.com/webstore/detail/reddit-enhancement-suite/kbmfpngjjgdllneeigpgjifpgocmfgmb?hl=en-US) - [source](https://github.com/honestbleeps/Reddit-Enhancement-Suite)
+* [old reddit redirect](https://chrome.google.com/webstore/detail/old-reddit-redirect/dneaehbmnbhcippjikoajpoabadpodje?hl=en) - [source](https://github.com/tom-james-watson/old-reddit-redirect)
+* [regexp download organizer](https://chrome.google.com/webstore/detail/regexp-download-organizer/oamembonjndgangicfphlckkdmagpjlg?hl=en) - [source](https://github.com/unintended/download-organizer-chrome-extension)
+* [rescuetime](https://chrome.google.com/webstore/detail/rescuetime-for-chrome-and/bdakmnplckeopfghnlpocafcepegjeap?hl=en-US)
+* [save to pocket](https://chrome.google.com/webstore/detail/save-to-pocket/niloccemoadcdkdjlinkgdfekeahmflj?hl=en-US) - [source](https://github.cobm/Pocket/extension-save-to-pocket)
+* [sourcegraph](https://chrome.google.com/webstore/detail/sourcegraph/dgjhfomjieaadpoljlnidmbgkdffpack?hl=en) - [source](https://github.com/sourcegraph/sourcegraph/tree/main/client/browser)
+* [switch for pihole](https://chrome.google.com/webstore/detail/switch-for-pihole/ngoafjpapneaopfkpboebcahajopcifi?hl=en-US) - [source](https://github.com/badsgahhl/pihole-browser-extension)
+* [terms of service didn't read](https://chrome.google.com/webstore/detail/terms-of-service-didn%E2%80%99t-r/hjdoplcnndgiblooccencgcggcoihigg?hl=en) - [source](https://chrome.google.com/webstore/detail/terms-of-service-didn%E2%80%99t-r/hjdoplcnndgiblooccencgcggcoihigg/related?hl=en)
+* [todoist for chrome](https://chrome.google.com/webstore/detail/todoist-for-chrome/jldhpllghnbhlbpcmnajkpdmadaolakh?hl=en)
+* [ublock origin](https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm?hl=en) - [source](https://github.com/gorhill/uBlock)
+* [view image](https://chrome.google.com/webstore/detail/view-image/jpcmhcelnjdmblfmjabdeclccemkghjk?hl=en) - [source](https://github.com/bijij/ViewImage)
+* [vuejs dev tools](https://chrome.google.com/webstore/detail/vuejs-devtools/nhdogjmejiglipccpnnnanhbledajbpd/related?hl=en-US) - [source](https://github.com/vuejs/vue-devtools)
+* [wakatime](https://github.com/wakatime/chrome-wakatime) - [source](https://github.com/wakatime/chrome-wakatime)
+* [zenhub for github](https://chrome.google.com/webstore/detail/zenhub-for-github/ogcgkffhplmphkaahpmffcafajaocjbd?hl=en-US)
+* [ynab toolkit](https://chrome.google.com/webstore/detail/toolkit-for-ynab/lmhdkkhepllpnondndgpgclfjnlofgjl?hl=en) - [source](https://github.com/toolkit-for-ynab/toolkit-for-ynab/blob/master/docs/feature-list.md)
+* [hacker news ux](https://chrome.google.com/webstore/detail/hacker-news-ux/chngbdmhgakoomomnnhfapkpbalpmhid?hl=en) - [source](https://github.com/volos/HackerNewsUX)
+
+Safari: 
+
+* [1password extension ()]()
+* [adguard for safari](https://apps.apple.com/us/app/adguard-for-safari/id1440147259?mt=12)
+
+Kiwi (Android):
+
+* [ublock origin](https://chrome.google.com/webstore/detail/ublock-origin/cjpalhdlnbpafiamejdnhcphjbkeiagm?hl=en) - [source](https://github.com/gorhill/uBlock)
+* [https everywhere](https://chrome.google.com/webstore/detail/https-everywhere/gcbommkclmclpchllfjekcdonpmejbdp/related?hl=en) - [source]( https://github.com/efforg/https-everywhere)
+* [clearURLS](https://chrome.google.com/webstore/detail/clearurls/lckanjgmijmafbedllaakclkaicjfmnk?hl=en)
+* [dark reader](https://chrome.google.com/webstore/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh/related?hl=en)
+* [decentraleyes](https://chrome.google.com/webstore/detail/decentraleyes/ldpochfccmkkmhdbclfhpagapcfdljkj?hl=en)
+* [privacy badger](https://chrome.google.com/webstore/detail/privacy-badger/pkehgijcmpdhfbdbbnkijodmdjhbjlgp?hl=en-US) - [source](https://github.com/EFForg/privacybadger/)
+* [bypass paywalls (source only)](https://github.com/iamadamdev/bypass-paywalls-chrome)
+* [Reddit Enhancement Suite](https://chrome.google.com/webstore/detail/reddit-enhancement-suite/kbmfpngjjgdllneeigpgjifpgocmfgmb?hl=en-US) - [source](https://github.com/honestbleeps/Reddit-Enhancement-Suite)
+* [old reddit redirect](https://chrome.google.com/webstore/detail/old-reddit-redirect/dneaehbmnbhcippjikoajpoabadpodje?hl=en) - [source](https://github.com/tom-james-watson/old-reddit-redirect)
