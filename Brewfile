@@ -52,6 +52,8 @@ mas "Yoink", id: 457622435
 
 # Power User
 cask "alfred"
+cask "keycastr"
+cask "alt-tab"
 cask "balenaetcher"
 cask "bartender"
 cask "cakebrew"
@@ -70,6 +72,12 @@ cask "uhk-agent"
 cask "vmware-fusion"
 cask "wkhtmltopdf" # Renders html to pdf
 mas "Disk Speed Test", id: 425264550
+cask "beardedspice"
+cask "datweatherdoe"
+cask "meetingbar"
+cask "cryptomator"
+cask "netspot"
+
 
 # Quicklook plugins
 cask "apparency"
@@ -97,11 +105,18 @@ cask "webpquicklook"
 
 # Dev
 brew "ack"
+brew "bash"
 brew "autojump"
+brew "thefuck"
 brew "awscli"
 brew "findutils"
-brew "fzf"
+brew "fzy"
+brew "htop"
+cask 'keepingyouawake'
 brew "gmp"
+brew "asciinema"
+brew "direnv"
+brew "thefuck"
 brew "gnu-sed --with-default-names"
 brew "gnupg"
 brew "grep"
@@ -128,6 +143,11 @@ cask "visual-studio-code"
 cask "wireshark"
 mas "OhMyStar", id: 1218642292
 mas "Xcode", id: 497799835
+cask "keepingyouawake"
+brew "shellcheck"
+brew "pv"
+
+
 
 brew "libpq"
 brew "postgresql"
@@ -161,8 +181,10 @@ brew "gem-completion"
 brew "gradle-completion"
 brew "grunt-completion"
 
+brew "dive"
 brew "docker-completion"
 brew "docker-compose-completion"
 brew "docker-compose", link: false
 brew "docker-machine-completion"
 cask "docker"
+brew "docker-diff"

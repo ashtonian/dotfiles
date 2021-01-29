@@ -1,6 +1,6 @@
 
 # Create a new git repo with one README commit and CD into it
-# TODO: wrap new repo and
+# TODO: wrap new repo and include gitignore
 function gitnr() { mkdir $1; cd $1; git init; touch README; git add README; git commit -mFirst-commit;}
 
 # Do a Matrix movie effect of falling characters
