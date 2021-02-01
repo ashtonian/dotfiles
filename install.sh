@@ -13,7 +13,7 @@ source ./lib_sh/requirers.sh
 bot "Hi! I'm going to install tooling and tweak your system settings."
 
 #######################################################################################################################################
-bot "Configuring brew taps, casks & apps + mas apps + oh-my-zsh."
+bot "Configuring brew taps, casks & apps + mas apps + zsh config."
 #######################################################################################################################################
 
 # TODO: exit if no brew
@@ -21,10 +21,6 @@ bot "Configuring brew taps, casks & apps + mas apps + oh-my-zsh."
 # brew bundle dump -f
 # cat Brewfile| pbcopy
 # ```
-
-# running "Installing oh my zsh."
-# sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
-# ok
 
 # running "Turn off brew analytics."
 # brew analytics off
@@ -53,6 +49,43 @@ bot "Configuring mackup."
 # // TODO: // alias .macup.cfg to home dir
 # TODO: mackup restore
 
+
+###############################################################################
+# Login Window                                                                #
+###############################################################################
+
+running "Reveal system info (IP address, hostname, OS version, etc.) when clicking the clock in the login screen"
+sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
+ok
+
+running "Show language menu in the top right corner of the boot screen"
+sudo defaults write /Library/Preferences/com.apple.loginwindow showInputMenu -bool true
+ok
+
+# running "Disable guest login"
+# sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
+# ok
+
+# running "Add a message to the login screen"
+# sudo defaults write /Library/Preferences/com.apple.loginwindow LoginwindowText "Beware\! You are logging into Vijay's laptop\!"
+# ok
+
+# running "Change login screen background"
+# sudo defaults write /Library/Preferences/com.apple.loginwindow DesktopPicture "/Library/Desktop Pictures/Aqua Blue.jpg"
+# ok
+
+# running "Show Shutdown Button on Login Window"
+# defaults write com.apple.loginwindow ShutDownDisabled -bool false
+# ok
+
+# running "Remove Restart Button From Login Window"
+# defaults write com.apple.loginwindow RestartDisabled -bool true
+# ok
+
+running "Disable Login for Hidden User '>Console'"
+defaults write com.apple.loginwindow DisableConsoleAccess -bool true
+ok
+
 #######################################################################################################################################
 # General UI/UX                                                               #
 #######################################################################################################################################
@@ -79,8 +112,8 @@ running "Set sidebar icon size to medium."
 defaults write NSGlobalDomain NSTableViewDefaultSizeMode -int 2
 ok
 
-running "Always show scrollbars."
 # Possible values: `WhenScrolling`, `Automatic` and `Always`
+running "Always show scrollbars."
 defaults write NSGlobalDomain AppleShowScrollBars -string "Always"
 ok
 
@@ -133,7 +166,16 @@ ok
 
 running "Disable Resume system-wide (saving window state)."
 defaults write com.apple.systempreferences NSQuitAlwaysKeepsWindows -bool false
+defaults write -g NSQuitAlwaysKeepsWindows -bool false
 ok
+
+
+# This works, although the checkbox will still appear to be checked.
+running "Disable the 'reopen windows when logging back in' option"
+defaults write com.apple.loginwindow TALLogoutSavesState -bool false
+defaults write com.apple.loginwindow LoginwindowLaunchesRelaunchApps -bool false
+ok
+
 
 running "Disable Windows which were open prior to logging from reopening after logging in"
 defaults write com.apple.finder RestoreWindowState -bool false
@@ -156,10 +198,6 @@ ok
 # See https://github.com/mathiasbynens/dotfiles/issues/237
 #echo "0x08000100:0" > ~/.CFUserTextEncoding
 # ok
-
-running "Reveal IP address, hostname, OS version, etc. when clicking the clock in the login window."
-sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName
-ok
 
 # running "Disable Notification Center and remove the menu bar icon."
 # launchctl unload -w /System/Library/LaunchAgents/com.apple.notificationcenterui.plist 2> /dev/null
@@ -198,6 +236,21 @@ ok
 # running "Menu bar: disable transparency."
 # defaults write NSGlobalDomain AppleEnableMenuBarTransparency -bool false
 # ok
+
+running "Enable 64-bit Kernel"
+defaults write /Library/Preferences/SystemConfiguration/com.apple.Boot.plist "Kernel Flags" -string ""
+ok 
+
+# running "Set the some english acronyms/short forms for ease of typing"# defaults write -g NSUserDictionaryReplacementItems -array \
+#     '{ on = 1; replace = cyl; with = "Cya later!"; }' \
+#     '{ on = 1; replace = ttyl; with = "Talk to you later!"; }' \
+#     '{ on = 1; replace = omw; with = "On my way!"; }' \
+#     '{ on = 1; replace = omg; with = "Oh my God!"; }'
+# ok
+
+running "When switching applications, switch to respective space"
+defaults write -g AppleSpacesSwitchOnActivate -bool true
+ok
 
 #######################################################################################################################################
 bot "Configuring Trackpad, mouse, keyboard, Bluetooth accessories, and input."
@@ -569,6 +622,7 @@ ok
 # Four-letter codes for the other view modes: Flwv ▸ Cover Flow View Nlsv ▸ List View clmv ▸ Column View icnv ▸ Icon View
 running "Use list view in all Finder windows by default."
 defaults write com.apple.finder FXPreferredViewStyle -string "Nlsv"
+defaults write com.apple.finder SearchRecentsSavedViewStyle -string "Nlsv"
 ok
 
 running "Disable the warning before emptying the Trash."
@@ -601,8 +655,13 @@ defaults write com.apple.finder FXInfoPanesExpanded -dict \
 ok
 
 running "Show preview pane" Y
-  defaults write com.apple.finder ShowPreviewPane -bool true
-okf
+defaults write com.apple.finder ShowPreviewPane -bool true
+ok
+
+
+running "Allowing text selection in Quick Look/Preview in Finder by default"
+defaults write com.apple.finder QLEnableTextSelection -bool true
+ok
 
 # TODO: ds_store
 #######################################################################################################################################
@@ -688,6 +747,11 @@ running "Don’t show recent applications in Dock."
 defaults write com.apple.dock show-recents -bool false
 ok
 
+running "Disable multi-display swoosh animations"
+defaults write com.apple.dock workspaces-swoosh-animation-off -bool false
+ok
+
+
 # running "Disable the Launchpad gesture (pinch with thumb and three fingers)."
 # defaults write com.apple.dock showLaunchpadGestureEnabled -int 0
 # ok
@@ -709,6 +773,9 @@ ok
 # defaults write com.apple.dock persistent-others -array-add '{tile-data={}; tile-type="spacer-tile";}'
 # ok
 
+running "Add a 'Recent Applications' stack to the Dock"
+defaults write com.apple.dock persistent-others -array-add '{ "tile-data" = { "list-type" = 1; }; "tile-type" = "recents-tile"; }'
+ok
 
 # Hot corners
 # Possible values:
@@ -861,6 +928,12 @@ ok
 
 running "Enable continuous spellchecking."
 defaults write com.apple.SafariWebContinuousSpellCheckingEnabled -bool true
+ok
+
+running "Automatically grammar check web forms"
+defaults write com.apple.safari WebGrammarCheckingEnabled -bool true
+ok
+
 
 # running "Disable auto-correct."
 # defaults write com.apple.Safari WebAutomaticSpellingCorrectionEnabled -bool false
@@ -908,6 +981,20 @@ running "Update extensions automaticall."
 defaults write com.apple.Safari InstallExtensionUpdatesAutomatically -bool true
 ok
 
+# Requires Safari 5.0.1 or later. Feature that is intended to increase the speed at which pages load. DNS (Domain Name System) prefetching kicks in when you load a webpage that contains links to other pages. As soon as the initial page is loaded, Safari 5.0.1 (or later) begins resolving the listed links’ domain names to their IP addresses. Prefetching can occasionally result in 'slow performance, partially-loaded pages, or webpage ‘cannot be found’ messages.”
+running "Increase page load speed in Safari"
+defaults write com.apple.safari WebKitDNSPrefetchingEnabled -bool true
+ok
+
+running "Disable Data Detectors"
+defaults write com.apple.Safari WebKitUsesEncodingDetector -bool false
+ok
+
+running "Enable developer menu in Safari"
+defaults write com.apple.Safari IncludeDebugMenu -bool true
+ok
+
+
 #######################################################################################################################################
 bot "Configuring Mail."
 #######################################################################################################################################
@@ -938,6 +1025,10 @@ ok
 # running "Disable automatic spell checking."
 # defaults write com.apple.mail SpellCheckingBehavior -string "NoSpellCheckingEnabled"
 # ok
+
+running "Set a minimum font size of 15px (affects reading and sending email)"
+defaults write com.apple.mail MinimumHTMLFontSize 15
+ok
 
 #######################################################################################################################################
 bot "Configuring Spotlight."
@@ -1083,7 +1174,7 @@ defaults write com.apple.ActivityMonitor IconType -int 3
 ok
 
 #######################################################################################################################################
-bot "Configuring Address Book, Dashboard, iCal, TextEdit, and Disk Utility."
+bot "Configuring Address Book, Dashboard, iCal, TextEdit, Preview and Disk Utility."
 #######################################################################################################################################
 
 running "Enable the debug menu in Address Book"
@@ -1116,6 +1207,23 @@ running "Auto-play videos when opened with QuickTime Player"
 defaults write com.apple.QuickTimePlayerX MGPlayMovieOnOpen -bool true
 ok
 
+running "Shows all partitions for a disk in the main list"
+defaults write com.apple.DiskUtility DUShowEveryPartition -bool true
+ok
+
+running "Debug All Message Level"
+defaults write com.apple.DiskUtility DUDebugMessageLevel -int 4
+ok
+
+running "Show Details In First Aid"
+defaults write com.apple.DiskUtility DUShowDetailsInFirstAid -bool true
+ok
+
+
+running "Quit Always Keeps Windows"
+defaults write com.apple.Preview NSQuitAlwaysKeepsWindows -bool true
+ok
+
 #######################################################################################################################################
 bot "Configuring Mac App Store."
 #######################################################################################################################################
@@ -1138,6 +1246,10 @@ ok
 
 running "Download newly available updates in background."
 defaults write com.apple.SoftwareUpdate AutomaticDownload -int 1
+ok
+
+running "Show app-centric sidebar"
+defaults write com.apple.finder FK_AppCentricShowSidebar -bool true
 ok
 
 # running "Install System data files & security updates."
@@ -1289,10 +1401,6 @@ running "Do not show password hints."
 #sudo defaults write /Library/Preferences/com.apple.loginwindow RetriesUntilHint -int 0
 ok
 
-running "Disable guest account login."
-# sudo defaults write /Library/Preferences/com.apple.loginwindow GuestEnabled -bool false
-ok
-
 # running "Automatically lock the login keychain for inactivity after 6 hours."
 # security set-keychain-settings -t 21600 -l ~/Library/Keychains/login.keychain
 # ok
@@ -1334,6 +1442,76 @@ ok
 running "Empty Trash securely by default."
 defaults write com.apple.finder EmptyTrashSecurely -bool true
 ok
+
+###############################################################################
+# Monolingual                                                                 #
+###############################################################################
+
+running "Monolingual settings"
+defaults write net.sourceforge.Monolingual SUAutomaticallyUpdate -bool true
+defaults write net.sourceforge.Monolingual SUEnableAutomaticChecks -bool true
+defaults write net.sourceforge.Monolingual SUSendProfileInfo -bool false
+defaults write net.sourceforge.Monolingual Strip -bool true
+ok
+
+
+# ###############################################################################
+# # iTerm 2                                                                     #
+# ###############################################################################
+
+# # TODO: Need to set the keyboard overrides for "back/forward 1 word" AND "Jobs to Ignore"
+# running "iTerm2 settings"
+#  defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true
+# oklecode.iterm2 AppleAntiAliasingThreshold -bool true
+#  defaults write com.googlecode.iterm2 AppleScrollAnimationEnabled -bool false
+#  defaults write com.googlecode.iterm2 AppleSmoothFixedFontsSizeThreshold -bool true
+#  defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string "manual"
+#  defaults write com.googlecode.iterm2 AutoCommandHistory -bool false
+#  defaults write com.googlecode.iterm2 CheckTestRelease -bool true
+#  defaults write com.googlecode.iterm2 DimBackgroundWindows -bool true
+#  defaults write com.googlecode.iterm2 HideTab -bool false
+#  defaults write com.googlecode.iterm2 HotkeyMigratedFromSingleToMulti -bool true
+#  defaults write com.googlecode.iterm2 IRMemory -int 4
+#  defaults write com.googlecode.iterm2 NSFontPanelAttributes -string "1, 0"
+#  defaults write com.googlecode.iterm2 NSNavLastRootDirectory -string "${HOME}/Desktop"
+#  defaults write com.googlecode.iterm2 NSQuotedKeystrokeBinding -string ""
+#  defaults write com.googlecode.iterm2 NSScrollAnimationEnabled -bool false
+#  defaults write com.googlecode.iterm2 NSScrollViewShouldScrollUnderTitlebar -bool false
+#  defaults write com.googlecode.iterm2 NoSyncCommandHistoryHasEverBeenUsed -bool true
+#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste -bool true
+#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste_selection -bool false
+#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt -bool true
+#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt_selection -bool true
+#  defaults write com.googlecode.iterm2 NoSyncHaveRequestedFullDiskAccess -bool true
+#  defaults write com.googlecode.iterm2 NoSyncHaveWarnedAboutPasteConfirmationChange -bool true
+#  defaults write com.googlecode.iterm2 NoSyncPermissionToShowTip -bool true
+#  defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning -bool true
+#  defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning_selection -bool false
+#  defaults write com.googlecode.iterm2 OnlyWhenMoreTabs -bool false
+#  defaults write com.googlecode.iterm2 OpenArrangementAtStartup -bool false
+#  defaults write com.googlecode.iterm2 OpenNoWindowsAtStartup -bool false
+#  defaults write com.googlecode.iterm2 PromptOnQuit -bool false
+#  defaults write com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
+#  defaults write com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
+#  defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm;
+#  defaults write com.googlecode.iterm2 SUFeedURL -string "https://iterm2.com/appcasts/final.xml?shard=69"
+#  defaults write com.googlecode.iterm2 SUHasLaunchedBefore -bool true
+#  defaults write com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
+#  defaults write com.googlecode.iterm2 SavePasteHistory -bool false
+#  defaults write com.googlecode.iterm2 ShowBookmarkName -bool false
+#  defaults write com.googlecode.iterm2 SplitPaneDimmingAmount -string "0.4070612980769232"
+#  defaults write com.googlecode.iterm2 StatusBarPosition -integer 1
+#  defaults write com.googlecode.iterm2 SuppressRestartAnnouncement -bool true
+#  defaults write com.googlecode.iterm2 TabStyleWithAutomaticOption -integer 4
+#  defaults write com.googlecode.iterm2 TraditionalVisualBell -bool true
+#  defaults write com.googlecode.iterm2 UseBorder -bool true
+#  defaults write com.googlecode.iterm2 WordCharacters -string "/-+\\\\~-integer."
+#  defaults write com.googlecode.iterm2 findMode_iTerm -bool false
+#  defaults write com.googlecode.iterm2 kCPKSelectionViewPreferredModeKey -bool false
+#  defaults write com.googlecode.iterm2 kCPKSelectionViewShowHSBTextFieldsKey -bool false
+
+
+
 
 #######################################################################################################################################
 bot  "Kill affected applications."                                                  #

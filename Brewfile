@@ -8,6 +8,8 @@ tap "homebrew/core"
 tap "homebrew/services"
 tap "isen-ng/dotnet-sdk-versions"
 tap "jakehilborn/jakehilborn"
+tap browsh-org/homebrew-browsh
+tap microsoft/git
 
 # Package Managers & Sys tools
 brew "dockutil"
@@ -24,8 +26,9 @@ cask "slack"
 cask "spotify-notifications"
 cask "spotify"
 cask "steam"
-cask "vlc"
+cask "iina"
 cask "vox"
+cask "blackhole-16ch"
 
 # Productivity & General
 brew "p7zip"
@@ -104,11 +107,13 @@ cask "webpquicklook"
 
 # Dev
 brew "ack"
+brew "browsh"
 brew "asciinema"
-brew "autojump"
+brew "autojump" 
+brew "gibo"
 brew "awscli"
 brew "bash"
-brew "direnv"
+#brew "direnv" -> installed via zplug
 brew "findutils"
 brew "fzy"
 brew "gmp"
@@ -118,23 +123,21 @@ brew "grep"
 brew "htop"
 brew "lftp"
 brew "moreutils"
-brew "nvm"
-brew "openjdk"
+brew "nvm" 
+# brew "openjdk"
 brew "openssh"
 brew "php"
 brew "pv"
-brew "rsync"
+brew "rsync" 
 brew "scrcpy"
 brew "shellcheck"
 brew "ssh-copy-id", link: true
 brew "telnet"
 brew "thefuck"
-brew "thefuck"
 brew "tldr"
 brew "tree"
 brew "vim --with-override-system-vi"
 brew "wget --with-iri"
-cask 'keepingyouawake'
 cask "dash"
 cask "font-firacode-nerd-font"
 cask "insomnia"
@@ -157,31 +160,22 @@ brew "terraform"
 brew "wakatime-cli"
 cask "goland"
 
-brew "git-credential-manager"
-brew "git-extras"
-brew "git-lfs"
+brew "git-credential-manager-core"
+# brew "git-extras" -> installed via zplug 
+brew "git-lfs" # zplugin 
 brew "git"
 brew "zsh-git-prompt"
 cask "beyond-compare"
-cask "diff-so-fancy"
+# cask "diff-so-fancy" -> installed via zplug
 cask "gitkraken"
 
+brew "zsh-autosuggestions"  # Add  source #{HOMEBREW_PREFIX}/share/zsh-autosuggestions/zsh-autosuggestions.zsh -> .zshrc
 brew "zsh-history-substring-search"
 brew "zsh-lovers"
 brew "zsh-navigation-tools"
 brew "zsh"
 
-brew "apm-bash-completion"
-brew "cargo-completion"
-brew "django-completion"
-brew "gem-completion"
-brew "gradle-completion"
-brew "grunt-completion"
-
 brew "dive"
-brew "docker-completion"
-brew "docker-compose-completion"
 brew "docker-compose", link: false
 brew "docker-diff"
-brew "docker-machine-completion"
 cask "docker"

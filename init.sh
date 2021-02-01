@@ -203,8 +203,30 @@ fi
 #
 # * defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
 # * Last login: Sun Jan 24 18:55:04 on ttys000
-# [oh-my-zsh] Insecure completion-dependent directories detected:
-# drwxrwxr-x  7 ashtonian  admin  224 Jan 23 16:11 /usr/local/share/zsh
-# drwxrwxr-x  4 ashtonian  admin  128 Jan 20 14:39 /usr/local/share/zsh/site-functions
 # * init.sh uses comments to deliniate between laptop / desktop setups
 # * config f.lux, including rm annon stats
+# * ask user for project folder target 
+# * ask user for dotfiles
+
+# //TODO: 
+# TODO: ls nicer, ping 
+# alias ls='ls -aGFh'
+# alias ll='ls -l'
+# alias rm='rm -i'
+# alias ne='emacs'
+# alias dev='cd ~/dev'
+# alias ports='sudo netstat -tulanp'
+# * alias newtab='open -na "Brave Browser" --args -new-tab'
+# * alias amend='git commit --amend --no-edit
+# alias nano="vim"
+# alias reboot='sudo reboot'
+# alias ..='cd ..'
+# alias grep="grep --color=auto"
+# alias fgrep="fgrep --color=auto"
+# alias egrep="egrep --color=auto"
+# # make less accept color codes and re-output them
+# alias less="less -R"
+# 	alias ls="ls -F --color=auto --group-directories-first"
+# alias diff 
+
+alias yoink="open -a Yoink"
