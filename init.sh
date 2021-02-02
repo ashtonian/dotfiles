@@ -204,11 +204,11 @@ fi
 # * Last login: Sun Jan 24 18:55:04 on ttys000
 # * init.sh uses comments to deliniate between laptop / desktop setups
 # * config f.lux, including rm annon stats
-# * ask user for project folder target 
+# * ask user for project folder target
 # * ask user for dotfiles
 
-# //TODO: 
-# TODO: ls nicer, ping 
+# //TODO:
+# TODO: ls nicer, ping
 # alias ls='ls -aGFh'
 # alias ll='ls -l'
 # alias rm='rm -i'
@@ -226,7 +226,7 @@ fi
 # # make less accept color codes and re-output them
 # alias less="less -R"
 # 	alias ls="ls -F --color=auto --group-directories-first"
-# alias diff 
+# alias diff
 
 # alias yoink="open -a Yoink"
 
@@ -234,3 +234,5 @@ fi
 #   shell=${1-$SHELL}
 #   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 # }
+# TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
+# * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg

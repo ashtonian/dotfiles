@@ -1,0 +1,217 @@
+[user]
+  name = GITHUBFULLNAME
+  email = GITHUBEMAIL
+[github]
+  # https://github.com/blog/180-local-github-config
+  user = GITHUBUSER
+[color]
+# ui = true is a superset of all the more specific color options
+#  as documented at http://book.git-scm.com/5_customizing_git.html
+# When set to always, always use colors in all git commands which are capable of colored output.
+# When false, never. When set to true or auto, use colors only when the output is to the terminal.
+# When more specific variables of color.* are set, they always take precedence over this setting.
+# Defaults to false.
+  ui = auto
+  # diff = auto
+  # status = auto
+  # branch = auto
+
+[color "branch"]
+  current = yellow reverse
+  local = yellow
+  remote = green
+[color "diff"]
+  meta = yellow bold
+  frag = magenta bold
+  old = red bold
+  new = green bold
+[color "status"]
+  added = yellow
+  changed = green
+  untracked = cyan
+
+[advice]
+  statusHints = false
+
+[gui]
+  fontdiff = -family Monaco -size 14 -weight normal -slant roman -underline 0 -overstrike 0
+
+[core]
+  excludesfile = ~/.gitignore
+  quotepath = false
+  # line endings
+  # force LF during add
+  autocrlf = input
+  # autocrlf = true # for windows to convert to CRLF on checkout and LF on add
+  # warn but allow line ending conversion to proceed
+  safecrlf = warn
+  # prevent crlf (then you will have to deal with the problem -- dos2unix, etc)
+  #safecrlf = true
+  editor = vim
+  #editor = subl -w
+
+[apply]
+	# Detect whitespace errors when applying a patch.
+	whitespace = fix
+
+[rerere]
+  #Enable the recording of resolved conflicts, so that identical hunks can be resolved automatically later on
+  enabled = 1
+
+[difftool]
+  prompt = false
+
+[diff]
+  tool = vimdiff
+
+[init]
+  templatedir = ~/.dotfiles/.git_template
+
+[mergetool]
+  prompt = false
+  keepBackup = false
+
+[merge]
+  tool = vimdiff
+  # Always show a diffstat at the end of a merge
+  stat = true
+  conflictstyle = diff3
+
+[branch]
+    # Automatically set up pull to be --rebase
+    # autosetuprebase = always
+
+[credential]
+    # cache creds (git help credential-cache)
+  helper = cache
+
+[filter "tabspace"]
+  clean = expand -t 4
+
+[push]
+  default = matching
+	followTags = true
+
+[filter "media"]
+  required = true
+  clean = git media clean %f
+  smudge = git media smudge %f
+
+[filter "lfs"]
+  clean = git-lfs clean %f
+  smudge = git-lfs smudge %f
+  required = true
+
+
+
+[branch]
+
+	# Show most recently changed branches first.
+	sort = -committerdate
+
+[core]
+
+	# Use custom `.gitignore` and `.gitattributes`.
+	excludesfile = ~/.gitignore
+	attributesfile = ~/.gitattributes
+
+	# Treat spaces before tabs and all kinds of trailing whitespace as an error.
+	# [default] trailing-space: looks for spaces at the end of a line
+	# [default] space-before-tab: looks for spaces before tabs at the beginning of a line
+	whitespace = space-before-tab,-indent-with-non-tab,trailing-space
+
+	# Make `git rebase` safer on macOS.
+	# More info: <http://www.git-tower.com/blog/make-git-rebase-safe-on-osx/>
+	trustctime = false
+
+	# Prevent showing files whose names contain non-ASCII symbols as unversioned.
+	# http://michael-kuehnel.de/git/2014/11/21/git-mac-osx-and-german-umlaute.html
+	precomposeunicode = false
+
+	# Speed up commands involving untracked files such as `git status`.
+	# https://git-scm.com/docs/git-update-index#_untracked_cache
+	untrackedCache = true
+
+[color]
+
+	# Use colors in Git commands that are capable of colored output when
+	# outputting to the terminal. (This is the default setting in Git ≥ 1.8.4.)
+	ui = auto
+
+[color "branch"]
+
+	current = yellow reverse
+	local = yellow
+	remote = green
+# * set beyondcompare as merge tool
+
+[color "diff"]
+
+	meta = yellow bold
+	frag = magenta bold # line info
+	old = red # deletions
+	new = green # additions
+
+[color "status"]
+
+	added = yellow
+	changed = green
+	untracked = cyan
+
+[commit]
+
+	# https://help.github.com/articles/signing-commits-using-gpg/
+	gpgsign = true
+
+[diff]
+
+	# Detect copies as well as renames.
+	renames = copies
+
+[diff "bin"]
+
+	# Use `hexdump` to diff binary files.
+	textconv = hexdump -v -C
+
+[help]
+
+	# Automatically correct and execute mistyped commands.
+	autocorrect = 1
+
+[merge]
+
+	# Include summaries of merged commits in newly created merge commit messages
+	log = true
+
+[push]
+
+	# https://git-scm.com/docs/git-config#git-config-pushdefault
+	default = simple
+	# Make `git push` push relevant annotated tags when pushing branches out.
+	followTags = true
+
+# URL shorthands
+
+[url "git@github.com:"]
+
+	insteadOf = "gh:"
+	pushInsteadOf = "github:"
+	pushInsteadOf = "git://github.com/"
+
+[url "git://github.com/"]
+
+	insteadOf = "github:"
+
+[url "git@gist.github.com:"]
+
+	insteadOf = "gst:"
+	pushInsteadOf = "gist:"
+	pushInsteadOf = "git://gist.github.com/"
+
+[url "git://gist.github.com/"]
+
+	insteadOf = "gist:"
+
+[init]
+
+	defaultBranch = main

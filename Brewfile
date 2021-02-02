@@ -4,6 +4,7 @@ tap "homebrew/cask-drivers"
 tap "homebrew/cask-fonts"
 tap "homebrew/core"
 tap "homebrew/services"
+* cask_args appdir: '/Applications'
 
 # Package Managers & Sys tools
 brew "dockutil"
@@ -108,7 +109,7 @@ brew "browsh"
 # brew "direnv" -> installed via zplug
 brew "ack"
 brew "asciinema"
-brew "autojump" 
+brew "autojump"
 brew "awscli"
 brew "bash"
 brew "findutils"
@@ -122,11 +123,11 @@ brew "grep"
 brew "htop"
 brew "lftp"
 brew "moreutils"
-brew "nvm" 
+brew "nvm"
 brew "openssh"
 brew "php"
 brew "pv"
-brew "rsync" 
+brew "rsync"
 brew "scrcpy"
 brew "shellcheck"
 brew "ssh-copy-id", link: true
@@ -161,7 +162,7 @@ cask "goland"
 tap "microsoft/git"
 brew "git-credential-manager-core"
 
-# brew "git-extras" -> installed via zplug 
+# brew "git-extras" -> installed via zplug
 # cask "diff-so-fancy" -> installed via zplug
 brew "git-lfs"
 brew "git"

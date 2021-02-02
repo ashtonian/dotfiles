@@ -130,7 +130,7 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 * [appcleaner](https://freemacsoft.net/appcleaner/)
 * [asdf](https://asdf-vm.com/#/) - multi-cli version manager
-* [bashhub](https://github.com/rcaloras/bashhub-client) - bashhub eery terminal command accross all systems and provides powerful querying across all 
+* [bashhub](https://github.com/rcaloras/bashhub-client) - bashhub eery terminal command accross all systems and provides powerful querying across all
 * [boilr](https://github.com/tmrts/boilr) - bootstrapper
 * [brew-file](https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst)
 * [espanso](https://github.com/federico-terzi/espanso) - text expander
@@ -170,7 +170,7 @@ Extensions:
 ## Manual Work
 
 * Signin to Apple Account, Mail|Contacts|Calendar, RescueTime
-* VSCode, Alfred, Brave Sync Setup 
+* VSCode, Alfred, Brave Sync Setup
 * Install [bypass-paywalls-chrome](https://github.com/iamadamdev/bypass-paywalls-chrome.git) - [possible solution](https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line)
 
 ## Automation dreams and TODO
@@ -180,13 +180,9 @@ Extensions:
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * TODO: vscode settings sync
 * TODO: iterm2 plist gen
-* TODO: highlight flux, vscode, 
+* TODO: highlight flux, vscode,
 * TODO: review dropbox mackup
 * when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings
-* set beyondcompare as merge tool
-* ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
-* cask_args appdir: '/Applications'
-* better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * Wake on keyboard not mouse
 * Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
@@ -194,7 +190,7 @@ Extensions:
 * desktop background + screen saver sync + setup per res
 * soulution - cli journal ? jyputer
 * solution - sshkey, knownhosts manager/sync - is it wise?
-* solution - vscode snippets 
+* solution - vscode snippets
 * solution - script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
 * cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
 * horo, monosnap, ohmystar workflow
@@ -223,11 +219,13 @@ Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 * [numi](https://www.packal.org/workflow/numi)
 * [pocket-alfred](https://www.packal.org/workflow/pocket-alfred)
 
-vscode: 
 
+
+* [2gua.rainbow-brackets](https://marketplace.visualstudio.com/items?itemName=2gua.rainbow-brackets)
 * [766b.go-outliner](https://marketplace.visualstudio.com/items?itemName=766b.go-outliner)
 * [aaronpowell.vscode-profile-switcher](https://marketplace.visualstudio.com/items?itemName=aaronpowell.vscode-profile-switcher)
 * [abusaidm.html-snippets](https://marketplace.visualstudio.com/items?itemName=abusaidm.html-snippets)
+* [adpyke.codesnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap)
 * [AlanWalk.markdown-toc](https://marketplace.visualstudio.com/items?itemName=AlanWalk.markdown-toc)
 * [alefragnani.project-manager](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager)
 * [bajdzis.vscode-database](https://marketplace.visualstudio.com/items?itemName=bajdzis.vscode-database)
@@ -243,6 +241,7 @@ vscode:
 * [fabiospampinato.vscode-projects-plus-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus-todo-plus)
 * [fabiospampinato.vscode-projects-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus)
 * [fabiospampinato.vscode-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-todo-plus)
+* [file-icons.file-icons](https://marketplace.visualstudio.com/items?itemName=file-icons.file-icons)
 * [flesler.url-encode](https://marketplace.visualstudio.com/items?itemName=flesler.url-encode)
 * [GitHub.vscode-pull-request-github](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github)
 * [golang.Go](https://marketplace.visualstudio.com/items?itemName=golang.Go)
@@ -273,3 +272,4 @@ vscode:
 * [xabikos.JavaScriptSnippets](https://marketplace.visualstudio.com/items?itemName=xabikos.JavaScriptSnippets)
 * [yzhang.markdown-all-in-one](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
 * [zxh404.vscode-proto3](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
+vscode:

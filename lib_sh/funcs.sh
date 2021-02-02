@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 
-# TODO: wrap new repo and include gitignore
 function gitnr() { mkdir $1; cd $1; git init; touch README; git add README; git commit -mFirst-commit;}
 
 # Do a Matrix movie effect of falling characters

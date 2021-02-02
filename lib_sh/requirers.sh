@@ -106,3 +106,5 @@ function require_nvm() {
     fi
     ok
 }
+
+#TODO: Add Check only functions that test if a package is installed

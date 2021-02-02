@@ -117,10 +117,10 @@ zinit snippet OMZL::termsupport.zsh
 zinit snippet OMZL::theme-and-appearance.zsh
 zinit autoload'#manydots-magic' for knu/zsh-manydots-magic
 
-# zinit light zsh-users/zsh-completions
-# zinit load tysonwolker/iterm-tab-colors
-# zinit snippet OMZP::docker
-# zinit snippet OMZP::docker-compose
+zinit light zsh-users/zsh-completions
+zinit load tysonwolker/iterm-tab-colors
+zinit snippet OMZP::docker
+zinit snippet OMZP::docker-compose
 zinit light zdharma/zsh-diff-so-fancy
 zinit light zsh-users/zsh-history-substring-search
 zinit load aperezdc/zsh-fzy

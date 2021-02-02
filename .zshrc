@@ -1,5 +1,5 @@
 ##############################################################################
-# THEME - instant Prompt 
+# THEME - instant Prompt
 ##############################################################################
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
@@ -160,14 +160,15 @@ plugins=(
     z
     zsh_reload
     zsh-interactive-cd
+
     ###### Custom ####################################
     autoupdate
-    # iterm-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 
+    # iterm-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH/custom/plugins/zsh-tab-colors
     zsh-256color
     zsh-autosuggestions
     zsh-completions
     Zsh-Diff-So-Fancy
-    # zsh-fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25
+    # zsh-fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH/custom/plugins/sei40kr/fast-alias-tips
     zsh-fzy
     zsh-syntax-highlighting
     zsh-thefuck
@@ -176,28 +177,28 @@ plugins=(
 # zsh-completions
 autoload -U compinit && compinit
 
-# TODO: for gibo 
+# TODO: for gibo
 # mkdir -p $ZSH/custom/plugins/gibo/
 # ln -s /path/to/gibo-completion.zsh $ZSH/custom/plugins/gibo/gibo.plugin.zsh
 
 ##############################################################################
-# Plugins - Debug Load Time 
+# Plugins - Debug Load Time
 ##############################################################################
 PRINT_LOAD_TIME=false
 
-if $PRINT_LOAD_TIME; then 
+if $PRINT_LOAD_TIME; then
   for plugin ($plugins); do
     timer=$(($(gdate +%s%N)/1000000))
-    if [ -f $ZSH_CUSTOM/plugins/$plugin/$plugin.plugin.zsh ]; then  
-      source $ZSH_CUSTOM/plugins/$plugin/$plugin.plugin.zsh  
-    elif [ -f $ZSH/plugins/$plugin/$plugin.plugin.zsh ]; then  
-      source $ZSH/plugins/$plugin/$plugin.plugin.zsh  
-    fi  
+    if [ -f $ZSH_CUSTOM/plugins/$plugin/$plugin.plugin.zsh ]; then
+      source $ZSH_CUSTOM/plugins/$plugin/$plugin.plugin.zsh
+    elif [ -f $ZSH/plugins/$plugin/$plugin.plugin.zsh ]; then
+      source $ZSH/plugins/$plugin/$plugin.plugin.zsh
+    fi
     now=$(($(gdate +%s%N)/1000000))
-    elapsed=$(($now-$timer))  
-    echo $elapsed":" $plugin  
-  done 
-fi 
+    elapsed=$(($now-$timer))
+    echo $elapsed":" $plugin
+  done
+fi
 
 timezsh() {
   shell=${1-$SHELL}
@@ -211,8 +212,6 @@ source $ZSH/oh-my-zsh.sh
 
 # TODO: Cache
 eval "$(direnv hook zsh)"
-
-# TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh 
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
