@@ -14,18 +14,17 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 ### Global Shortcuts
 
-//TODO:
-* Timer (horo)
-* Screenshot
-* Record
+* 1password
 * Alfred
 * Cheetsheet
-* Todoist
-* Notion
-* yoink
-* 1password
 * Email/Cal/Contacts
 * move screens spaces
+* Notion
+* Record
+* Screenshot
+* Timer (horo)
+* Todoist
+* yoink
 
 ### iTerm2 Settings Highlights
 
@@ -114,7 +113,9 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 * [awesome alfred workflows](https://github.com/alfred-workflows/awesome-alfred-workflows), [workflows](https://github.com/zenorocha/alfred-workflows)
 * [awesome macos command line](https://github.com/herrbischoff/awesome-macos-command-line)
+* [awesome-bash-alias](https://github.com/vikaskyadav/awesome-bash-alias)
 * [awesome-dotfiles](https://github.com/webpro/awesome-dotfiles)
+* [defaults](https://github.com/aerobounce/defaults.sh) - convert user defaults (plist) into shell script with ease!
 * [dotfiles.github.com](https://github.com/dotfiles/dotfiles.github.com)
 * [iCHAIT/awesome-macOS](https://github.com/iCHAIT/awesome-macOS)
 * [jaywcjlove/awesome-mac](https://github.com/jaywcjlove/awesome-mac#readme)
@@ -124,17 +125,20 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 * [shell startup file order](https://shreevatsa.wordpress.com/2008/03/30/zshbash-startup-files-loading-order-bashrc-zshrc-etc/)
 * [vraravam brewfile](https://gist.github.com/vraravam/5e28ca1720c9dddacdc0e6db61e093fe)
 * [vraravam os x defaults gist](https://gist.github.com/vraravam/8c9eae91a3750bed86b81e3a4711f842)
-* [defaults](https://github.com/aerobounce/defaults.sh) - convert user defaults (plist) into shell script with ease!
-* [awesome-bash-alias](https://github.com/vikaskyadav/awesome-bash-alias)
 
 ## Evaluation & Watch List
 
+* [appcleaner](https://freemacsoft.net/appcleaner/)
 * [asdf](https://asdf-vm.com/#/) - multi-cli version manager
+* [bashhub](https://github.com/rcaloras/bashhub-client) - bashhub eery terminal command accross all systems and provides powerful querying across all 
+* [boilr](https://github.com/tmrts/boilr) - bootstrapper
 * [brew-file](https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst)
 * [espanso](https://github.com/federico-terzi/espanso) - text expander
 * [ferdi](https://getferdi.com/) - unified notifications - no signal
 * [findergo](https://github.com/onmyway133/FinderGo) - add open to term to finder
+* [how2](https://github.com/santinic/how2) - a sh snippet search util with natural language
 * [krisp.ai](https://krisp.ai/pricing/) - Mute background noise, $$ tho
+* [ls++](https://github.com/trapd00r/ls--),[lsp](https://raw.githubusercontent.com/dborzov/lsp/screenshots/symlinks.png) - wise to alias?
 * [macOS GateKeeper Helper](https://github.com/wynioux/macOS-GateKeeper-Helper)
 * [micktagger](https://micktagger.app/) - easy to add song to multiple sptofiy playlists
 * [moom](https://manytricks.com/moom/),[divvy](https://mizage.com/divvy/),[rectangle](https://rectangleapp.com/) or [Amethyst](https://github.com/ianyh/Amethyst), [Magnet](https://apps.apple.com/ca/app/magnet/id441258766?mt=12), [bettersnaptool](https://folivora.ai/bettersnaptool),[cinch](https://apps.apple.com/fr/app/cinch/id412529613?mt=12) - tiling solution potentially with solution to move screens/spaces across monitor.
@@ -144,16 +148,11 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 * [prettyping](https://denilson.sa.nom.br/prettyping/) - wrap around ping, wise to alias
 * [Privacy Single Use physical or Digital cards](https://privacy.com/card-issuing)
 * [raycast](https://raycast.com/) - cool alfred like but for web apps, only a few apps.
-* [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
-* [VimMotion](https://github.com/dwarvesf/VimMotionApp)
 * [selfcontrol](https://selfcontrolapp.com/), [focus](https://heyfocus.com/) - currently use rescuetimes version, like this not sure if this is better
-* [appcleaner](https://freemacsoft.net/appcleaner/)
+* [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
 * [soulver](https://www.acqualia.com/soulver/) - numi alternative
-* [bashhub](https://github.com/rcaloras/bashhub-client) - bashhub eery terminal command accross all systems and provides powerful querying across all 
-* [boilr](https://github.com/tmrts/boilr) - bootstrapper
-* [how2](https://github.com/santinic/how2) - a sh snippet search util with natural language
-* [ls++](https://github.com/trapd00r/ls--),[lsp](https://raw.githubusercontent.com/dborzov/lsp/screenshots/symlinks.png) - wise to alias?
 * [sshrc](https://github.com/cdown/sshrc) - Bring your .bashrc, .vimrc, etc. with you when you ssh
+* [VimMotion](https://github.com/dwarvesf/VimMotionApp)
 
 Extensions:
 
@@ -170,7 +169,7 @@ Extensions:
 
 ## Manual Work
 
-* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime,
+* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime
 * VSCode, Alfred, Brave Sync Setup 
 * Install [bypass-paywalls-chrome](https://github.com/iamadamdev/bypass-paywalls-chrome.git) - [possible solution](https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line)
 
@@ -179,25 +178,21 @@ Extensions:
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
 
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
-* cli journal ? jyputer
 * TODO: vscode settings sync
 * TODO: iterm2 plist gen
 * TODO: highlight flux, vscode, 
 * TODO: review dropbox mackup
-* review zsh plugins
-* completions search
-* doc/link darkreader site settings
-* https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/ - when big sur is ready use disable menu bar autohide and adjust settings
+* when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings
 * set beyondcompare as merge tool
 * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
 * cask_args appdir: '/Applications'
-* powerline or zsh theme
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * Wake on keyboard not mouse
 * Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
 * shellsync, search, backup, history persistence, search, sync
 * desktop background + screen saver sync + setup per res
+* soulution - cli journal ? jyputer
 * solution - sshkey, knownhosts manager/sync - is it wise?
 * solution - vscode snippets 
 * solution - script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
@@ -211,70 +206,70 @@ Alfred Workflows:
 
 Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 
-* https://www.alfredapp.com/blog/productivity/dash-quicker-api-documentation-search/
-* [numi](https://www.packal.org/workflow/numi)
-* [flush-dns-106-110](https://www.packal.org/workflow/flush-dns-106-110)
-* [pocket-alfred](https://www.packal.org/workflow/pocket-alfred)
-* [alfred-pocket](https://github.com/fniephaus/alfred-pocket)
-* [alfred-convert](https://github.com/deanishe/alfred-convert)
-* [alfred-workflow-todoist](https://github.com/moranje/alfred-workflow-todoist)
-* [alfred-fkill](https://github.com/SamVerschueren/alfred-fkill)
-* [Alfred-WordSearch](https://github.com/isaacpz/Alfred-WordSearch)
-* [notion-search-alfred-workflow/](https://github.com/wrjlewis/notion-search-alfred-workflow/)
-* [moment](https://www.packal.org/workflow/moment)
-* [alfred-workflows/tree/master/StrongPassword](https://github.com/vitorgalvao/alfred-workflows/tree/master/StrongPassword)
-* [alfred-sshs](https://github.com/deanishe/alfred-sshs)
-* [alfred-bluetooth-workflow](https://github.com/tilmanginzel/alfred-bluetooth-workflow)
 * [advanced-google-maps-alfred-workflow?](https://github.com/stuartcryan/advanced-google-maps-alfred-workflow)
+* [alfred-bluetooth-workflow](https://github.com/tilmanginzel/alfred-bluetooth-workflow)
+* [alfred-convert](https://github.com/deanishe/alfred-convert)
+* [alfred-fkill](https://github.com/SamVerschueren/alfred-fkill)
+* [alfred-pocket](https://github.com/fniephaus/alfred-pocket)
+* [alfred-sshs](https://github.com/deanishe/alfred-sshs)
 * [alfred-vpn](https://github.com/stve/alfred-vpn)
+* [Alfred-WordSearch](https://github.com/isaacpz/Alfred-WordSearch)
+* [alfred-workflow-todoist](https://github.com/moranje/alfred-workflow-todoist)
+* [alfred-workflows/tree/master/StrongPassword](https://github.com/vitorgalvao/alfred-workflows/tree/master/StrongPassword)
+* [dash](https://www.alfredapp.com/blog/productivity/dash-quicker-api-documentation-search/)
+* [flush-dns-106-110](https://www.packal.org/workflow/flush-dns-106-110)
+* [moment](https://www.packal.org/workflow/moment)
+* [notion-search-alfred-workflow/](https://github.com/wrjlewis/notion-search-alfred-workflow/)
+* [numi](https://www.packal.org/workflow/numi)
+* [pocket-alfred](https://www.packal.org/workflow/pocket-alfred)
 
 vscode: 
 
-* [christian-kohler.npm-intellisense](https://marketplace.visualstudio.com/items?itemName=christian-kohler.npm-intellisense)
-* [streetsidesoftware.code-spell-checker](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
-* [GitHub.vscode-pull-request-github](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github)
-* [sdras.vue-vscode-snippets](https://marketplace.visualstudio.com/items?itemName=sdras.vue-vscode-snippets)
-* [ms-kubernetes-tools.vscode-kubernetes-tools](https://marketplace.visualstudio.com/items?itemName=ms-kubernetes-tools.vscode-kubernetes-tools)
-* [fabiospampinato.vscode-projects-plus-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus-todo-plus)
-* [bajdzis.vscode-database](https://marketplace.visualstudio.com/items?itemName=bajdzis.vscode-database)
-* [christian-kohler.path-intellisense](https://marketplace.visualstudio.com/items?itemName=christian-kohler.path-intellisense)
+* [766b.go-outliner](https://marketplace.visualstudio.com/items?itemName=766b.go-outliner)
 * [aaronpowell.vscode-profile-switcher](https://marketplace.visualstudio.com/items?itemName=aaronpowell.vscode-profile-switcher)
+* [abusaidm.html-snippets](https://marketplace.visualstudio.com/items?itemName=abusaidm.html-snippets)
 * [AlanWalk.markdown-toc](https://marketplace.visualstudio.com/items?itemName=AlanWalk.markdown-toc)
 * [alefragnani.project-manager](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager)
-* [octref.vetur](https://marketplace.visualstudio.com/items?itemName=octref.vetur)
-* [fabiospampinato.vscode-markdown-todo](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-markdown-todo)
-* [darkriszty.markdown-table-prettify](https://marketplace.visualstudio.com/items?itemName=darkriszty.markdown-table-prettify)
-* [yzhang.markdown-all-in-one](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
-* [run-at-scale.terraform-doc-snippets](https://marketplace.visualstudio.com/items?itemName=run-at-scale.terraform-doc-snippets)
-* [deerawan.vscode-dash](https://marketplace.visualstudio.com/items?itemName=deerawan.vscode-dash)
-* [DavidAnson.vscode-markdownlint](https://marketplace.visualstudio.com/items?itemName=DavidAnson.vscode-markdownlint)
-* [eamodio.gitlens](https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens)
-* [mohsen1.prettify-json](https://marketplace.visualstudio.com/items?itemName=mohsen1.prettify-json)
-* [flesler.url-encode](https://marketplace.visualstudio.com/items?itemName=flesler.url-encode)
-* [fabiospampinato.vscode-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-todo-plus)
-* [fabiospampinato.vscode-projects-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus)
-* [xabikos.JavaScriptSnippets](https://marketplace.visualstudio.com/items?itemName=xabikos.JavaScriptSnippets)
-* [qcz.text-power-tools](https://marketplace.visualstudio.com/items?itemName=qcz.text-power-tools)
-* [Gruntfuggly.todo-tree](https://marketplace.visualstudio.com/items?itemName=Gruntfuggly.todo-tree)
-* [tht13.html-preview-vscode](https://marketplace.visualstudio.com/items?itemName=tht13.html-preview-vscode)
-* [redhat.vscode-yaml](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
-* [mikestead.dotenv](https://marketplace.visualstudio.com/items?itemName=mikestead.dotenv)
+* [bajdzis.vscode-database](https://marketplace.visualstudio.com/items?itemName=bajdzis.vscode-database)
+* [christian-kohler.npm-intellisense](https://marketplace.visualstudio.com/items?itemName=christian-kohler.npm-intellisense)
+* [christian-kohler.path-intellisense](https://marketplace.visualstudio.com/items?itemName=christian-kohler.path-intellisense)
 * [CoenraadS.bracket-pair-colorizer](https://marketplace.visualstudio.com/items?itemName=CoenraadS.bracket-pair-colorizer)
 * [d-koppenhagen.file-tree-to-text-generator](https://marketplace.visualstudio.com/items?itemName=d-koppenhagen.file-tree-to-text-generator)
-* [nmsmith89.incrementor](https://marketplace.visualstudio.com/items?itemName=nmsmith89.incrementor)
-* [WakaTime.vscode-wakatime](https://marketplace.visualstudio.com/items?itemName=WakaTime.vscode-wakatime)
-* [zxh404.vscode-proto3](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
-* [766b.go-outliner](https://marketplace.visualstudio.com/items?itemName=766b.go-outliner)
-* [marclipovsky.string-manipulation](https://marketplace.visualstudio.com/items?itemName=marclipovsky.string-manipulation)
-* [Tyriar.sort-lines](https://marketplace.visualstudio.com/items?itemName=Tyriar.sort-lines)
-* [HashiCorp.terraform](https://marketplace.visualstudio.com/items?itemName=HashiCorp.terraform)
-* [piotrpalarz.vscode-gitignore-generator](https://marketplace.visualstudio.com/items?itemName=piotrpalarz.vscode-gitignore-generator)
-* [wmaurer.vscode-jumpy](https://marketplace.visualstudio.com/items?itemName=wmaurer.vscode-jumpy)
-* [vscode-icons-team.vscode-icons](https://marketplace.visualstudio.com/items?itemName=vscode-icons-team.vscode-icons)
-* [Shan.code-settings-sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)
-* [mitchdenny.ecdc](https://marketplace.visualstudio.com/items?itemName=mitchdenny.ecdc)
-* [abusaidm.html-snippets](https://marketplace.visualstudio.com/items?itemName=abusaidm.html-snippets)
+* [darkriszty.markdown-table-prettify](https://marketplace.visualstudio.com/items?itemName=darkriszty.markdown-table-prettify)
+* [DavidAnson.vscode-markdownlint](https://marketplace.visualstudio.com/items?itemName=DavidAnson.vscode-markdownlint)
+* [deerawan.vscode-dash](https://marketplace.visualstudio.com/items?itemName=deerawan.vscode-dash)
+* [eamodio.gitlens](https://marketplace.visualstudio.com/items?itemName=eamodio.gitlens)
+* [fabiospampinato.vscode-markdown-todo](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-markdown-todo)
+* [fabiospampinato.vscode-projects-plus-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus-todo-plus)
+* [fabiospampinato.vscode-projects-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus)
+* [fabiospampinato.vscode-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-todo-plus)
+* [flesler.url-encode](https://marketplace.visualstudio.com/items?itemName=flesler.url-encode)
+* [GitHub.vscode-pull-request-github](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github)
 * [golang.Go](https://marketplace.visualstudio.com/items?itemName=golang.Go)
-* [wayou.vscode-todo-highlight](https://marketplace.visualstudio.com/items?itemName=wayou.vscode-todo-highlight)
+* [Gruntfuggly.todo-tree](https://marketplace.visualstudio.com/items?itemName=Gruntfuggly.todo-tree)
+* [HashiCorp.terraform](https://marketplace.visualstudio.com/items?itemName=HashiCorp.terraform)
+* [marclipovsky.string-manipulation](https://marketplace.visualstudio.com/items?itemName=marclipovsky.string-manipulation)
+* [mikestead.dotenv](https://marketplace.visualstudio.com/items?itemName=mikestead.dotenv)
+* [mitchdenny.ecdc](https://marketplace.visualstudio.com/items?itemName=mitchdenny.ecdc)
+* [mohsen1.prettify-json](https://marketplace.visualstudio.com/items?itemName=mohsen1.prettify-json)
+* [ms-kubernetes-tools.vscode-kubernetes-tools](https://marketplace.visualstudio.com/items?itemName=ms-kubernetes-tools.vscode-kubernetes-tools)
 * [ms-toolsai.jupyter](https://marketplace.visualstudio.com/items?itemName=ms-toolsai.jupyter)
+* [nmsmith89.incrementor](https://marketplace.visualstudio.com/items?itemName=nmsmith89.incrementor)
+* [octref.vetur](https://marketplace.visualstudio.com/items?itemName=octref.vetur)
+* [piotrpalarz.vscode-gitignore-generator](https://marketplace.visualstudio.com/items?itemName=piotrpalarz.vscode-gitignore-generator)
+* [qcz.text-power-tools](https://marketplace.visualstudio.com/items?itemName=qcz.text-power-tools)
+* [redhat.vscode-yaml](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml)
+* [run-at-scale.terraform-doc-snippets](https://marketplace.visualstudio.com/items?itemName=run-at-scale.terraform-doc-snippets)
+* [sdras.vue-vscode-snippets](https://marketplace.visualstudio.com/items?itemName=sdras.vue-vscode-snippets)
+* [Shan.code-settings-sync](https://marketplace.visualstudio.com/items?itemName=Shan.code-settings-sync)
+* [streetsidesoftware.code-spell-checker](https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker)
 * [tamasfe.even-better-toml](https://marketplace.visualstudio.com/items?itemName=tamasfe.even-better-toml)
+* [tht13.html-preview-vscode](https://marketplace.visualstudio.com/items?itemName=tht13.html-preview-vscode)
+* [Tyriar.sort-lines](https://marketplace.visualstudio.com/items?itemName=Tyriar.sort-lines)
+* [vscode-icons-team.vscode-icons](https://marketplace.visualstudio.com/items?itemName=vscode-icons-team.vscode-icons)
+* [WakaTime.vscode-wakatime](https://marketplace.visualstudio.com/items?itemName=WakaTime.vscode-wakatime)
+* [wayou.vscode-todo-highlight](https://marketplace.visualstudio.com/items?itemName=wayou.vscode-todo-highlight)
+* [wmaurer.vscode-jumpy](https://marketplace.visualstudio.com/items?itemName=wmaurer.vscode-jumpy)
+* [xabikos.JavaScriptSnippets](https://marketplace.visualstudio.com/items?itemName=xabikos.JavaScriptSnippets)
+* [yzhang.markdown-all-in-one](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
+* [zxh404.vscode-proto3](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
