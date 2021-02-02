@@ -229,4 +229,9 @@ fi
 # 	alias ls="ls -F --color=auto --group-directories-first"
 # alias diff 
 
-alias yoink="open -a Yoink"
+# alias yoink="open -a Yoink"
+
+# timezsh() {
+#   shell=${1-$SHELL}
+#   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
+# }

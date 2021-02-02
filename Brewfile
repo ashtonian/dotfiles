@@ -1,34 +1,30 @@
-tap "caskroom/cask"
-tap "drone/drone"
 tap "homebrew/bundle"
 tap "homebrew/cask"
 tap "homebrew/cask-drivers"
 tap "homebrew/cask-fonts"
 tap "homebrew/core"
 tap "homebrew/services"
-tap "isen-ng/dotnet-sdk-versions"
-tap "jakehilborn/jakehilborn"
-tap browsh-org/homebrew-browsh
-tap microsoft/git
 
 # Package Managers & Sys tools
 brew "dockutil"
 brew "mackup"
 brew "mas"
+
+tap "jakehilborn/jakehilborn"
 cask "displayplacer"
 
 # Fun & Social
 cask "battle-net"
+cask "blackhole-16ch"
 cask "discord"
+cask "iina"
 cask "pulse-sms"
 cask "signal"
 cask "slack"
-cask "spotify-notifications"
+cask "soundsource"
 cask "spotify"
 cask "steam"
-cask "iina"
 cask "vox"
-cask "blackhole-16ch"
 
 # Productivity & General
 brew "p7zip"
@@ -44,13 +40,13 @@ cask "numi"
 cask "quicken"
 cask "rescuetime"
 cask "selfcontrol"
-mas "1440", id: 1483764819
-mas "Day One", id: 1055511498
-mas "Horo", id: 1437226581
-mas "Monosnap", id: 540348655
-mas "Pocket", id: 568494494
-mas "Todoist", id: 585829637
-mas "Yoink", id: 457622435
+#TODO: sign in mas "1440", id: 1483764819
+#TODO: sign in mas "Day One", id: 1055511498
+#TODO: sign in mas "Horo", id: 1437226581
+#TODO: sign in mas "Monosnap", id: 540348655
+#TODO: sign in mas "Pocket", id: 568494494
+#TODO: sign in mas "Todoist", id: 585829637
+#TODO: sign in mas "Yoink", id: 457622435
 
 # Power User
 cask "alfred"
@@ -72,13 +68,13 @@ cask "micro-snitch"
 cask "monolingual"
 cask "netspot"
 cask "onyx"
-cask "soundflower"
+cask "soundfloer"
 cask "tor-browser"
 cask "tunnelblick"
 cask "uhk-agent"
 cask "vmware-fusion"
 cask "wkhtmltopdf" # Renders html to pdf
-mas "Disk Speed Test", id: 425264550
+#TODO: sign in mas "Disk Speed Test", id: 425264550
 
 
 # Quicklook plugins
@@ -106,16 +102,20 @@ cask "suspicious-package"
 cask "webpquicklook"
 
 # Dev
-brew "ack"
+tap "browsh-org/homebrew-browsh"
 brew "browsh"
+
+# brew "openjdk"
+# brew "direnv" -> installed via zplug
+brew "ack"
 brew "asciinema"
 brew "autojump" 
-brew "gibo"
 brew "awscli"
 brew "bash"
-#brew "direnv" -> installed via zplug
 brew "findutils"
+brew "fzf" #required via zsh-interactive-cd
 brew "fzy"
+brew "gibo"
 brew "gmp"
 brew "gnu-sed --with-default-names"
 brew "gnupg"
@@ -124,7 +124,6 @@ brew "htop"
 brew "lftp"
 brew "moreutils"
 brew "nvm" 
-# brew "openjdk"
 brew "openssh"
 brew "php"
 brew "pv"
@@ -146,8 +145,8 @@ cask "java"
 cask "keepingyouawake"
 cask "visual-studio-code"
 cask "wireshark"
-mas "OhMyStar", id: 1218642292
-mas "Xcode", id: 497799835
+#TODO: sign in mas "OhMyStar", id: 1218642292
+#TODO: sign in mas "Xcode", id: 497799835
 
 brew "libpq"
 brew "postgresql"
@@ -160,16 +159,17 @@ brew "terraform"
 brew "wakatime-cli"
 cask "goland"
 
+tap "microsoft/git"
 brew "git-credential-manager-core"
+
 # brew "git-extras" -> installed via zplug 
-brew "git-lfs" # zplugin 
+# cask "diff-so-fancy" -> installed via zplug
+brew "git-lfs"
 brew "git"
 brew "zsh-git-prompt"
 cask "beyond-compare"
-# cask "diff-so-fancy" -> installed via zplug
 cask "gitkraken"
 
-brew "zsh-autosuggestions"  # Add  source #{HOMEBREW_PREFIX}/share/zsh-autosuggestions/zsh-autosuggestions.zsh -> .zshrc
 brew "zsh-history-substring-search"
 brew "zsh-lovers"
 brew "zsh-navigation-tools"

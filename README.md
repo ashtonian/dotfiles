@@ -204,6 +204,8 @@ Extensions:
 * cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
 * horo, monosnap, ohmystar workflow
 * git/projects dir auto fetchs
+* TODO: sync and update git clone https://github.com/dracula/iterm.git
+* A program tried to load new system extension(s) signed by “MATT INGALLS”.  If you want to enable these extensions, open Security & Privacy System Preferences.
 
 Alfred Workflows:
 
