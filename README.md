@@ -21,10 +21,14 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 * move screens spaces
 * Notion
 * Record
-* Screenshot
+* MonoSnap - screenshot/record
 * Timer (horo)
 * Todoist
 * yoink
+* numi  <kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd>
+* Micktagger
+* alttab?
+* 
 
 ### iTerm2 Settings Highlights
 
@@ -128,31 +132,12 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 
 ## Evaluation & Watch List
 
-* [appcleaner](https://freemacsoft.net/appcleaner/)
 * [asdf](https://asdf-vm.com/#/) - multi-cli version manager
-* [bashhub](https://github.com/rcaloras/bashhub-client) - bashhub eery terminal command accross all systems and provides powerful querying across all 
-* [boilr](https://github.com/tmrts/boilr) - bootstrapper
 * [brew-file](https://github.com/rcmdnk/homebrew-file/blob/master/docs/index.rst)
-* [espanso](https://github.com/federico-terzi/espanso) - text expander
-* [ferdi](https://getferdi.com/) - unified notifications - no signal
-* [findergo](https://github.com/onmyway133/FinderGo) - add open to term to finder
-* [how2](https://github.com/santinic/how2) - a sh snippet search util with natural language
-* [krisp.ai](https://krisp.ai/pricing/) - Mute background noise, $$ tho
-* [ls++](https://github.com/trapd00r/ls--),[lsp](https://raw.githubusercontent.com/dborzov/lsp/screenshots/symlinks.png) - wise to alias?
-* [macOS GateKeeper Helper](https://github.com/wynioux/macOS-GateKeeper-Helper)
-* [micktagger](https://micktagger.app/) - easy to add song to multiple sptofiy playlists
-* [moom](https://manytricks.com/moom/),[divvy](https://mizage.com/divvy/),[rectangle](https://rectangleapp.com/) or [Amethyst](https://github.com/ianyh/Amethyst), [Magnet](https://apps.apple.com/ca/app/magnet/id441258766?mt=12), [bettersnaptool](https://folivora.ai/bettersnaptool),[cinch](https://apps.apple.com/fr/app/cinch/id412529613?mt=12) - tiling solution potentially with solution to move screens/spaces across monitor.
+* [moom](https://manytricks.com/moom/),[divvy](https://mizage.com/divvy/),[rectangle](https://rectangleapp.com/) or [Amethyst](https://github.com/ianyh/Amethyst), [Magnet](https://apps.apple.com/ca/app/magnet/id441258766?mt=12), [bettersnaptool](https://folivora.ai/bettersnaptool),[cinch](https://apps.apple.com/fr/app/cinch/id412529613?mt=12) - tiling solution potentially with solution to move screens/spaces across monitor. (Amethyst, Rectangle) are open source
 * [musicbrainz](https://picard.musicbrainz.org/) - music file tagger
-* [neovim](https://neovim.io/)
-* [pre-commit hooks](https://pre-commit.com/hooks.html)
-* [prettyping](https://denilson.sa.nom.br/prettyping/) - wrap around ping, wise to alias
 * [Privacy Single Use physical or Digital cards](https://privacy.com/card-issuing)
-* [raycast](https://raycast.com/) - cool alfred like but for web apps, only a few apps.
-* [selfcontrol](https://selfcontrolapp.com/), [focus](https://heyfocus.com/) - currently use rescuetimes version, like this not sure if this is better
 * [slack keep presence](https://www.rubydoc.info/gems/slack-keep-presence/0.1.14)
-* [soulver](https://www.acqualia.com/soulver/) - numi alternative
-* [sshrc](https://github.com/cdown/sshrc) - Bring your .bashrc, .vimrc, etc. with you when you ssh
-* [VimMotion](https://github.com/dwarvesf/VimMotionApp)
 
 Extensions:
 
@@ -169,22 +154,25 @@ Extensions:
 
 ## Manual Work
 
-* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime
+* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime (app,web plugin), Waka(web plugin, cli, vscode), Todoist (web plugin, app), Notion (web plugin, desktop), Pulse SMS (app), Spotify, Slack, Discord, Signal, Steam, RPi Web Plugin, Pocket (App,Plugin)
 * VSCode, Alfred, Brave Sync Setup 
+* Override Spotlight with Alfred
 * Install [bypass-paywalls-chrome](https://github.com/iamadamdev/bypass-paywalls-chrome.git) - [possible solution](https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line)
+* go get https://github.com/dborzov/lsp
+* npm install -g how2
+
 
 ## Automation dreams and TODO
 
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
-
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * TODO: vscode settings sync
 * TODO: iterm2 plist gen
 * TODO: highlight flux, vscode, 
 * TODO: review dropbox mackup
-* when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings
+* TODO: automate open here https://gist.github.com/pdanford/158d74e2026f393e953ed43ff8168ec1 
+* when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings, TODO: prevent code/brave/finder from hiding macbar in full screen
 * set beyondcompare as merge tool
-* ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
 * cask_args appdir: '/Applications'
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * Wake on keyboard not mouse
@@ -193,14 +181,12 @@ Extensions:
 * shellsync, search, backup, history persistence, search, sync
 * desktop background + screen saver sync + setup per res
 * soulution - cli journal ? jyputer
-* solution - sshkey, knownhosts manager/sync - is it wise?
-* solution - vscode snippets 
+* solution - would snippets help? snippetslab
 * solution - script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
 * cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
 * horo, monosnap, ohmystar workflow
 * git/projects dir auto fetchs
 * TODO: sync and update git clone https://github.com/dracula/iterm.git
-* A program tried to load new system extension(s) signed by “MATT INGALLS”.  If you want to enable these extensions, open Security & Privacy System Preferences.
 
 Alfred Workflows:
 

@@ -234,3 +234,9 @@ fi
 #   shell=${1-$SHELL}
 #   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 # }
+# if bash -n prettyping alias ping 
+
+# if bash -n lsp 
+  # alias lsp 
+# if ! install? go get https://github.com/dborzov/lsp
+# * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
