@@ -6,8 +6,6 @@ tap "homebrew/cask-versions"
 tap "homebrew/cask"
 tap "homebrew/core"
 tap "homebrew/services"
-tap "microsoft/git"
-tap "moul/moul"
 
 # Package Managers & Sys tools
 brew "dockutil"
@@ -114,7 +112,7 @@ cask "webpquicklook"
 
 brew "ack"
 brew "asciinema"
-brew "autojump" 
+brew "autojump"
 brew "awscli"
 brew "bash"
 brew "browsh"
@@ -130,13 +128,13 @@ brew "htop"
 brew "java"
 brew "lftp"
 brew "moreutils"
-brew "nvm" 
+brew "nvm"
 brew "openssh"
 brew "php"
 brew "pre-commit"
 brew "prettyping"
 brew "pv"
-brew "rsync" 
+brew "rsync"
 brew "scrcpy"
 brew "shellcheck"
 brew "ssh-copy-id", link: true
@@ -168,7 +166,7 @@ brew "terraform"
 brew "wakatime-cli"
 cask "goland"
 
-# brew "git-extras" -> installed via zplug 
+# brew "git-extras" -> installed via zplug
 # cask "diff-so-fancy" -> installed via zplug
 brew "git-lfs"
 brew "git"

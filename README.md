@@ -161,20 +161,19 @@ Extensions:
 * go get https://github.com/dborzov/lsp
 * npm install -g how2
 
-
 ## Automation dreams and TODO
 
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * TODO: vscode settings sync
 * TODO: iterm2 plist gen
-* TODO: highlight flux, vscode, 
+* TODO: highlight flux, vscode,
 * TODO: review dropbox mackup
 * TODO: automate open here https://gist.github.com/pdanford/158d74e2026f393e953ed43ff8168ec1 
 * when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings, TODO: prevent code/brave/finder from hiding macbar in full screen
 * set beyondcompare as merge tool
-* cask_args appdir: '/Applications'
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
+=======
 * Wake on keyboard not mouse
 * Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
@@ -209,11 +208,13 @@ Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 * [numi](https://www.packal.org/workflow/numi)
 * [pocket-alfred](https://www.packal.org/workflow/pocket-alfred)
 
-vscode: 
 
+
+* [2gua.rainbow-brackets](https://marketplace.visualstudio.com/items?itemName=2gua.rainbow-brackets)
 * [766b.go-outliner](https://marketplace.visualstudio.com/items?itemName=766b.go-outliner)
 * [aaronpowell.vscode-profile-switcher](https://marketplace.visualstudio.com/items?itemName=aaronpowell.vscode-profile-switcher)
 * [abusaidm.html-snippets](https://marketplace.visualstudio.com/items?itemName=abusaidm.html-snippets)
+* [adpyke.codesnap](https://marketplace.visualstudio.com/items?itemName=adpyke.codesnap)
 * [AlanWalk.markdown-toc](https://marketplace.visualstudio.com/items?itemName=AlanWalk.markdown-toc)
 * [alefragnani.project-manager](https://marketplace.visualstudio.com/items?itemName=alefragnani.project-manager)
 * [bajdzis.vscode-database](https://marketplace.visualstudio.com/items?itemName=bajdzis.vscode-database)
@@ -229,6 +230,7 @@ vscode:
 * [fabiospampinato.vscode-projects-plus-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus-todo-plus)
 * [fabiospampinato.vscode-projects-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-projects-plus)
 * [fabiospampinato.vscode-todo-plus](https://marketplace.visualstudio.com/items?itemName=fabiospampinato.vscode-todo-plus)
+* [file-icons.file-icons](https://marketplace.visualstudio.com/items?itemName=file-icons.file-icons)
 * [flesler.url-encode](https://marketplace.visualstudio.com/items?itemName=flesler.url-encode)
 * [GitHub.vscode-pull-request-github](https://marketplace.visualstudio.com/items?itemName=GitHub.vscode-pull-request-github)
 * [golang.Go](https://marketplace.visualstudio.com/items?itemName=golang.Go)
@@ -259,3 +261,4 @@ vscode:
 * [xabikos.JavaScriptSnippets](https://marketplace.visualstudio.com/items?itemName=xabikos.JavaScriptSnippets)
 * [yzhang.markdown-all-in-one](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
 * [zxh404.vscode-proto3](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
+vscode:
