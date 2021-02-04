@@ -295,8 +295,8 @@ defaults write NSGlobalDomain ApplePressAndHoldEnabled -bool false
 ok
 
 running "Set a blazingly fast keyboard repeat rate."
-defaults write NSGlobalDomain KeyRepeat -int 3
-defaults write NSGlobalDomain InitialKeyRepeat -int 13
+defaults write NSGlobalDomain KeyRepeat -int 6
+defaults write NSGlobalDomain InitialKeyRepeat -int 15
 ok
 
 running "Set language and text formats (english/US)."
@@ -339,51 +339,51 @@ ok
 running "Enable trackpad Tap to drag."
 defaults -currentHost write NSGlobalDomain com.apple.mouse.tapBehavior -int 2
 defaults write NSGlobalDomain com.apple.mouse.tapBehavior -int 2
-ok
-
-# TODO: disable Moving with 3 fingers in any window "chrome" moves the window.
-running  "Enable trackpad 3-finger drag."
-defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerDrag -bool true
-defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -bool true
-ok
-
-running "Enable Drag lock."
-defaults write com.apple.AppleMultitouchTrackpad DragLock -bool true
-ok
-
-running "Enable trackpad right click."
-defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
-defaults -currentHost write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true
-defaults write com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
-ok
-
-running "Enable swipe between pages."
-defaults write NSGlobalDomain AppleEnableSwipeNavigateWithScrolls -bool true
-ok
-
-# running "Enable trackpad mission control swipe up 3 finger."
-# defaults -currentHost write NSGlobalDomain com.apple.trackpad.threeFingerVertSwipeGesture -int 2
-# defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 2
-# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 2
 # ok
 
-running "Enable trackpad mission control swipe up 4 finger."
-defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerVertSwipeGesture -int 2
-defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
-defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
-ok
-
-# running "Enable trackpad swipe between apps 3 finger."
-# defaults -currentHost write NSGlobalDomain com.apple.trackpad.threeFingerHorizSwipeGesture -int 2
-# defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 2
-# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
+# # TODO: disable Moving with 3 fingers in any window "chrome" moves the window.
+# running  "Enable trackpad 3-finger drag."
+# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerDrag -bool true
+# defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerDrag -bool true
 # ok
 
-running "Enable trackpad swipe between apps 4 finger."
-defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerHorizSwipeGesture -int 2
-defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
-defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
-ok
+# running "Enable Drag lock."
+# defaults write com.apple.AppleMultitouchTrackpad DragLock -bool true
+# ok
+
+# running "Enable trackpad right click."
+# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick -bool true
+# defaults -currentHost write NSGlobalDomain com.apple.trackpad.enableSecondaryClick -bool true
+# defaults write com.apple.AppleMultitouchTrackpad TrackpadRightClick -bool true
+# ok
+
+# running "Enable swipe between pages."
+# defaults write NSGlobalDomain AppleEnableSwipeNavigateWithScrolls -bool true
+# ok
+
+# # running "Enable trackpad mission control swipe up 3 finger."
+# # defaults -currentHost write NSGlobalDomain com.apple.trackpad.threeFingerVertSwipeGesture -int 2
+# # defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerVertSwipeGesture -int 2
+# # defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerVertSwipeGesture -int 2
+# # ok
+
+# running "Enable trackpad mission control swipe up 4 finger."
+# defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerVertSwipeGesture -int 2
+# defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerVertSwipeGesture -int 2
+# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerVertSwipeGesture -int 2
+# ok
+
+# # running "Enable trackpad swipe between apps 3 finger."
+# # defaults -currentHost write NSGlobalDomain com.apple.trackpad.threeFingerHorizSwipeGesture -int 2
+# # defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerHorizSwipeGesture -int 2
+# # defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadThreeFingerHorizSwipeGesture -int 2
+# # ok
+
+# running "Enable trackpad swipe between apps 4 finger."
+# defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerHorizSwipeGesture -int 2
+# defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
+# defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
+# ok
 
 # MacBook Trackpad (built-in)
 # TODO: when to use com.apple.trackpad vs com.apple.driver.applebluetoothmultitouch.trackpad
