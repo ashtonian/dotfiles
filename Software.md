@@ -100,6 +100,7 @@ see Brewfile. // TODO:
 * [wakatime](https://github.com/wakatime/chrome-wakatime) - [source](https://github.com/wakatime/chrome-wakatime)
 * [ynab toolkit](https://chrome.google.com/webstore/detail/toolkit-for-ynab/lmhdkkhepllpnondndgpgclfjnlofgjl?hl=en) - [source](https://github.com/toolkit-for-ynab/toolkit-for-ynab/blob/master/docs/feature-list.md)
 * [zenhub for github](https://chrome.google.com/webstore/detail/zenhub-for-github/ogcgkffhplmphkaahpmffcafajaocjbd?hl=en-US)
+* [vimium](https://chrome.google.com/webstore/detail/vimium/dbepggeogbaibhgnhhndojpepiihcmeb/related?hl=en)
 
 ### Kiwi (Android)
 
