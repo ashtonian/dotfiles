@@ -47,7 +47,9 @@ mas "Horo", id: 1437226581
 mas "Monosnap", id: 540348655
 mas "Pocket", id: 568494494
 mas "Todoist", id: 585829637
+mas "Vimari", id: 1480933944
 mas "Yoink", id: 457622435
+
 
 # Power User
 cask "alfred"
