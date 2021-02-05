@@ -21,7 +21,7 @@ export PATH=/usr/local/sbin:$PATH
 export PATH=/usr/local/opt/python/libexec/bin:$PATH
 
 # Path to your oh-my-zsh installation.
-export ZSH="/Users/ashtonian/.oh-my-zsh"
+export ZSH="$HOME/.oh-my-zsh"
 
 ##############################################################################
 # THEME & OMZ Global
