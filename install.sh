@@ -384,7 +384,6 @@ defaults -currentHost write NSGlobalDomain com.apple.trackpad.fourFingerHorizSwi
 defaults write com.apple.AppleMultitouchTrackpad TrackpadFourFingerHorizSwipeGesture -int 2
 defaults write com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadFourFingerHorizSwipeGesture -int 2
 ok
-
 # MacBook Trackpad (built-in)
 # TODO: when to use com.apple.trackpad vs com.apple.driver.applebluetoothmultitouch.trackpad
 # TODO: defaults write com.apple.AppleMultitouchTrackpad TrackpadThreeFingerTapGesture -int 0
