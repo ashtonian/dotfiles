@@ -4,9 +4,12 @@
 # Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
 # Initialization code that may require console input (password prompts, [y/n]
 # confirmations, etc.) must go above this block; everything else may go below.
+typeset -g POWERLEVEL9K_INSTANT_PROMPT=off
+
 if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
   source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
 fi
+
 
 ##############################################################################
 # PATH
@@ -22,6 +25,12 @@ export PATH=/usr/local/opt/python/libexec/bin:$PATH
 
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
+
+##############################################################################
+# Keybindings
+##############################################################################
+## iterm undo  https://stackoverflow.com/questions/6205157/iterm-2-how-to-set-keyboard-shortcuts-to-jump-to-beginning-end-of-line#answer-29403520
+bindkey "^X^_" redo
 
 ##############################################################################
 # THEME & OMZ Global
@@ -163,24 +172,25 @@ plugins=(
     zsh-interactive-cd
 
     ###### Custom ####################################
-    autoupdate
-    # iterm-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH/custom/plugins/zsh-tab-colors
-    zsh-256color
-    zsh-autosuggestions
-    zsh-completions
-    Zsh-Diff-So-Fancy
-    # zsh-fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH/custom/plugins/sei40kr/fast-alias-tips
-    zsh-fzy
-    zsh-syntax-highlighting
-    zsh-thefuck
+    autoupdate # git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
+    zsh-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
+    zsh-256color # git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
+    zsh-autosuggestions # git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
+    zsh-completions  # git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
+    zsh-Diff-So-Fancy  # git clone https://github.com/zdharma/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
+    fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
+    zsh-fzy  # git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
+    zsh-syntax-highlighting # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
+    # zsh-thefuck
 )
+
 
 # zsh-completions
 autoload -U compinit && compinit
 
 # TODO: for gibo
-# mkdir -p $ZSH/custom/plugins/gibo/
-# ln -s /path/to/gibo-completion.zsh $ZSH/custom/plugins/gibo/gibo.plugin.zsh
+# mkdir -p $ZSH_CUSTOM/plugins/gibo/
+# ln -s /path/to/gibo-completion.zsh $ZSH_CUSTOM/plugins/gibo/gibo.plugin.zsh
 
 ##############################################################################
 # Plugins - Debug Load Time
@@ -212,7 +222,7 @@ timezsh() {
 source $ZSH/oh-my-zsh.sh
 
 # TODO: Cache
-eval "$(direnv hook zsh)"
+# eval "$(direnv hook zsh)"
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
 [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh

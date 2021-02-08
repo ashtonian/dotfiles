@@ -169,7 +169,7 @@ brew "wakatime-cli"
 cask "goland"
 
 # brew "git-extras" -> installed via zplug
-# cask "diff-so-fancy" -> installed via zplug
+cask "diff-so-fancy" -> installed via zplug
 brew "git-lfs"
 brew "git"
 brew "zsh-git-prompt"

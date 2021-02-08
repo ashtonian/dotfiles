@@ -241,3 +241,6 @@ fi
 # if ! install? go get https://github.com/dborzov/lsp
 # TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
 # * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
+
+
+# git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm

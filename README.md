@@ -1,26 +1,26 @@
 # dotfiles
 
-macOS & [windows](./win10/readme.md) dotfiles & post install scripts - better defaults, productive os, awesome tools. 
+macOS & [windows](./win10/readme.md) dotfiles & post install scripts - better defaults, productive os, awesome tools.
 
 This will initialize a freshly installed Mac OS (catalina) instance with all of my applications, cli tools, and adjust some basic operating system settings.
 
-## Basic Tool Overview 
+## Basic Tool Overview
 
 * mas
-* Brew / bundle 
+* Brew / bundle
 * mackup
-* git sync 
+* git sync
 
 ### System Tools
 
-* dockutil 
+* dockutil
 * displayplacer
 * [defaults](https://github.com/aerobounce/defaults.sh) - convert user defaults (plist) into shell script with ease!
-* sidebarutil 
+* sidebarutil
 
 ## App Settings Highlights n Notes
 
-See [software](./Software.md) page for macOS packages, vsCode extensions, web extensions, and  
+See [software](./Software.md) page for macOS packages, vsCode extensions, web extensions.
 
 ### Global Shortcuts
 
@@ -44,14 +44,14 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 // TODOO:
 run init.sh
 run install.sh
-restart 
+restart
 mackup restore
 Execute on manual work
 
 ### Manual Work
 
 * Signin to Apple Account, Mail|Contacts|Calendar, RescueTime (app,web plugin), Waka(web plugin, cli, vscode), Todoist (web plugin, app), Notion (web plugin, desktop), Pulse SMS (app), Spotify, Slack, Discord, Signal, Steam, RPi Web Plugin, Pocket (App,Plugin)
-* VSCode, Alfred, Brave Sync Setup 
+* VSCode, Alfred, Brave Sync Setup
 * Override Spotlight with Alfred
 * Install [bypass-paywalls-chrome](https://github.com/iamadamdev/bypass-paywalls-chrome.git) - [possible solution](https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line)
 * go get https://github.com/dborzov/lsp
@@ -62,12 +62,7 @@ Execute on manual work
 
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
-* TODO: vscode settings sync
-* TODO: iterm2 plist gen
-* TODO: highlight flux, vscode,
-* TODO: review dropbox mackup
-* TODO: automate open here https://gist.github.com/pdanford/158d74e2026f393e953ed43ff8168ec1 
-* when big sur is ready use disable menu bar [autohide](https://www.howtogeek.com/700398/how-to-automatically-hide-or-show-the-menu-bar-on-a-mac/) and adjust settings, TODO: prevent code/brave/finder from hiding macbar in full screen
+* TODO: automate open here https://gist.github.com/pdanford/158d74e2026f393e953ed43ff8168ec1
 * set beyondcompare as merge tool
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * Wake on keyboard not mouse
@@ -81,8 +76,6 @@ Execute on manual work
 * cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
 * horo, monosnap, ohmystar workflow
 * git/projects dir auto fetchs
-* TODO: sync and update git clone https://github.com/dracula/iterm.git
-* TODO: prevent steam from opening by default
 
 ## Inspiration and Resources
 
