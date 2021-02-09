@@ -43,8 +43,6 @@
 
 	pager = diff-so-fancy | less --tabs=4 -RFX
 
-
-
 # [commit]
 
 # 	# https://help.github.com/articles/signing-commits-using-gpg/
@@ -63,15 +61,12 @@
   prompt = false
 
 [diff]
-
 	# Detect copies as well as renames.
 	renames = copies
 
 [diff "bin"]
-
 	# Use `hexdump` to diff binary files.
 	textconv = hexdump -v -C
-
 
 [merge]
   log = true
@@ -114,11 +109,13 @@
 
 [color]
 	ui = true
+
 [color "diff-highlight"]
 	oldNormal = red bold
 	oldHighlight = red bold 52
 	newNormal = green bold
 	newHighlight = green bold 22
+
 [color "diff"]
 	meta = 11
 	frag = magenta bold
@@ -157,3 +154,6 @@
 
 [url "git://gist.github.com/"]
 	insteadOf = "gist:"
+
+
+
