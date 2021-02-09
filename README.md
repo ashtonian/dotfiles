@@ -24,20 +24,16 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 
 ### Global Shortcuts
 
-* 1password
-* Alfred
-* Cheetsheet
-* Email/Cal/Contacts
-* move screens spaces
+* 1password- <kbd>⌘</kbd><kbd>⇧</kbd><kbd>P</kbd>
+* Alfred- <kbd>⌘</kbd><kbd>space</kbd> prompt, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>C</kbd> view clip history
+* Cheetsheet hold- <kbd>⌘</kbd>
 * Notion
-* Record
-* MonoSnap - screenshot/record
-* Timer (horo)
-* Todoist
-* yoink
-* numi  <kbd>⌘</kbd><kbd>⇧</kbd><kbd>N</kbd>
-* Micktagger
-* alttab?
+* MonoSnap - <kbd>⌘</kbd><kbd>⌥</kbd><kbd>5</kbd> capture area, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>6</kbd> capture fullscreen, <kbd>⌘</kbd><kbd>⌥</kbd><kbd>4</kbd> record video, toggle record fullscreen <kbd>⌘</kbd><kbd>⌃</kbd><kbd>⇧</kbd><kbd>F</kbd>, <kbd>⌃</kbd><kbd>⇧</kbd><kbd>space</kbd> start/pause,  <kbd>⌘</kbd><kbd>⌥</kbd><kbd>Q</kbd> Stop
+* Timer (horo) - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>T</kbd>
+* Todoist - <kbd>⌃</kbd><kbd>⌘</kbd><kbd>T</kbd> show/hide,  <kbd>⌃</kbd><kbd>⌘</kbd><kbd>A</kbd> Quick task
+* yoink - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>Y</kbd>
+* numi - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>N</kbd>
+* TODO: Email/Cal/Contacts, Move Screen to another space, Notion global, alttab?
 
 ## Instructions
 
