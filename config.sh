@@ -31,9 +31,9 @@ bot "Configuring brew taps, casks & apps + mas apps + zsh config."
 # brew update
 # ok
 
-# running "Install brew bundle."
-# brew bundle
-# ok
+running "Install brew bundle."
+brew bundle
+ok
 
 # running "Cleanup homebrew."
 # brew cleanup --force > /dev/null 2>&1
@@ -44,11 +44,7 @@ bot "Configuring brew taps, casks & apps + mas apps + zsh config."
 bot "Configuring mackup."
 #######################################################################################################################################
 
-## Mackup uses
-## TODO: move to end? or elsehwere, maybe ask user? how do submodules work with this
-# // TODO: // alias .macup.cfg to home dir
-# TODO: mackup restore
-
+mackup restore
 
 ###############################################################################
 # Login Window                                                                #
