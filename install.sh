@@ -210,7 +210,7 @@ git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok 
 
 bot "running configure script"
-/bin/bash -c $HOME/.doftfiles/configure.sh
+/bin/bash -c $HOME/.doftfiles/config.sh
 ok
 
 
