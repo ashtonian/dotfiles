@@ -38,8 +38,8 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 ## Instructions
 
 // TODOO:
-run init.sh
-run install.sh
+
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ashtonian/dotfiles/master/install.sh)"
 restart
 mackup restore
 Execute on manual work
