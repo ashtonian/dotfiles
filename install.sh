@@ -181,6 +181,38 @@ if [[ $? = 0 ]]; then
   fi
 fi
 
+bot "cloning dotfiles locally"
+cd $HOME 
+git clone https://github.com/Ashtonian/dotfiles.git
+ok 
+
+bot "linking makcup file from dotfile to directory"
+ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
+ok 
+
+bot "creating sync directory"
+mkdir $HOME/.sync
+cd $HOME/.sync
+ok
+
+bot "clone iterm dracula theme"
+git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm
+ok
+
+bot "download alfred and mackup directory"
+cd $HOME/.sync
+git clone https://github.com/Ashtonian/alfred
+git clone https://github.com/Ashtonian/mackup
+ok
+
+bot "download bypass paywall"
+git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
+ok 
+
+bot "running configure script"
+/bin/bash -c $HOME/.doftfiles/configure.sh
+ok
+
 
 # TODO:s
 # * finder sidebar
@@ -240,7 +272,4 @@ fi
   # alias lsp 
 # if ! install? go get https://github.com/dborzov/lsp
 # TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
-# * ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
 
-
-# git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm
