@@ -206,6 +206,7 @@ git clone https://github.com/Ashtonian/mackup
 ok
 
 bot "download bypass paywall"
+cd $HOME/.sync
 git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok 
 
@@ -213,6 +214,18 @@ bot "running configure script"
 /bin/bash -c $HOME/.doftfiles/config.sh
 ok
 
+
+sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
+git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
+git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
+git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
+git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
+git clone https://github.com/zdharma/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
+git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
+git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
+git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
 
 # TODO:s
 # * finder sidebar
