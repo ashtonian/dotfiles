@@ -232,6 +232,10 @@ git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$
 cd $ZSH_CUSTOM/plugins/fast-alias-tips
 make 
 
+TODO: runn all apps
+TODO: Fix dock - add applications folder + utilities
+TODO: fix login items 
+TODO: finder siderbar
 
 # TODO:s
 # * finder sidebar
