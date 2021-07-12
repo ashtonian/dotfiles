@@ -59,3 +59,7 @@ function whoisport (){
         pid=$(echo $pidInfo | cut -d':' -f2)
         ls -l /proc/$pid/exe
 }
+
+function realpath() {
+    [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
+}
