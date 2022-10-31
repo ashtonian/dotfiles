@@ -172,13 +172,15 @@ plugins=(
     zsh-interactive-cd
 
     ###### Custom ####################################
+    aliastips # git clone https://github.com/djui/alias-tips.git $ZSH_CUSTOM/plugins/alias-tips
+    wakatime # git clone https://github.com/sobolevn/wakatime-zsh-plugin.git $ZSH_CUSTOM/plugins/wakatime
     autoupdate # git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
     zsh-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
     zsh-256color # git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
     zsh-autosuggestions # git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
     zsh-completions  # git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
-    zsh-Diff-So-Fancy  # git clone https://github.com/zdharma/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
-    fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
+    zsh-Diff-So-Fancy  # git clone https://github.com/z-shell/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
+    # fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
     zsh-fzy  # git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
     zsh-syntax-highlighting # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
     # zsh-thefuck

@@ -70,10 +70,10 @@ function print_success() {
 
 # https://opensource.com/article/18/5/you-dont-know-bash-intro-bash-arrays
 # Auto loop, sanatized input https://stackoverflow.com/questions/226703/how-do-i-prompt-for-yes-no-cancel-input-in-a-linux-shell-script/27875395
-echo "Do you wish to install this program?"
-select yn in "Yes" "No"; do
-    case $yn in
-        Yes ) make install; break;;
-        No ) exit;;
-    esac
-done
+# echo "Do you wish to install this program?"
+# select yn in "Yes" "No"; do
+#     case $yn in
+#         Yes ) make install; break;;
+#         No ) exit;;
+#     esac
+# done

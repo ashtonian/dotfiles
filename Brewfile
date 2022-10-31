@@ -11,17 +11,17 @@ tap "homebrew/services"
 brew "dockutil"
 brew "mackup"
 brew "mas"
-brew "jakehilborn/jakehilborn/displayplacer"
+# brew "jakehilborn/jakehilborn/displayplacer"
 
 # Fun & Social
 cask "battle-net"
-cask "blackhole-16ch"
+# cask "blackhole-16ch"
 cask "discord"
 cask "iina"
-cask "pulse-sms"
+# cask "pulse-sms"
 cask "signal"
 cask "slack"
-cask "soundsource"
+# cask "soundsource"
 cask "spotify"
 cask "steam"
 cask "vox"
@@ -30,9 +30,9 @@ cask "vox"
 brew "p7zip"
 cask "1password"
 cask "brave-browser"
-cask "dropbox"
+# cask "dropbox"
 cask "flux"
-cask "google-backup-and-sync"
+# cask "google-backup-and-sync"
 cask "microsoft-auto-update"
 cask "microsoft-office"
 cask "nordvpn"
@@ -40,15 +40,16 @@ cask "notion"
 cask "numi"
 cask "quicken"
 cask "rescuetime"
-cask "selfcontrol"
+# cask "selfcontrol"
 mas "1440", id: 1483764819
-mas "Day One", id: 1055511498
+# mas "Day One", id: 1055511498
 mas "Horo", id: 1437226581
 mas "Monosnap", id: 540348655
-mas "Pocket", id: 568494494
+# mas "Pocket", id: 568494494
 mas "Todoist", id: 585829637
 mas "Vimari", id: 1480933944
-mas "Yoink", id: 457622435
+mas "Raivo", id: 1498497896
+# mas "Yoink", id: 457622435
 
 
 # Power User
@@ -60,15 +61,15 @@ cask "bartender"
 cask "beardedspice"
 cask "cakebrew"
 cask "cheatsheet"
-cask "cryptomator"
-cask "datweatherdoe"
+# cask "cryptomator"
+# cask "datweatherdoe"
 cask "disk-inventory-x"
 cask "imageoptim"
 cask "keycastr"
-cask "little-snitch4"
-cask "macs-fan-control"
+# cask "little-snitch4"
+# cask "macs-fan-control"
 cask "meetingbar"
-cask "micro-snitch"
+# cask "micro-snitch"
 cask "monolingual"
 cask "netspot"
 cask "onyx"
@@ -76,10 +77,10 @@ cask "tor-browser"
 cask "cyberduck"
 cask "tunnelblick"
 cask "uhk-agent"
-cask "vmware-fusion"
+# cask "vmware-fusion"
 cask "wkhtmltopdf" # Renders html to pdf
 mas "Disk Speed Test", id: 425264550
-mas "MickTagger", id: 1490366427
+# mas "MickTagger", id: 1490366427
 
 # Work
 cask "ringcentral-meetings"
@@ -169,7 +170,7 @@ brew "wakatime-cli"
 cask "goland"
 
 # brew "git-extras" -> installed via zplug
-cask "diff-so-fancy" -> installed via zplug
+# cask "diff-so-fancy" -> installed via zplug
 brew "git-lfs"
 brew "git"
 brew "zsh-git-prompt"
