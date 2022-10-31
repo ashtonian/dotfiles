@@ -37,15 +37,15 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 
 ## Instructions
 
-// TODOO:
-
+```sh
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ashtonian/dotfiles/master/install.sh)"
-mkdir ~/.sync/alfred
+mkdir ~/.sync/
+git clone https://github.com/Ashtonian/alfred.git  ~/.sync/alfred
 git clone https://github.com/Ashtonian/alfred.git  ~/.sync/alfred
 git clone https://github.com/Ashtonian/mackup.git  ~/.sync/mackup
 git clone https://github.com/dracula/iterm.git ~/.sync/dracula-iterm
 git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git  ~/.sync/bypass-paywalls-chrome
-
+```
 
 
 restart
