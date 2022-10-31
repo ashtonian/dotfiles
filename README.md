@@ -4,6 +4,13 @@ macOS & [windows](./win10/readme.md) dotfiles & post install scripts - better de
 
 This will initialize a freshly installed Mac OS (catalina) instance with all of my applications, cli tools, and adjust some basic operating system settings.
 
+
+## Instructions
+
+```sh
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ashtonian/dotfiles/master/install.sh)"
+```
+
 ## Basic Tool Overview
 
 * mas
@@ -35,17 +42,7 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 * numi - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>N</kbd>
 * TODO: Email/Cal/Contacts, Move Screen to another space, Notion global, alttab?
 
-## Instructions
 
-```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ashtonian/dotfiles/master/install.sh)"
-mkdir ~/.sync/
-git clone https://github.com/Ashtonian/alfred.git  ~/.sync/alfred
-git clone https://github.com/Ashtonian/alfred.git  ~/.sync/alfred
-git clone https://github.com/Ashtonian/mackup.git  ~/.sync/mackup
-git clone https://github.com/dracula/iterm.git ~/.sync/dracula-iterm
-git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git  ~/.sync/bypass-paywalls-chrome
-```
 
 
 restart
