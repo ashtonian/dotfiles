@@ -86,6 +86,7 @@ if [[ $? != 0 ]]; then
     error "unable to install homebrew, script $0 abort!"
     exit 2
   fi
+  export PATH="$PATH:/opt/homebrew/bin"
   brew analytics off
 else
   ok
