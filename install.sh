@@ -210,9 +210,6 @@ cd $HOME/.sync
 git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok 
 
-bot "running configure script"
-/bin/bash -c $HOME/.doftfiles/config.sh
-ok
 
 
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
@@ -232,10 +229,15 @@ git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$
 cd $ZSH_CUSTOM/plugins/fast-alias-tips
 make 
 
-TODO: runn all apps
-TODO: Fix dock - add applications folder + utilities
-TODO: fix login items 
-TODO: finder siderbar
+
+bot "running configure script"
+/bin/bash -c $HOME/.doftfiles/config.sh
+ok
+
+#TODO: runn all apps
+#TODO: Fix dock - add applications folder + utilities
+#TODO: fix login items 
+#TODO: finder siderbar
 
 # TODO:s
 # * finder sidebar
