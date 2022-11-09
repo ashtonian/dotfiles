@@ -4,6 +4,8 @@
 # macOS 10.15+ (Catalina) Init script to install dependencies
 #######################################################################################################################################
 
+eval "$(curl -s -L https://raw.githubusercontent.com/Ashtonian/dotfiles/master/lib_sh/echos.sh)"
+
 # Colors
 ESC_SEQ="\x1b["
 COL_RESET=$ESC_SEQ"39;49;00m"
