@@ -32,7 +32,7 @@ if [ $? -ne 0 ]; then
       # bot "You can now run sudo commands without password!"
       print_success
   else
-    print_success
+    ok
   fi
 fi;
 
@@ -84,7 +84,8 @@ if [[ $? != 0 ]]; then
   print_success
 else
   print_success
-  read -r -p "run brew update && upgrade? [y|N] " response
+  bot "run brew update && upgrade - "
+  read -r "[y|n]?" response
   if [[ $response =~ (y|yes|Y) ]]; then
     running "updating homebrew..."
     brew update
