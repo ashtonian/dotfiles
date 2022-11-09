@@ -84,8 +84,8 @@ if [[ $? != 0 ]]; then
   print_success
 else
   print_success
-  bot "run brew update && upgrade - "
-  read -r "[y|n]?" response
+  bot "run brew update && upgrade -[y|n]?"
+  read -r "" response
   if [[ $response =~ (y|yes|Y) ]]; then
     running "updating homebrew..."
     brew update
@@ -180,7 +180,7 @@ fi
 
 bot "cloning dotfiles locally"
 cd $HOME 
-git clone https://github.com/Ashtonian/dotfiles.git
+git clone https://github.com/Ashtonian/dotfiles.git .dotfiles
 ok 
 
 bot "linking makcup file from dotfile to directory"
@@ -208,8 +208,10 @@ git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok 
 
 
-
+# check ver first then update or install 
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+exec zsh
 
 git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
 git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
@@ -231,6 +233,7 @@ bot "running configure script"
 /bin/bash -c $HOME/.doftfiles/config.sh
 ok
 
+#TODO: install extension in brave after mackup restore 
 #TODO: runn all apps
 #TODO: Fix dock - add applications folder + utilities
 #TODO: fix login items 
