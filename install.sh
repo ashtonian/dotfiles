@@ -20,8 +20,8 @@ if [ $? -ne 0 ]; then
   # Keep-alive: update existing sudo time stamp until the script has finished
   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
-  bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing: http://wiki.summercode.com/sudo_without_a_password_in_mac_os_x \n"
-  read -r -p "[y|n]" response
+  bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing: http://wiki.summercode.com/sudo_without_a_password_in_mac_os_x"
+  read -r -p "[y|n]?" response
 
   if [[ $response =~ (yes|y|Y) ]];then
       running "enabling passwordless sudo"
@@ -74,32 +74,34 @@ brew_bin=$(which brew) 2>&1 > /dev/null
 if [[ $? != 0 ]]; then
   running "install homebrew"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  ok
+  print_success
   if [[ $? != 0 ]]; then
     error "unable to install homebrew, script $0 abort!"
     exit 2
   fi
   running "brew analytics off"
   brew analytics off
-  ok
+  print_success
 else
-  ok
+  print_success
   read -r -p "run brew update && upgrade? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
-    action "updating homebrew..."
+    running "updating homebrew..."
     brew update
-    ok "homebrew updated"
-    action "upgrading brew packages..."
+    print_success
+    running "upgrading brew packages..."
     brew upgrade
-    ok "brews upgraded"
+    print_success
   else
-    ok "skipped brew package upgrades."
+    ok
   fi
 fi
 
+running "upgrading brew packages..."
 # Just to avoid a potential bug
 mkdir -p ~/Library/Caches/Homebrew/Formula
 brew doctor
+print_success
 
 # ###########################################################
 # Git Config
