@@ -30,7 +30,7 @@ if [ $? -ne 0 ]; then
       echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
       bot "You can now run sudo commands without password!"
   fi
-fi;ok
+fi;
 
 # ###########################################################
 # Install non-brew various tools (PRE-BREW Installs)
@@ -54,7 +54,9 @@ if ! xcode-select --print-path &> /dev/null; then
 
     sudo xcodebuild -license
     print_result $? 'Agree with the XCode Command Line Tools licence'
-fi;ok
+else
+print_success
+fi;
 
 # ###########################################################
 # install homebrew
