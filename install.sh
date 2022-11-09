@@ -73,7 +73,7 @@ brew_bin=$(which brew) 2>&1 > /dev/null
 
 if [[ $? != 0 ]]; then
   running "install homebrew"
-  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
   print_success
   if [[ $? != 0 ]]; then
     error "unable to install homebrew, script $0 abort!"
@@ -211,87 +211,6 @@ ok
 
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
-git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
-git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
-git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
-git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
-git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
-git clone https://github.com/zdharma/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
-git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
-git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
-
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
-
-cd $ZSH_CUSTOM/plugins/fast-alias-tips
-make 
-
-
 bot "running configure script"
-/bin/bash -c $HOME/.doftfiles/config.sh
+zsh -c $HOME/.doftfiles/config.sh
 ok
-
-#TODO: runn all apps
-#TODO: Fix dock - add applications folder + utilities
-#TODO: fix login items 
-#TODO: finder siderbar
-
-# TODO:s
-# * finder sidebar
-#   * rm tags section
-#   * add 'OS X' aka local mac install drive to finder sidebar
-#   * adjust favorites
-#     * [FinderSidebarEditor](https://github.com/robperc/FinderSidebarEditor)
-#     * (home folder)
-#     * Projects
-#     * Recents
-#     * Downloads
-#     * Desktop
-#     * Documents
-#     * Applications
-#     * Utilities
-#     * cloud accounts...
-#     * run monolingual
-# * after init.sh option to remove dockutil and others
-#
-# * defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
-# * Last login: Sun Jan 24 18:55:04 on ttys000
-# * init.sh uses comments to deliniate between laptop / desktop setups
-# * config f.lux, including rm annon stats
-# * ask user for project folder target
-# * ask user for dotfiles
-
-# //TODO:
-# TODO: ls nicer, ping
-# alias ls='ls -aGFh'
-# alias ll='ls -l'
-# alias rm='rm -i'
-# alias ne='emacs'
-# alias dev='cd ~/dev'
-# alias ports='sudo netstat -tulanp'
-# * alias newtab='open -na "Brave Browser" --args -new-tab'
-# * alias amend='git commit --amend --no-edit
-# alias nano="vim"
-# alias reboot='sudo reboot'
-# alias ..='cd ..'
-# alias grep="grep --color=auto"
-# alias fgrep="fgrep --color=auto"
-# alias egrep="egrep --color=auto"
-# # make less accept color codes and re-output them
-# alias less="less -R"
-# 	alias ls="ls -F --color=auto --group-directories-first"
-# alias diff
-
-# alias yoink="open -a Yoink"
-
-# timezsh() {
-#   shell=${1-$SHELL}
-#   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
-# }
-# if bash -n prettyping alias ping 
-
-# if bash -n lsp 
-  # alias lsp 
-# if ! install? go get https://github.com/dborzov/lsp
-# TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
-
