@@ -43,8 +43,13 @@ function error() {
     echo -e "$COL_RED[error]$COL_RESET "$1
 }
 
+#    printf " [✖] %s\n" "$1"
 function print_error() {
-    printf " [✖] %s\n" "$1"
+    echo -e "$COL_RED [x] $COL_RESET "$1
+}
+# printf " [✔] %s\n" "$1"
+function print_success() {
+    echo -e "$COL_GREEN [✔] $COL_RESET "$1
 }
 
 function print_result() {
@@ -59,9 +64,7 @@ function print_result() {
 
 }
 
-function print_success() {
-    printf " [✔] %s\n" "$1"
-}
+
 
 # // TODO: --dry run options
 # // TODO: add y/n prompt with default?
