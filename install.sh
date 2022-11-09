@@ -5,7 +5,7 @@
 #######################################################################################################################################
 
 eval "$(curl -s -L https://raw.githubusercontent.com/Ashtonian/dotfiles/master/lib_sh/echos.sh)"
-bot "Loaded pretty colors."
+bot "I am alive."
 
 #######################################################################################################################################
 # Sudo
@@ -14,14 +14,13 @@ bot "Loaded pretty colors."
 # Do we need to ask for sudo password or is it already passwordless?
 grep -q 'NOPASSWD:     ALL' /etc/sudoers.d/$LOGNAME > /dev/null 2>&1
 if [ $? -ne 0 ]; then
-  echo "no suder file"
+  # echo "no suder file"
   sudo -v
 
   # Keep-alive: update existing sudo time stamp until the script has finished
   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
-  bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing:\nhttp://wiki.summercode.com/sudo_without_a_password_in_mac_os_x \n"
-
+  bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing: http://wiki.summercode.com/sudo_without_a_password_in_mac_os_x \n"
   read -r -p "Make sudo passwordless? [y|N] " response
 
   if [[ $response =~ (yes|y|Y) ]];then
@@ -29,7 +28,7 @@ if [ $? -ne 0 ]; then
         echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers > /dev/null
       fi
       echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
-      echo "You can now run sudo commands without password!"
+      bot "You can now run sudo commands without password!"
   fi
 fi;ok
 
@@ -37,13 +36,11 @@ fi;ok
 # Install non-brew various tools (PRE-BREW Installs)
 # ###########################################################
 
-bot "ensuring build/install tools are available"
+running "ensuring build/install tools are available"
 if ! xcode-select --print-path &> /dev/null; then
-
+    running "installing tools"
     # Prompt user to install the XCode Command Line Tools
     xcode-select --install &> /dev/null
-
-    # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - -
 
     # Wait until the XCode Command Line Tools are installed
     until xcode-select --print-path &> /dev/null; do
@@ -64,19 +61,22 @@ fi;ok
 # ###########################################################
 
 export PATH="$PATH:/opt/homebrew/bin"
-running "checking homebrew..."
+running "checking homebrew"
 brew_bin=$(which brew) 2>&1 > /dev/null
+
 if [[ $? != 0 ]]; then
-  action "installing homebrew"
+  running "install homebrew"
   /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+  ok
   if [[ $? != 0 ]]; then
     error "unable to install homebrew, script $0 abort!"
     exit 2
   fi
+  running "brew analytics off"
   brew analytics off
+  ok
 else
   ok
-  bot "Homebrew"
   read -r -p "run brew update && upgrade? [y|N] " response
   if [[ $response =~ (y|yes|Y) ]]; then
     action "updating homebrew..."
