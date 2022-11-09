@@ -1618,3 +1618,7 @@ Bot "Done. Note that some of these changes require a logout/restart to take effe
 # if ! install? go get https://github.com/dborzov/lsp
 # TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
 
+
+
+#####
+##### git config pull.rebase false  # merge

@@ -84,8 +84,8 @@ if [[ $? != 0 ]]; then
   print_success
 else
   print_success
-  bot "run brew update && upgrade - "
-  read -r "[y|n]?" response
+  bot "run brew update && upgrade -[y|n]?"
+  read -r "" response
   if [[ $response =~ (y|yes|Y) ]]; then
     running "updating homebrew..."
     brew update
@@ -180,7 +180,7 @@ fi
 
 bot "cloning dotfiles locally"
 cd $HOME 
-git clone https://github.com/Ashtonian/dotfiles.git
+git clone https://github.com/Ashtonian/dotfiles.git .dotfiles
 ok 
 
 bot "linking makcup file from dotfile to directory"
@@ -208,7 +208,7 @@ git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok 
 
 
-
+# check ver first then update or install 
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 bot "running configure script"
