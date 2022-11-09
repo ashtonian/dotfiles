@@ -21,16 +21,21 @@ if [ $? -ne 0 ]; then
   while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
   bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing: http://wiki.summercode.com/sudo_without_a_password_in_mac_os_x \n"
-  read -r -p "Make sudo passwordless? [y|N] " response
+  read -r -p "[y|n]" response
 
   if [[ $response =~ (yes|y|Y) ]];then
+      running "enabling passwordless sudo"
       if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
         echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers > /dev/null
       fi
       echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
-      bot "You can now run sudo commands without password!"
+      # bot "You can now run sudo commands without password!"
+      print_success
+  else
+    print_success
   fi
 fi;
+
 
 # ###########################################################
 # Install non-brew various tools (PRE-BREW Installs)
