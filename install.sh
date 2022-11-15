@@ -178,9 +178,9 @@ if [[ $? = 0 ]]; then
   fi
 fi
 
+export DOTDIR="$HOME/.dotfiles"
 bot "cloning dotfiles locally"
-cd $HOME 
-git clone https://github.com/Ashtonian/dotfiles.git .dotfiles
+git clone https://github.com/Ashtonian/dotfiles.git $DOTDIR
 ok 
 
 bot "linking makcup file from dotfile to directory"
@@ -212,5 +212,6 @@ ok
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 bot "running configure script"
-zsh -c $HOME/.doftfiles/config.sh
+cd $DOTDIR
+zsh -c ./config.sh
 ok

@@ -26,6 +26,9 @@ export PATH=/usr/local/opt/python/libexec/bin:$PATH
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
 
+eval $(/opt/homebrew/bin/brew shellenv)
+
+
 ##############################################################################
 # Keybindings
 ##############################################################################
@@ -154,7 +157,7 @@ plugins=(
     kubectl
     node
     npm
-    osx
+    macos
     rake
     rsync
     ruby
@@ -172,7 +175,7 @@ plugins=(
     zsh-interactive-cd
 
     ###### Custom ####################################
-    aliastips # git clone https://github.com/djui/alias-tips.git $ZSH_CUSTOM/plugins/alias-tips
+    alias-tips # git clone https://github.com/djui/alias-tips.git $ZSH_CUSTOM/plugins/alias-tips
     wakatime # git clone https://github.com/sobolevn/wakatime-zsh-plugin.git $ZSH_CUSTOM/plugins/wakatime
     autoupdate # git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
     zsh-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors

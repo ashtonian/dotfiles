@@ -76,14 +76,18 @@ cask "onyx"
 cask "tor-browser"
 cask "cyberduck"
 cask "tunnelblick"
+mas "WireGaurd", id:1441195208
 cask "uhk-agent"
+cask "lens"
+
 # cask "vmware-fusion"
 cask "wkhtmltopdf" # Renders html to pdf
 mas "Disk Speed Test", id: 425264550
 # mas "MickTagger", id: 1490366427
 
 # Work
-cask "ringcentral-meetings"
+cask "ringcentral"
+cask "linear-linear"
 
 # Quicklook plugins
 cask "apparency"

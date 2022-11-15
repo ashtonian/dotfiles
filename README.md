@@ -42,6 +42,7 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 * numi - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>N</kbd>
 * TODO: Email/Cal/Contacts, Move Screen to another space, Notion global, alttab?
 
+sudo xcodebuild -license accept
 
 
 
@@ -67,7 +68,6 @@ Execute on manual work
 * set beyondcompare as merge tool
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
 * Wake on keyboard not mouse
-* Dual boot linux encrypted disk - always The Disk you inserted was not readable on startup
 * figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
 * shellsync, search, backup, history persistence, search, sync
 * desktop background + screen saver sync + setup per res
