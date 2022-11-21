@@ -15,6 +15,7 @@ brew "mas"
 
 # Fun & Social
 cask "battle-net"
+cask "soundsource"
 # cask "blackhole-16ch"
 cask "discord"
 cask "iina"
