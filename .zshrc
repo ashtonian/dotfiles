@@ -25,9 +25,9 @@ export PATH=/usr/local/opt/python/libexec/bin:$PATH
 
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
-
+alias python=/usr/bin/python3
 eval $(/opt/homebrew/bin/brew shellenv)
-
+source <(helm completion zsh)
 
 ##############################################################################
 # Keybindings
@@ -171,7 +171,6 @@ plugins=(
     vscode
     web-search
     z
-    zsh_reload
     zsh-interactive-cd
 
     ###### Custom ####################################
