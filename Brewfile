@@ -8,7 +8,7 @@ tap "homebrew/core"
 tap "homebrew/services"
 
 # Package Managers & Sys tools
-brew "dockutil"
+# brew "dockutil" https://github.com/kcrawford/dockutil/issues/146
 brew "mackup"
 brew "mas"
 # brew "jakehilborn/jakehilborn/displayplacer"
@@ -116,7 +116,7 @@ cask "webpquicklook"
 
 # Dev
 # brew "openjdk"
-# brew "direnv" -> installed via zplug
+brew "direnv"
 
 brew "ack"
 brew "asciinema"
@@ -173,9 +173,11 @@ brew "swagger-codegen"
 brew "terraform"
 brew "wakatime-cli"
 cask "goland"
+cask "helm"
 
-# brew "git-extras" -> installed via zplug
-# cask "diff-so-fancy" -> installed via zplug
+brew "git-extras"
+cask "diff-so-fancy"
+brew "coreutils"
 brew "git-lfs"
 brew "git"
 brew "zsh-git-prompt"

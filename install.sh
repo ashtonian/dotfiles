@@ -57,10 +57,11 @@ if ! xcode-select --print-path &> /dev/null; then
     # Prompt user to agree to the terms of the Xcode license
     # https://github.com/alrra/dotfiles/issues/10
 
-    sudo xcodebuild -license
+    sudo xcodebuild -license accept
+
     print_result $? 'Agree with the XCode Command Line Tools licence'
 else
-print_success
+    sudo xcodebuild -license accept
 fi;
 
 # ###########################################################
@@ -181,11 +182,11 @@ fi
 export DOTDIR="$HOME/.dotfiles"
 bot "cloning dotfiles locally"
 git clone https://github.com/Ashtonian/dotfiles.git $DOTDIR
-ok 
+ok
 
 bot "linking makcup file from dotfile to directory"
 ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
-ok 
+ok
 
 bot "creating sync directory"
 mkdir $HOME/.sync
@@ -205,10 +206,10 @@ ok
 bot "download bypass paywall"
 cd $HOME/.sync
 git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
-ok 
+ok
 
 
-# check ver first then update or install 
+# check ver first then update or install
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 bot "running configure script"

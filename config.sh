@@ -26,7 +26,7 @@ git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/p
 git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
 
 cd $ZSH_CUSTOM/plugins/fast-alias-tips
-make 
+make
 
 
 
@@ -256,7 +256,7 @@ ok
 
 running "Enable 64-bit Kernel"
 defaults write /Library/Preferences/SystemConfiguration/com.apple.Boot.plist "Kernel Flags" -string ""
-ok 
+ok
 
 # running "Set the some english acronyms/short forms for ease of typing"# defaults write -g NSUserDictionaryReplacementItems -array \
 #     '{ on = 1; replace = cyl; with = "Cya later!"; }' \
@@ -825,27 +825,24 @@ ok
 
 # add apps
 running "Add apps to dock."
-dockutil --add '/System/Applications/System Preferences.app' --allhomes
-dockutil --add '/Applications/iTerm.app' --allhomes
-dockutil --add '/Applications/Visual Studio Code.app' --allhomes
-dockutil --add '/Applications/Google Chrome.app' --allhomes
-dockutil --add '/Applications/Firefox.app' --allhomes
-dockutil --add '/Applications/Notion.app' --allhomes
-dockutil --add '/Applications/Todoist.app' --allhomes
-dockutil --add '/System/Applications/Calendar.app' --allhomes
-dockutil --add '/System/Applications/Contacts.app' --allhomes
-dockutil --add '/Applications/Pocket.app' --allhomes
-dockutil --add '/Applications/Signal.app' --allhomes
-dockutil --add '/Applications/Pulse SMS.app' --allhomes
+dockutil --add '/System/Applications/System Settings.app' --allhomes --no-restart
+dockutil --add '/Applications/iTerm.app' --allhomes --no-restart
+dockutil --add '/Applications/Visual Studio Code.app' --allhomes --no-restart
+dockutil --add '/Applications/Brave Browser.app' --allhomes --no-restart
+dockutil --add '/Applications/Notion.app' --allhomes --no-restart
+dockutil --add '/Applications/Todoist.app' --allhomes --no-restart
+dockutil --add '/System/Applications/Calendar.app' --allhomes --no-restart
+dockutil --add '/System/Applications/Contacts.app' --allhomes --no-restart
+dockutil --add '/Applications/Signal.app' --allhomes --no-restart
 dockutil --add '/Applications/Spotify.app' --allhomes
 ok
 
 # // TODO: folder for chat apps
 
 running "add folders to dock"
-dockutil --add '~/' --view grid --sort name
-dockutil --add '/Applications' --view grid --display folder --allhomes --sort name
-dockutil --add '/Applications/Utilities' --view grid --display folder --allhomes --sort name
+dockutil --add '~/' --view grid --sort name  --no-restart
+dockutil --add '/Applications' --view grid --display folder --allhomes --sort name --no-restart
+dockutil --add '/Applications/Utilities' --view grid --display folder --allhomes --sort name --no-restart
 dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort dateadded
 ok
 
@@ -1551,15 +1548,21 @@ done
 
 Bot "Done. Note that some of these changes require a logout/restart to take effect."
 
-
-
+Bot "Do you want me to restart?"
+read -r -p "[y|n]?" response
+if [[ $response =~ (yes|y|Y) ]];then
+    ok
+    sudo reboot now
+else
+    ok
+fi
 
 
 
 
 #TODO: runn all apps
 #TODO: Fix dock - add applications folder + utilities
-#TODO: fix login items 
+#TODO: fix login items
 #TODO: finder siderbar
 
 # TODO:s
@@ -1614,10 +1617,10 @@ Bot "Done. Note that some of these changes require a logout/restart to take effe
 #   shell=${1-$SHELL}
 #   for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
 # }
-# if bash -n prettyping alias ping 
+# if bash -n prettyping alias ping
 
-# if bash -n lsp 
-  # alias lsp 
+# if bash -n lsp
+  # alias lsp
 # if ! install? go get https://github.com/dborzov/lsp
 # TODO: [oh-my-zsh]     compaudit | xargs chmod g-w,o-w  permissions zsh
 
