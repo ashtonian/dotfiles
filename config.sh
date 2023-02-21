@@ -13,21 +13,7 @@ source $ZSH/oh-my-zsh.sh
 source ./lib_sh/echos.sh
 source ./lib_sh/requirers.sh
 
-git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
-git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
-git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
-git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
-git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
-git clone https://github.com/zdharma/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
-git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
-git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
-git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
-
 git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
-
-cd $ZSH_CUSTOM/plugins/fast-alias-tips
-make
-
 
 
 bot "Hi! I'm going to install tooling and tweak your system settings."
@@ -327,7 +313,7 @@ ok
 # defaults write NSGlobalDomain NSAutomaticSpellingCorrectionEnabled -bool false
 # ok
 
-// TODO:
+#// TODO:
 defaults write -g CheckSpellingWhileTyping -bool true
 
 ### get current zone
@@ -1561,7 +1547,6 @@ fi
 
 
 #TODO: runn all apps
-#TODO: Fix dock - add applications folder + utilities
 #TODO: fix login items
 #TODO: finder siderbar
 
