@@ -18,6 +18,20 @@ COL_CYAN=$ESC_SEQ"36;01m"
 
 # TODO: add ask -> to ask user and wrap with default
 # TODO: add always ask -> to always ask user even when with assumed run
+# TODO: --dry run options
+# TODO: add y/n prompt with default?
+# TODO: add file promp ie (where do you want to install?) with defaults
+# TODO: add whihch option with default
+
+# https://opensource.com/article/18/5/you-dont-know-bash-intro-bash-arrays
+# Auto loop, sanatized input https://stackoverflow.com/questions/226703/how-do-i-prompt-for-yes-no-cancel-input-in-a-linux-shell-script/27875395
+# echo "Do you wish to install this program?"
+# select yn in "Yes" "No"; do
+#     case $yn in
+#         Yes ) make install; break;;
+#         No ) exit;;
+#     esac
+# done
 
 function ok() {
     echo -e "$COL_GREEN[ok]$COL_RESET "$1
@@ -65,18 +79,3 @@ function print_result() {
 }
 
 
-
-# // TODO: --dry run options
-# // TODO: add y/n prompt with default?
-# // TODO: add file promp ie (where do you want to install?) with defaults
-# // TODO: add whihch option with default
-
-# https://opensource.com/article/18/5/you-dont-know-bash-intro-bash-arrays
-# Auto loop, sanatized input https://stackoverflow.com/questions/226703/how-do-i-prompt-for-yes-no-cancel-input-in-a-linux-shell-script/27875395
-# echo "Do you wish to install this program?"
-# select yn in "Yes" "No"; do
-#     case $yn in
-#         Yes ) make install; break;;
-#         No ) exit;;
-#     esac
-# done
