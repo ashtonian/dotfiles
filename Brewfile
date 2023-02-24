@@ -1,144 +1,50 @@
 tap "browsh-org/browsh"
 tap "homebrew/bundle"
+tap "homebrew/cask"
 tap "homebrew/cask-drivers"
 tap "homebrew/cask-fonts"
 tap "homebrew/cask-versions"
-tap "homebrew/cask"
 tap "homebrew/core"
 tap "homebrew/services"
-
-# Package Managers & Sys tools
-# brew "dockutil" https://github.com/kcrawford/dockutil/issues/146
-brew "mackup"
-brew "mas"
-# brew "jakehilborn/jakehilborn/displayplacer"
-
-# Fun & Social
-cask "battle-net"
-cask "soundsource"
-# cask "blackhole-16ch"
-cask "discord"
-cask "iina"
-# cask "pulse-sms"
-cask "signal"
-cask "slack"
-# cask "soundsource"
-cask "spotify"
-cask "steam"
-cask "vox"
-
-# Productivity & General
-brew "p7zip"
-cask "1password"
-cask "brave-browser"
-# cask "dropbox"
-cask "flux"
-# cask "google-backup-and-sync"
-cask "microsoft-auto-update"
-cask "microsoft-office"
-cask "nordvpn"
-cask "notion"
-cask "numi"
-cask "quicken"
-cask "rescuetime"
-# cask "selfcontrol"
-mas "1440", id: 1483764819
-# mas "Day One", id: 1055511498
-mas "Horo", id: 1437226581
-mas "Monosnap", id: 540348655
-# mas "Pocket", id: 568494494
-mas "Todoist", id: 585829637
-mas "Vimari", id: 1480933944
-mas "Raivo", id: 1498497896
-# mas "Yoink", id: 457622435
-
-
-# Power User
-cask "alfred"
-cask "alt-tab"
-cask "appcleaner"
-cask "balenaetcher"
-cask "bartender"
-cask "beardedspice"
-cask "cakebrew"
-cask "cheatsheet"
-# cask "cryptomator"
-# cask "datweatherdoe"
-cask "disk-inventory-x"
-cask "imageoptim"
-cask "keycastr"
-# cask "little-snitch4"
-# cask "macs-fan-control"
-cask "meetingbar"
-# cask "micro-snitch"
-cask "monolingual"
-cask "netspot"
-cask "onyx"
-cask "tor-browser"
-cask "cyberduck"
-cask "tunnelblick"
-mas "WireGaurd", id:1441195208
-cask "uhk-agent"
-cask "lens"
-
-# cask "vmware-fusion"
-cask "wkhtmltopdf" # Renders html to pdf
-mas "Disk Speed Test", id: 425264550
-# mas "MickTagger", id: 1490366427
-
-# Work
-cask "ringcentral"
-cask "linear-linear"
-
-# Quicklook plugins
-cask "apparency"
-cask "jupyter-notebook-ql"
-cask "provisionql"
-cask "qladdict"
-# cask "qlcolorcode" -> not signed throws constant error
-# cask "qlcommonmark" -> not signed and throws constant error
-cask "qlfits"
-cask "qlgradle"
-cask "qlimagesize"
-cask "qlmarkdown"
-cask "qlmobi"
-cask "qlplayground"
-cask "qlprettypatch"
-# cask "qlstephen" -> not signed and throws constant error
-cask "qlswift"
-cask "qlvideo"
-cask "quicklook-csv"
-cask "quicklook-json"
-cask "quicklook-pat"
-cask "quicklookapk"
-cask "suspicious-package"
-cask "webpquicklook"
-
-# Dev
-# brew "openjdk"
-brew "direnv"
-
+tap "moul/moul"
 brew "ack"
 brew "asciinema"
 brew "autojump"
 brew "awscli"
 brew "bash"
-brew "browsh"
+brew "gmp"
+brew "coreutils"
+brew "diff-so-fancy"
+brew "direnv"
+brew "dive"
+brew "docker-compose", link: false
+brew "dockutil"
 brew "findutils"
-brew "fzf" #required via zsh-interactive-cd
+brew "fnm"
+brew "fzf"
 brew "fzy"
 brew "gibo"
-brew "gmp"
+brew "git"
+brew "git-extras"
+brew "git-lfs"
 brew "gnu-sed"
 brew "gnupg"
+brew "go"
+brew "golang-migrate"
 brew "grep"
+brew "helm"
 brew "htop"
-brew "java"
+brew "iperf"
 brew "lftp"
+brew "mackup"
+brew "mas"
 brew "moreutils"
 brew "nvm"
+brew "openjdk"
 brew "openssh"
+brew "p7zip"
 brew "php"
+brew "postgresql@14"
 brew "pre-commit"
 brew "prettyping"
 brew "pv"
@@ -146,51 +52,110 @@ brew "rsync"
 brew "scrcpy"
 brew "shellcheck"
 brew "ssh-copy-id", link: true
+brew "swagger-codegen"
 brew "telnet"
+brew "terraform"
 brew "thefuck"
 brew "tldr"
 brew "tmux"
 brew "tree"
 brew "vim"
-brew "wget"
-cask "dash"
-cask "font-fira-code-nerd-font"
-cask "insomnia"
-cask "iterm2"
-cask "keepingyouawake"
-cask "visual-studio-code"
-cask "wireshark"
-mas "OhMyStar", id: 1218642292
-mas "Xcode", id: 497799835
-
-brew "libpq"
-brew "postgresql"
-cask "postico"
-
-brew "go"
-brew "golang-migrate"
-brew "swagger-codegen"
-brew "terraform"
 brew "wakatime-cli"
-cask "goland"
-cask "helm"
-
-brew "git-extras"
-cask "diff-so-fancy"
-brew "coreutils"
-brew "git-lfs"
-brew "git"
+brew "wget"
+brew "zsh"
 brew "zsh-git-prompt"
-cask "beyond-compare"
-cask "git-credential-manager-core"
-cask "gitkraken"
-
 brew "zsh-history-substring-search"
 brew "zsh-lovers"
-brew "zsh-navigation-tools"
-brew "zsh"
-
-brew "dive"
-brew "docker-compose", link: false
+brew "browsh-org/browsh/browsh"
 brew "moul/moul/docker-diff"
+cask "1password"
+cask "alfred"
+cask "alt-tab"
+cask "apparency"
+cask "appcleaner"
+cask "balenaetcher"
+cask "bartender"
+cask "battle-net"
+cask "beardedspice"
+cask "beyond-compare"
+cask "brave-browser"
+cask "cakebrew"
+cask "cheatsheet"
+cask "cyberduck"
+cask "dash"
+cask "discord"
+cask "disk-inventory-x"
 cask "docker"
+cask "flux"
+cask "font-fira-code-nerd-font"
+cask "gitkraken"
+cask "goland"
+cask "iina"
+cask "imageoptim"
+cask "insomnia"
+cask "iterm2"
+cask "jupyter-notebook-ql"
+cask "keepingyouawake"
+cask "keycastr"
+cask "lens"
+cask "linear-linear"
+cask "meetingbar"
+cask "microsoft-auto-update"
+cask "microsoft-office"
+cask "monolingual"
+cask "netspot"
+cask "nordvpn"
+cask "notion"
+cask "numi"
+cask "onyx"
+cask "postico"
+cask "provisionql"
+cask "qladdict"
+cask "qlfits"
+cask "qlgradle"
+cask "qlimagesize"
+cask "qlmarkdown"
+cask "qlmobi"
+cask "qlplayground"
+cask "qlprettypatch"
+cask "qlswift"
+cask "qlvideo"
+cask "quicken"
+cask "quicklook-csv"
+cask "quicklook-json"
+cask "quicklookapk"
+cask "rescuetime"
+cask "ringcentral"
+cask "signal"
+cask "slack"
+cask "soundsource"
+cask "spotify"
+cask "steam"
+cask "suspicious-package"
+cask "tor-browser"
+cask "tunnelblick"
+cask "uhk-agent"
+cask "visual-studio-code"
+cask "vmware-fusion"
+cask "vox"
+cask "webpquicklook"
+cask "wireshark"
+cask "wkhtmltopdf"
+mas "1440", id: 1483764819
+mas "1Password for Safari", id: 1569813296
+mas "Bear", id: 1091189122
+mas "Dark Reader for Safari", id: 1438243180
+mas "Day One", id: 1055511498
+mas "Disk Speed Test", id: 425264550
+mas "Horo", id: 1437226581
+mas "Monosnap", id: 540348655
+mas "Notion Web Clipper", id: 1559269364
+mas "OhMyStar", id: 1218642292
+mas "Raivo OTP", id: 1498497896
+mas "StopTheMadness", id: 1376402589
+mas "Todoist", id: 585829637
+mas "Toggl Track", id: 1291898086
+mas "Vimari", id: 1480933944
+mas "WireGuard", id: 1451685025
+mas "Xcode", id: 497799835
+mas "Yoink", id: 457622435
