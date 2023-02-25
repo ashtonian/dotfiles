@@ -162,25 +162,29 @@ fi
 typeset -A custom_plugins
 
 custom_plugins=(
-"$ZSH_CUSTOM/plugins/alias-tips" "https://github.com/djui/alias-tips.git"
-"$ZSH_CUSTOM/plugins/wakatime" "https://github.com/sobolevn/wakatime-zsh-plugin.git"
-"$ZSH_CUSTOM/plugins/autoupdate" "https://github.com/TamCore/autoupdate-oh-my-zsh-plugins"
-"$ZSH_CUSTOM/plugins/zsh-tab-colors" "https://github.com/tysonwolker/iterm-tab-colors.git "
-"$ZSH_CUSTOM/plugins/zsh-256color" "https://github.com/chrissicool/zsh-256color"
-"$ZSH_CUSTOM/plugins/zsh-autosuggestions" "https://github.com/zsh-users/zsh-autosuggestions"
-"$ZSH_CUSTOM/plugins/zsh-completions" "https://github.com/zsh-users/zsh-completions"
-"$ZSH_CUSTOM/plugins/zsh-diff-so-fancy" "https://github.com/z-shell/zsh-diff-so-fancy"
-"$ZSH_CUSTOM/plugins/fast-alias-tips" "https://github.com/sei40kr/zsh-fast-alias-tips.git"
-"$ZSH_CUSTOM/plugins/zsh-fzy" "https://github.com/aperezdc/zsh-fzy"
-"$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" "https://github.com/zsh-users/zsh-syntax-highlighting.git"
-"$ZSH_CUSTOM/plugins/autopair" "https://github.com/hlissner/zsh-autopair"
-"$ZSH_CUSTOM/plugins/auto-color-ls" "https://github.com/gretzky/auto-color-ls"
-"$ZSH_CUSTOM/plugins/zsh-autoquoter" "https://github.com/ianthehenry/zsh-autoquoter.git"
+"alias-tips" "https://github.com/djui/alias-tips.git"
+"wakatime" "https://github.com/sobolevn/wakatime-zsh-plugin.git"
+"autoupdate" "https://github.com/TamCore/autoupdate-oh-my-zsh-plugins"
+"zsh-tab-colors" "https://github.com/tysonwolker/iterm-tab-colors.git "
+"zsh-256color" "https://github.com/chrissicool/zsh-256color"
+"zsh-autosuggestions" "https://github.com/zsh-users/zsh-autosuggestions"
+"zsh-completions" "https://github.com/zsh-users/zsh-completions"
+"zsh-diff-so-fancy" "https://github.com/z-shell/zsh-diff-so-fancy"
+"fast-alias-tips" "https://github.com/sei40kr/zsh-fast-alias-tips.git"
+"zsh-fzy" "https://github.com/aperezdc/zsh-fzy"
+"zsh-syntax-highlighting" "https://github.com/zsh-users/zsh-syntax-highlighting.git"
+"autopair" "https://github.com/hlissner/zsh-autopair"
+"auto-color-ls" "https://github.com/gretzky/auto-color-ls"
+"zsh-autoquoter" "https://github.com/ianthehenry/zsh-autoquoter.git"
+"colorize" "https://github.com/zpm-zsh/colorize"
+"git-it-on" "https://github.com/peterhurford/git-it-on.zsh"
+"autoenv" "https://github.com/zpm-zsh/autoenv"
 )
 
 for key val in ${(kv)custom_plugins}; do
-  if [[ ! -d $key ]] || [ -z "$(ls -A "$key")" ]; then
-    git clone $val $key
+    dir="$ZSH_CUSTOM/plugins/$key"
+  if [[ ! -d $dir ]] || [ -z "$(ls -A "$dir")" ]; then
+    git clone $val $dir
   fi
 done
 
@@ -229,6 +233,7 @@ plugins=(
     # thefuck #-> use zsh-thefuck instead for speed
     tmux
     vagrant
+    colored-man-pages
     vscode
     web-search
     wakatime
@@ -236,21 +241,21 @@ plugins=(
     zsh-interactive-cd
 
     # ###### Custom ####################################
-    # # alias-tips # git clone https://github.com/djui/alias-tips.git $ZSH_CUSTOM/plugins/alias-tips
-    wakatime # git clone https://github.com/sobolevn/wakatime-zsh-plugin.git $ZSH_CUSTOM/plugins/wakatime
-    autoupdate # git clone https://github.com/TamCore/autoupdate-oh-my-zsh-plugins $ZSH_CUSTOM/plugins/autoupdate
-    # zsh-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaround git clone https://github.com/tysonwolker/iterm-tab-colors.git  $ZSH_CUSTOM/plugins/zsh-tab-colors
-    zsh-256color # git clone https://github.com/chrissicool/zsh-256color $ZSH_CUSTOM/plugins/zsh-256color
-    zsh-autosuggestions # git clone https://github.com/zsh-users/zsh-autosuggestions $ZSH_CUSTOM/plugins/zsh-autosuggestions
-    # # zsh-completions  # git clone https://github.com/zsh-users/zsh-completions $ZSH_CUSTOM/plugins/zsh-completions
-    zsh-Diff-So-Fancy  # git clone https://github.com/z-shell/zsh-diff-so-fancy $ZSH_CUSTOM/plugins/zsh-diff-so-fancy
-    fast-alias-tips #see PR https://github.com/sei40kr/zsh-fast-alias-tips/pull/25 -> workaround git clone https://github.com/sei40kr/zsh-fast-alias-tips.git  $ZSH_CUSTOM/plugins/fast-alias-tips
-    zsh-fzy  # git clone https://github.com/aperezdc/zsh-fzy $ZSH_CUSTOM/plugins/zsh-fzy
-    zsh-syntax-highlighting # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
+    wakatime
+    colorize
+    autoupdate
+    # zsh-tab-colors #see pr https://github.com/tysonwolker/iterm-tab-colors/pull/14 -> workaroun
+    zsh-256color
+    zsh-autosuggestions
+    zsh-Diff-So-Fancy
+    fast-alias-tips
+    zsh-fzy
+    zsh-syntax-highlighting
     # # zsh-thefuck
     gibo
     autopair
     auto-color-ls
+    git-it-on
     # TODO: fzf
 )
 
