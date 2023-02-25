@@ -24,11 +24,20 @@ export PATH=$HOME/bin:$PATH
 export PATH=/opt/homebrew/bin:$PATH
 export PATH=/usr/local/bin:$PATH
 export PATH=/usr/local/sbin:$PATH
-
 export PATH=/usr/local/opt/python/libexec/bin:$PATH
-
 export PATH="/usr/local/opt/openjdk/bin:$PATH"
 
+## intel mac
+if [ -d "/usr/local/opt/ruby/bin" ]; then
+  export PATH=/usr/local/opt/ruby/bin:$PATH
+  export PATH=`gem environment gemdir`/bin:$PATH
+fi
+
+## m1 mac
+if [ -d "/opt/homebrew/opt/ruby/bin" ]; then
+  export PATH=/opt/homebrew/opt/ruby/bin:$PATH
+  export PATH=`gem environment gemdir`/bin:$PATH
+fi
 
 # Path to your oh-my-zsh installation.
 export ZSH="$HOME/.oh-my-zsh"
@@ -144,6 +153,12 @@ ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 
+if ! gem list colorls -i >/dev/null 2>&1; then
+  echo "colorls gem not found, installing..."
+  gem install colorls
+fi
+
+
 typeset -A custom_plugins
 
 custom_plugins=(
@@ -158,6 +173,9 @@ custom_plugins=(
 "$ZSH_CUSTOM/plugins/fast-alias-tips" "https://github.com/sei40kr/zsh-fast-alias-tips.git"
 "$ZSH_CUSTOM/plugins/zsh-fzy" "https://github.com/aperezdc/zsh-fzy"
 "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" "https://github.com/zsh-users/zsh-syntax-highlighting.git"
+"$ZSH_CUSTOM/plugins/autopair" "https://github.com/hlissner/zsh-autopair"
+"$ZSH_CUSTOM/plugins/auto-color-ls" "https://github.com/gretzky/auto-color-ls"
+"$ZSH_CUSTOM/plugins/zsh-autoquoter" "https://github.com/ianthehenry/zsh-autoquoter.git"
 )
 
 for key val in ${(kv)custom_plugins}; do
@@ -231,12 +249,13 @@ plugins=(
     zsh-syntax-highlighting # git clone https://github.com/zsh-users/zsh-syntax-highlighting.git $ZSH_CUSTOM/plugins/zsh-syntax-highlighting
     # # zsh-thefuck
     gibo
+    autopair
+    auto-color-ls
+    # TODO: fzf
 )
-
 
 # zsh-completions
 fpath+=${ZSH_CUSTOM:-${ZSH:-~/.oh-my-zsh}/custom}/plugins/zsh-completions/src
-
 
 ##############################################################################
 # Plugins - Debug Load Time
@@ -306,7 +325,6 @@ animals=(
  dragon
  kiss
  moofasa
- sodomized
  turtle
  bud-frogs
  elephant-in-snake
@@ -325,7 +343,6 @@ animals=(
  ren
  supermilker
  vader-koala
- cowerflaming-sheep
  luke-koala
  satanic
  surgery
@@ -350,3 +367,4 @@ quotes=(
 quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
+
