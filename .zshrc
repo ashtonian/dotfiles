@@ -372,41 +372,20 @@ quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
 
-# Define the aliases using the typeset command
-typeset -A aliases=(
-    ["ping"]="prettyping"
-    ["hosts"]="prettyping --color=always --nolegend --noclear --hosts"
-    ["cat"]="bat"
-    ["top"]="htop"
-    ["du"]="ncdu --color dark -rr -x --exclude .git --exclude node_modules"
-    ["grep"]="ggrep  --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
+typeset -A aliases_to_add=(
+  "ping" "prettyping --nolegend"
+  "hosts" "prettyping --nolegend --noclear --hosts"
+  "cat" "bat"
+  "top" "htop"
+  "du" "ncdu --color dark -rr -x --exclude .git --exclude node_modules"
+  "grep" "ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
 )
+# Create the aliases_to_add for the corresponding commands if the aliased command exists
+for alias_name command_with_args in ${(kv)aliases_to_add}; do
+  # Split the command with arguments into separate variables
+  command_name="${command_with_args%% *}"
+  if command -v "$command_name" &> /dev/null; then
+    alias "$alias_name"="$command_with_args"
+  fi
 
-# Create the aliases for the corresponding commands
-for alias_name command_with_args in "${(kv)aliases}"; do
-    # Split the command with arguments into separate variables
-    command_name=( ${(s: :)command_with_args}[1] )
-
-    if command -v "$command_name" &> /dev/null; then
-        alias "$alias_name"="$command_with_args"
-    fi
-done
-
-
-typeset -A aliases=(
-    ["ping"]="prettyping --nolegend"
-    ["hosts"]="prettyping --nolegend --noclear --hosts"
-    ["cat"]="bat"
-    ["top"]="htop"
-    ["du"]="ncdu --color dark -rr -x --exclude .git --exclude node_modules"
-    ["grep"]="ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
-)
-
-# Create the aliases for the corresponding commands if the aliased command exists
-for alias_name command_with_args in "${(kv)aliases}"; do
-    # Split the command with arguments into separate variables
-    command_name="${command_with_args%% *}"
-    if command -v "$command_name" &> /dev/null; then
-        alias "$alias_name"="$command_with_args"
-    fi
 done
