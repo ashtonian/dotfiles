@@ -178,7 +178,6 @@ custom_plugins=(
 "zsh-autoquoter" "https://github.com/ianthehenry/zsh-autoquoter.git"
 "colorize" "https://github.com/zpm-zsh/colorize"
 "git-it-on" "https://github.com/peterhurford/git-it-on.zsh"
-"autoenv" "https://github.com/zpm-zsh/autoenv"
 )
 
 for key val in ${(kv)custom_plugins}; do
@@ -321,48 +320,48 @@ eval "$(direnv hook zsh)"
 #Frogs
 
 animals=(
- blowfish
- dragon-and-cow
- hellokitty
- milk
- smallturkey
- bong
- dragon
- kiss
- moofasa
- turtle
- bud-frogs
- elephant-in-snake
- kitty
- moose
- stegosaurus
- tux
- bunnyelephant
- koala
- mutilated
- stimpy
- udder
- cheese
- eyes
- kosh
- ren
- supermilker
- vader-koala
- luke-koala
- satanic
- surgery
- vader
- daemon
- ghostbusters
- sheep
- telebears
- www
- beavis.zen
- default
- head-in
- meow
- skeleton
- three-eyes
+blowfish
+dragon-and-cow
+hellokitty
+milk
+smallturkey
+bong
+dragon
+kiss
+moofasa
+turtle
+bud-frogs
+elephant-in-snake
+kitty
+moose
+stegosaurus
+tux
+bunnyelephant
+koala
+mutilated
+stimpy
+udder
+cheese
+eyes
+kosh
+ren
+supermilker
+vader-koala
+luke-koala
+satanic
+surgery
+vader
+daemon
+ghostbusters
+sheep
+telebears
+www
+beavis.zen
+default
+head-in
+meow
+skeleton
+three-eyes
 )
 
 quotes=(
@@ -373,3 +372,41 @@ quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
 
+# Define the aliases using the typeset command
+typeset -A aliases=(
+    ["ping"]="prettyping"
+    ["hosts"]="prettyping --color=always --nolegend --noclear --hosts"
+    ["cat"]="bat"
+    ["top"]="htop"
+    ["du"]="ncdu --color dark -rr -x --exclude .git --exclude node_modules"
+    ["grep"]="ggrep  --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
+)
+
+# Create the aliases for the corresponding commands
+for alias_name command_with_args in "${(kv)aliases}"; do
+    # Split the command with arguments into separate variables
+    command_name=( ${(s: :)command_with_args}[1] )
+
+    if command -v "$command_name" &> /dev/null; then
+        alias "$alias_name"="$command_with_args"
+    fi
+done
+
+
+typeset -A aliases=(
+    ["ping"]="prettyping --nolegend"
+    ["hosts"]="prettyping --nolegend --noclear --hosts"
+    ["cat"]="bat"
+    ["top"]="htop"
+    ["du"]="ncdu --color dark -rr -x --exclude .git --exclude node_modules"
+    ["grep"]="ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
+)
+
+# Create the aliases for the corresponding commands if the aliased command exists
+for alias_name command_with_args in "${(kv)aliases}"; do
+    # Split the command with arguments into separate variables
+    command_name="${command_with_args%% *}"
+    if command -v "$command_name" &> /dev/null; then
+        alias "$alias_name"="$command_with_args"
+    fi
+done
