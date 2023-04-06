@@ -123,7 +123,9 @@ bootstrap_ssh_key() {
     # Add the key to the SSH agent
     eval "$(ssh-agent -s)"
     ssh-add "${private_key_file}"
+
   else
     echo "SSH key '${key_name}' already exists in '${key_directory}'."
   fi
+  cat --style=changes,snip --paging=never ${public_key_file}
 }
