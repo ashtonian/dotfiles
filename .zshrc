@@ -374,6 +374,7 @@ quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
 
+# Define aliases to add in the format of "<alias>" "<command> args..."
 typeset -A aliases_to_add=(
   "ping" "prettyping --nolegend"
   "hosts" "prettyping --nolegend --noclear --hosts"
@@ -381,6 +382,7 @@ typeset -A aliases_to_add=(
   "top" "htop"
   "du" "ncdu --color dark -rr -x --exclude .git --exclude node_modules"
   "grep" "ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
+  "ls" "colorls"
 )
 # Create the aliases_to_add for the corresponding commands if the aliased command exists
 for alias_name command_with_args in ${(kv)aliases_to_add}; do
