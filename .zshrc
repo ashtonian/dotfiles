@@ -44,6 +44,8 @@ export ZSH="$HOME/.oh-my-zsh"
 # re-export this so it can be used to install custom plugins
 export ZSH_CUSTOM="$ZSH/custom"
 
+source $HOME/.dotfiles/lib_sh/funcs.sh
+
 # alias python=/usr/bin/python3
 # autoload -U +X compinit && compinit
 
