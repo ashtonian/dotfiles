@@ -209,6 +209,24 @@ cd $HOME/.sync
 git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
 ok
 
+bot "download and install colorls dracula theme"
+cd $HOME/.sync
+git clone https://github.com/dracula/colorls.git
+mkdir -p $HOME/.config/colorls
+cp $HOME/.sync/colorls/dark_colors.yaml ~/.config/colorls/dark_colors.yaml
+ok
+
+bot "download and install iterm dracula theme"
+cd $HOME/.sync
+git clone https://github.com/dracula/iterm.git
+ok
+
+bot "download and install alfred dracula theme"
+cd $HOME/.sync
+git clone https://github.com/dracula/alfred alfred-dracula
+ok
+
+
 
 # check ver first then update or install
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"

@@ -174,6 +174,7 @@ custom_plugins=(
 "zsh-diff-so-fancy" "https://github.com/z-shell/zsh-diff-so-fancy"
 "fast-alias-tips" "https://github.com/sei40kr/zsh-fast-alias-tips.git"
 "zsh-fzy" "https://github.com/aperezdc/zsh-fzy"
+"zsh-syntax-highlighting-theme" "https://github.com/dracula/zsh-syntax-highlighting"
 "zsh-syntax-highlighting" "https://github.com/zsh-users/zsh-syntax-highlighting.git"
 "autopair" "https://github.com/hlissner/zsh-autopair"
 "auto-color-ls" "https://github.com/gretzky/auto-color-ls"
@@ -199,6 +200,8 @@ if [[ ! -d "$ZSH_CUSTOM/plugins/gibo" ]] || [ -z "$(ls -A "$ZSH_CUSTOM/plugins/g
     mkdir -p $ZSH_CUSTOM/plugins/gibo/
     ln -s /opt/homebrew/share/zsh/site-functions/_gibo $ZSH_CUSTOM/plugins/gibo/gibo.plugin.zsh
 fi
+
+source $ZSH_CUSTOM/plugins/zsh-syntax-highlighting-theme/zsh-syntax-highlighting.sh
 
 plugins=(
     autojump #SLOW!
