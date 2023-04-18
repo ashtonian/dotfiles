@@ -193,16 +193,29 @@ function open_chrome_extensions() {
     xdg-open $link || open $link || start chrome $link
   done
 }
-
 function brew_mas_list() {
-  output_file="${1:-software_list.md}"
+  output_file="software_list.md"
+  directly_installed=false
 
-  if [[ "$output_file" == "--help" || "$output_file" == "-h" ]]; then
-    echo "Usage: brew_mas_list [output_file]"
-    echo "Generate a markdown list of software installed via Homebrew and MAS (Mac App Store)."
-    echo "The output file is optional; by default, it is named 'software_list.md'."
-    return 0
-  fi
+  while (( $# > 0 )); do
+    case "$1" in
+      -d)
+        directly_installed=true
+        shift
+        ;;
+      -h|--help)
+        echo "Usage: brew_mas_list [-d] [output_file]"
+        echo "Generate a markdown list of software installed via Homebrew and MAS (Mac App Store)."
+        echo "The output file is optional; by default, it is named 'software_list.md'."
+        echo "Use the -d flag to list only directly installed Homebrew formulae."
+        return 0
+        ;;
+      *)
+        output_file="$1"
+        shift
+        ;;
+    esac
+  done
 
   echo "# Brew and MAS installed software list" > "$output_file"
   echo "" >> "$output_file"
@@ -210,13 +223,19 @@ function brew_mas_list() {
   echo "## Homebrew" >> "$output_file"
   echo "" >> "$output_file"
 
-  brew list --formula -1 | while read -r formula; do
-      name=$(brew info --json=v2 $formula | jq -r '.formulae[0].name')
-      homepage=$(brew info --json=v2 $formula | jq -r '.formulae[0].homepage')
-      desc=$(brew info --json=v2 $formula | jq -r '.formulae[0].desc')
-      brew_url="https://formulae.brew.sh/formula/$formula"
+  if $directly_installed; then
+    formulae=$(brew leaves)
+  else
+    formulae=$(brew list --formula -1)
+  fi
 
-      echo "- [$name]($homepage) - [$formula]($brew_url): $desc" >> "$output_file"
+  for formula in ${(f)formulae}; do
+    name=$(brew info --json=v2 $formula | jq -r '.formulae[0].name')
+    homepage=$(brew info --json=v2 $formula | jq -r '.formulae[0].homepage')
+    desc=$(brew info --json=v2 $formula | jq -r '.formulae[0].desc')
+    brew_url="https://formulae.brew.sh/formula/$formula"
+
+    echo "- [$name]($homepage) - [$formula]($brew_url): $desc" >> "$output_file"
   done
 
   echo "" >> "$output_file"
@@ -224,10 +243,10 @@ function brew_mas_list() {
   echo "" >> "$output_file"
 
   mas list | while read -r line; do
-      app_id=$(echo $line | awk '{print $1}')
-      app_name=$(echo $line | cut -f 2- -d ' ')
-      app_store_url="https://apps.apple.com/app/id$app_id"
+    app_id=$(echo $line | awk '{print $1}')
+    app_name=$(echo $line | cut -f 2- -d ' ')
+    app_store_url="https://apps.apple.com/app/id$app_id"
 
-      echo "- $app_name - [$app_id]($app_store_url)" >> "$output_file"
+    echo "- $app_name - [$app_id]($app_store_url)" >> "$output_file"
   done
 }
