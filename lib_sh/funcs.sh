@@ -129,3 +129,105 @@ bootstrap_ssh_key() {
   fi
   cat --style=changes,snip --paging=never ${public_key_file}
 }
+
+
+function export_chrome_extensions() {
+  local usage="Usage: export_chrome_extensions [output_file]"
+
+  local output_file="chrome_extensions.md"
+
+  if [[ "$#" -eq 1 ]]; then
+    if [[ "$1" = "--help" ]]; then
+      echo $usage
+      return
+    else
+      output_file="$1"
+    fi
+  elif [[ "$#" -gt 1 ]]; then
+    echo $usage
+    return
+  fi
+
+  local extensions_path
+  case "$(uname)" in
+    Linux*)   extensions_path="$HOME/.config/google-chrome/Default/Extensions" ;;
+    Darwin*)  extensions_path="$HOME/Library/Application Support/Google/Chrome/Default/Extensions" ;;
+    CYGWIN*|MINGW*|MSYS*) extensions_path="$LOCALAPPDATA/Google/Chrome/User Data/Default/Extensions" ;;
+    *)
+      echo "Unsupported platform"
+      return
+      ;;
+  esac
+
+  echo "# Chrome Extensions\n" > "$output_file"
+
+  for extension_id in ${(f)"$(ls -1 "$extensions_path")"}; do
+    local manifest_path="${extensions_path}/${extension_id}/$(ls -v "${extensions_path}/${extension_id}" | tail -n 1)/manifest.json"
+
+    if [[ -f "$manifest_path" ]]; then
+      local extension_info=$(cat "$manifest_path" | jq -r '"\(.name) | https://chrome.google.com/webstore/detail/\(.id) | \(.description)"')
+      echo "- $extension_info" >> "$output_file"
+    fi
+  done
+
+  echo "Markdown list saved to $output_file"
+}
+
+#!/bin/zsh
+function open_chrome_extensions() {
+  local usage="Usage: open_chrome_extensions [extension_id1] [extension_id2] ..."
+
+  local default_extension_ids=("default_extension_id1" "default_extension_id2")
+
+  if [[ "$#" -eq 0 ]]; then
+    echo "Using default extension IDs"
+    set -- "${default_extension_ids[@]}"
+  elif [[ "$1" = "--help" ]]; then
+    echo $usage
+    return
+  fi
+
+  for extension_id in "$@"
+  do
+    local link="https://chrome.google.com/webstore/detail/${extension_id}"
+    xdg-open $link || open $link || start chrome $link
+  done
+}
+
+function brew_mas_list() {
+  output_file="${1:-software_list.md}"
+
+  if [[ "$output_file" == "--help" || "$output_file" == "-h" ]]; then
+    echo "Usage: brew_mas_list [output_file]"
+    echo "Generate a markdown list of software installed via Homebrew and MAS (Mac App Store)."
+    echo "The output file is optional; by default, it is named 'software_list.md'."
+    return 0
+  fi
+
+  echo "# Brew and MAS installed software list" > "$output_file"
+  echo "" >> "$output_file"
+
+  echo "## Homebrew" >> "$output_file"
+  echo "" >> "$output_file"
+
+  brew list --formula -1 | while read -r formula; do
+      name=$(brew info --json=v2 $formula | jq -r '.formulae[0].name')
+      homepage=$(brew info --json=v2 $formula | jq -r '.formulae[0].homepage')
+      desc=$(brew info --json=v2 $formula | jq -r '.formulae[0].desc')
+      brew_url="https://formulae.brew.sh/formula/$formula"
+
+      echo "- [$name]($homepage) - [$formula]($brew_url): $desc" >> "$output_file"
+  done
+
+  echo "" >> "$output_file"
+  echo "## Mac App Store" >> "$output_file"
+  echo "" >> "$output_file"
+
+  mas list | while read -r line; do
+      app_id=$(echo $line | awk '{print $1}')
+      app_name=$(echo $line | cut -f 2- -d ' ')
+      app_store_url="https://apps.apple.com/app/id$app_id"
+
+      echo "- $app_name - [$app_id]($app_store_url)" >> "$output_file"
+  done
+}
