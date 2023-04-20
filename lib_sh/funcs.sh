@@ -130,50 +130,6 @@ bootstrap_ssh_key() {
   cat --style=changes,snip --paging=never ${public_key_file}
 }
 
-
-function export_chrome_extensions() {
-  local usage="Usage: export_chrome_extensions [output_file]"
-
-  local output_file="chrome_extensions.md"
-
-  if [[ "$#" -eq 1 ]]; then
-    if [[ "$1" = "--help" ]]; then
-      echo $usage
-      return
-    else
-      output_file="$1"
-    fi
-  elif [[ "$#" -gt 1 ]]; then
-    echo $usage
-    return
-  fi
-
-  local extensions_path
-  case "$(uname)" in
-    Linux*)   extensions_path="$HOME/.config/google-chrome/Default/Extensions" ;;
-    Darwin*)  extensions_path="$HOME/Library/Application Support/Google/Chrome/Default/Extensions" ;;
-    CYGWIN*|MINGW*|MSYS*) extensions_path="$LOCALAPPDATA/Google/Chrome/User Data/Default/Extensions" ;;
-    *)
-      echo "Unsupported platform"
-      return
-      ;;
-  esac
-
-  echo "# Chrome Extensions\n" > "$output_file"
-
-  for extension_id in ${(f)"$(ls -1 "$extensions_path")"}; do
-    local manifest_path="${extensions_path}/${extension_id}/$(ls -v "${extensions_path}/${extension_id}" | tail -n 1)/manifest.json"
-
-    if [[ -f "$manifest_path" ]]; then
-      local extension_info=$(cat "$manifest_path" | jq -r '"\(.name) | https://chrome.google.com/webstore/detail/\(.id) | \(.description)"')
-      echo "- $extension_info" >> "$output_file"
-    fi
-  done
-
-  echo "Markdown list saved to $output_file"
-}
-
-#!/bin/zsh
 function open_chrome_extensions() {
   local usage="Usage: open_chrome_extensions [extension_id1] [extension_id2] ..."
 
@@ -195,12 +151,141 @@ function open_chrome_extensions() {
 }
 
 
+function chrome_list_ext_md() {
+  local usage="Usage: chrome_list_ext_md [-o output_file] [--ids-only] [--browser browser_name]
+
+Description: This function exports a list of installed Chrome, Brave, or Vivaldi extensions, with the option to output just the extension IDs.
+
+Options:
+  -o          Output the results to a file instead of the terminal
+  --ids-only  List only the extension IDs, without additional information
+  --browser   Specify the browser to use (chrome, brave, vivaldi). Default is chrome.
+  --help      Show this help message
+"
+
+  local output_stream=true
+  local output_file="chrome.md"
+  local ids_only=false
+  local browser="brave"
+
+  while [[ "$#" -gt 0 ]]; do
+    case $1 in
+      -o)
+        if [[ -n "$2" && $2 != -* ]]; then
+          output_file="$2"
+          shift 2
+        else
+          shift
+        fi
+        ;;
+      --ids-only)
+        ids_only=true
+        shift
+        ;;
+      --browser)
+        browser="$2"
+        shift 2
+        ;;
+      --help)
+        echo "$usage"
+        return
+        ;;
+      *)
+        echo "$usage"
+        return
+        ;;
+    esac
+  done
+
+  typeset -A linux_dirs mac_dirs windows_dirs
+  linux_dirs=(
+    chrome "$HOME/.config/google-chrome/Default/Extensions"
+    brave "$HOME/.config/BraveSoftware/Brave-Browser/Default/Extensions"
+    vivaldi "$HOME/.config/vivaldi/Default/Extensions"
+  )
+  mac_dirs=(
+    chrome "$HOME/Library/Application Support/Google/Chrome/Default/Extensions"
+    brave "$HOME/Library/Application Support/BraveSoftware/Brave-Browser/Default/Extensions"
+    vivaldi "$HOME/Library/Application Support/Vivaldi/Default/Extensions"
+  )
+  windows_dirs=(
+    chrome "$LOCALAPPDATA/Google/Chrome/User Data/Default/Extensions"
+    brave "$LOCALAPPDATA/BraveSoftware/Brave-Browser/User Data/Default/Extensions"
+    vivaldi "$LOCALAPPDATA/Vivaldi/User Data/Default/Extensions"
+  )
+  local extensions_path
+  case "$(uname)" in
+    Linux*)
+      extensions_path="${linux_dirs[$browser]}"
+      ;;
+    Darwin*)
+      extensions_path="${mac_dirs[$browser]}"
+      ;;
+    CYGWIN*|MINGW*|MSYS*)
+      extensions_path="${windows_dirs[$browser]}"
+      ;;
+    *)
+      echo "Unsupported platform"
+      return
+      ;;
+  esac
+
+  if [[ -z "$extensions_path" ]]; then
+    echo "Unsupported browser"
+    return
+  fi
+
+  if ! $output_stream; then
+    exec 3>&1
+    exec 1> "$output_file"
+  fi
+
+  echo ""
+  echo "## ${(C)browser} Extensions\n"
+  echo ""
+
+  for extension_id in ${(f)"$(command ls -1 "$extensions_path")"}; do
+    local manifest_path="${extensions_path}/${extension_id}/$(command ls -v "${extensions_path}/${extension_id}" | tail -n 1)/manifest.json"
+
+    if [[ -f "$manifest_path" ]]; then
+      if $ids_only; then
+        echo "$extension_id"
+      else
+        local manifest_content="$(cat "$manifest_path")"
+        local name=$(jq -r '.name' <<< "$manifest_content")
+        if [[ "$name" == "null" || "${name:0:2}" == "__" ]]; then
+          name=$(jq -r '.short_name' <<< "$manifest_content")
+        fi
+        if [[ "$name" == "null" || "${name:0:2}" == "__" ]]; then
+          name="N/A"
+        fi
+        local homepage_url=$(jq -r '.homepage_url' <<< "$manifest_content")
+        local description=$(jq -r '.description' <<< "$manifest_content")
+
+        if [[ "$description" == "null" || "${description:0:2}" == "__" ]]; then
+          description="N/A"
+        fi
+
+        if [[ "$homepage_url" != "null" && "${homepage_url:0:2}" != "__" ]]; then
+          description="([Homepage](${homepage_url})) ${description} "
+        fi
+
+        local extension_info="[${name}](https://chrome.google.com/webstore/detail/${extension_id}): ${description}"
+        echo "- $extension_info"
+      fi
+    fi
+  done
+
+
+}
+
+
 function brew_list_md() {
-  output_stream=true
-  output_file="brew.md"
-  show_dependencies=false
-  inline_dependencies=false
-  include_casks=false
+  local output_stream=true
+  local output_file="brew.md"
+  local show_dependencies=false
+  local inline_dependencies=false
+  local include_casks=false
 
   while (( $# > 0 )); do
     case "$1" in
@@ -246,32 +331,34 @@ function brew_list_md() {
     exec 1> "$output_file"
   fi
 
-    if $include_casks; then
+  if $include_casks; then
+    echo ""
     echo "## Homebrew Casks"
     echo ""
 
     cask_list=$(brew list --cask)
 
     for cask in ${(f)cask_list}; do
-      info=$(brew info --cask --json=v2 $cask | awk '{gsub(/[[:cntrl:]]/, ""); print}' | tr -d '\r')
-      name=$(echo $info | jq -r '.casks[0].name[0]')
-      homepage=$(echo $info | jq -r '.casks[0].homepage')
-      desc=$(echo $info | jq -r '.casks[0].desc')
-      tap=$(echo $info | jq -r '.casks[0].tap')
+      info=$(brew info --cask --json=v2 $cask)
+      name=$(jq -r '.casks[0].name[0]' <<< "$info")
+      homepage=$(jq -r '.casks[0].homepage' <<< "$info")
+      desc=$(jq -r '.casks[0].desc' <<< "$info")
+      tap=$(jq -r '.casks[0].tap' <<< "$info")
       tap_url="https://github.com/$tap"
 
       if [[ $tap == "homebrew/cask" ]]; then
-        echo "- [$name]($homepage) - $cask: $desc"
+        echo "- [$name]($homepage): $desc"
       else
-        echo "- [$name]($homepage) - $cask ([Tap: $tap]($tap_url)): $desc"
+        echo "- [$name]($homepage) ([Tap: $tap]($tap_url)): $desc"
       fi
 
       if $inline_dependencies; then
-        dependencies=$(echo $info | jq -r '.casks[0].depends_on.formula[]' 2>/dev/null)
+        dependencies=$(jq -r '.casks[0].depends_on.formula[]' <<<"$info")
         if [[ -n $dependencies ]]; then
           echo "  - Dependencies:"
           for dep in ${(f)dependencies}; do
-            dep_homepage=$(brew info --json=v2 $dep | jq -r '.formulae[0].homepage')
+            dep_info=$(brew info --json=v2 $dep)
+            dep_homepage=$(jq -r '.formulae[0].homepage' <<<"$dep_info")
             dep_url="https://formulae.brew.sh/formula/$dep"
             echo "    - [$dep]($dep_homepage) - [$dep]($dep_url)"
           done
@@ -280,25 +367,28 @@ function brew_list_md() {
     done
   fi
 
-
-
+  echo ""
+  echo "## Homebrew Formulaes"
+  echo ""
 
   formulae=$(brew leaves)
 
   for formula in ${(f)formulae}; do
-    name=$(brew info --json=v2 $formula | jq -r '.formulae[0].name')
-    homepage=$(brew info --json=v2 $formula | jq -r '.formulae[0].homepage')
-    desc=$(brew info --json=v2 $formula | jq -r '.formulae[0].desc')
+    formula_info=$(brew info --json=v2 $formula)
+    name=$(jq -r '.formulae[0].name' <<< $formula_info)
+    homepage=$(jq -r '.formulae[0].homepage' <<< $formula_info)
+    desc=$(jq -r '.formulae[0].desc' <<< $formula_info)
     brew_url="https://formulae.brew.sh/formula/$formula"
 
-    echo "- [$name]($homepage) - [$formula]($brew_url): $desc"
+    echo "- [$name]($homepage): $desc"
 
     if $inline_dependencies; then
       dependencies=$(brew deps $formula)
       if [[ -n $dependencies ]]; then
         echo "  - Dependencies:"
         for dep in ${(f)dependencies}; do
-          dep_homepage=$(brew info --json=v2 $dep | jq -r '.formulae[0].homepage')
+          formula_dep_info=$(brew info --json=v2 $dep)
+          dep_homepage=$(jq -r '.formulae[0].homepage' <<< "$formula_dep_info")
           dep_url="https://formulae.brew.sh/formula/$dep"
           echo "    - [$dep]($dep_homepage) - [$dep]($dep_url)"
         done
@@ -314,9 +404,10 @@ function brew_list_md() {
     installed_formulae=$(brew list --formula -1)
     for formula in ${(f)installed_formulae}; do
       if [[ $(brew uses --installed $formula) ]]; then
-        name=$(brew info --json=v2 $formula | jq -r '.formulae[0].name')
-        homepage=$(brew info --json=v2 $formula | jq -r '.formulae[0].homepage')
-        desc=$(brew info --json=v2 $formula | jq -r '.formulae[0].desc')
+        dep_form_info=$(brew info --json=v2 $formula)
+        name=$(jq -r '.formulae[0].name' <<< $dep_form_info)
+        homepage=$(jq -r '.formulae[0].homepage' <<< $dep_form_info)
+        desc=$(jq -r '.formulae[0].desc' <<< $dep_form_info)
         brew_url="https://formulae.brew.sh/formula/$formula"
 
         echo "- [$name]($homepage) - [$formula]($brew_url): $desc"
@@ -325,21 +416,24 @@ function brew_list_md() {
   fi
 }
 
-function mas_list() {
+function mas_list_md() {
   output_stream=true
-  output_file=""
+  output_file="mas.md"
 
   while (( $# > 0 )); do
     case "$1" in
       -o)
-        output_stream=false
-        output_file="$2"
-        shift 2
+        if [[ -n "$2" && $2 != -* ]]; then
+          output_file="$2"
+          shift 2
+        else
+          shift
+        fi
         ;;
       -h|--help)
-        echo "Usage: mas_list [-o output_file]"
+        echo "Usage: mas_list_md [-o output_file]"
         echo "Generate a markdown list of software installed via MAS (Mac App Store)."
-        echo "By default, the output is sent to the standard output stream. Use the -o flag followed by the output file name to save the output to a file instead."
+        echo "By default, the output is sent to the standard output stream. Use the -o flag followed by the output optional (default:mas.md) file name to save the output to a file instead."
         return 0
         ;;
       *)
@@ -355,7 +449,8 @@ function mas_list() {
     exec 1> "$output_file"
   fi
 
-  echo "# Mac App Store installed software list"
+  echo ""
+  echo "## Mac App Store Apps"
   echo ""
 
   app_list=$(mas list)
@@ -366,9 +461,5 @@ function mas_list() {
 
     echo "- $app_name - [$app_id]($app_store_url)"
   done
-
-  if ! $output_stream; then
-    exec 1>&3
-  fi
 }
 

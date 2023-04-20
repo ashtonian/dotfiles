@@ -379,13 +379,19 @@ eval $quote | cowsay -f $animal | lolcat #-a -d 1
 
 # Define aliases to add in the format of "<alias>" "<command> args..."
 typeset -A aliases_to_add=(
+  "oping" "command ping"
   "ping" "prettyping --nolegend"
   "hosts" "prettyping --nolegend --noclear --hosts"
   "cat" "bat"
+  "ocat" "command cat"
   "top" "htop"
+  "otop" "command top"
   "du" "ncdu --color dark -rr -x --exclude .git --exclude node_modules"
+  "odu" "command du"
   "grep" "ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}"
+  "ogrep" "command grep"
   "ls" "colorls"
+  "ols" "command ls"
 )
 # Create the aliases_to_add for the corresponding commands if the aliased command exists
 for alias_name command_with_args in ${(kv)aliases_to_add}; do
