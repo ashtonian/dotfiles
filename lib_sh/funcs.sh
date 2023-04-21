@@ -129,6 +129,117 @@ bootstrap_ssh_key() {
   fi
   cat --style=changes,snip --paging=never ${public_key_file}
 }
+function vscode_extensions_list() {
+    # Default output file
+    local output_file="vscode_extensions_list.md"
+
+    # Argument parsing
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -o|--output)
+                output_file="$2"
+                shift
+                ;;
+            -h|--help)
+                echo "Usage: vscode_extensions_list [-o output_file] [-h]"
+                echo "Generate a markdown list of installed VSCode extensions."
+                echo ""
+                echo "Options:"
+                echo "  -o, --output FILE   Set the output markdown file. Default: vscode_extensions_list.md"
+                echo "  -h, --help          Show this help message."
+                return 0
+                ;;
+            *)
+                echo "Unknown argument: $1"
+                echo "Use -h or --help for usage information."
+                return 1
+                ;;
+        esac
+        shift
+    done
+
+    # Get the list of installed extensions
+    local extensions=$(code --list-extensions)
+
+    # Create a markdown file
+
+
+    echo "Markdown list created in $output_file"
+}
+
+function vscode_list_md() {
+    # Default output file
+    local output_file="vscode.md"
+    local output_stream=true
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case $1 in
+            -o|--output)
+              if [[ -n "$2" && $2 != -* ]]; then
+                output_stream=false
+                output_file="$2"
+                shift 2
+              else
+                shift
+              fi
+              ;;
+            -h|--help)
+            echo "Usage: vscode_extensions_list [-o output_file] [-h]"
+            echo "Generate a markdown list of installed VSCode extensions."
+            echo ""
+            echo "Options:"
+            echo "  -o, --output FILE   Set the output markdown file. Default: vscode.md"
+            echo "  -h, --help          Show this help message."
+            return 0
+            ;;
+            *)
+            echo "Unknown argument: $1"
+            echo "Use -h or --help for usage information."
+            return 1
+            ;;
+        esac
+    done
+
+    if ! $output_stream; then
+      exec 3>&1
+      exec 1> "$output_file"
+    fi
+
+    # Get the list of installed extensions
+    local extensions=$(code --list-extensions)
+
+    # Create a markdown file
+    echo "## VSCode Extensions List" > $output_file
+
+   # Loop through the extensions and generate the markdown list
+    for extension in ${(f)extensions}; do
+        # Separate publisher and extension name
+        local publisher_name=$(echo $extension | cut -d. -f1)
+        local extension_name=$(echo $extension | cut -d. -f2)
+
+        # Construct the API URL
+        local api_url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/$publisher_name/extensions/$extension_name/latest"
+
+        # Get extension details from the Visual Studio Code Marketplace API#api-version=3.0-preview.1")
+        local details_json=$(curl -s "$api_url" -H "Accept: application/json;")
+
+        # Extract name, publisher, link, and description
+        local name=$(jq -r '.displayName' <<< "$details_json")
+        local publisher=$(jq -r '.publisher.displayName' <<< "$details_json")
+        local link="https://marketplace.visualstudio.com/items?itemName=$extension"
+        local description=$(jq -r '.shortDescription' <<< "$details_json")
+
+        # Create a markdown list entry
+        local entry="- [$name by $publisher]($link): $description"
+
+        # Append the entry to the output file
+        echo $entry >> $output_file
+    done
+
+    echo "Markdown list created in $output_file"
+}
+
 
 function open_chrome_extensions() {
   local usage="Usage: open_chrome_extensions [extension_id1] [extension_id2] ..."
@@ -257,13 +368,13 @@ Options:
           name=$(jq -r '.short_name' <<< "$manifest_content")
         fi
         if [[ "$name" == "null" || "${name:0:2}" == "__" ]]; then
-          name="N/A"
+          name="$extension_id"
         fi
         local homepage_url=$(jq -r '.homepage_url' <<< "$manifest_content")
         local description=$(jq -r '.description' <<< "$manifest_content")
 
         if [[ "$description" == "null" || "${description:0:2}" == "__" ]]; then
-          description="N/A"
+          description=""
         fi
 
         if [[ "$homepage_url" != "null" && "${homepage_url:0:2}" != "__" ]]; then
