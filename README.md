@@ -77,6 +77,7 @@ Execute on manual work
 * cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
 * horo, monosnap, ohmystar workflow
 * git/projects dir auto fetchs
+* defaults
 
 ## Inspiration and Resources
 

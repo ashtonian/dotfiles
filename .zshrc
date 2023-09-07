@@ -44,6 +44,7 @@ export ZSH="$HOME/.oh-my-zsh"
 # re-export this so it can be used to install custom plugins
 export ZSH_CUSTOM="$ZSH/custom"
 
+# Add custom functions
 source $HOME/.dotfiles/lib_sh/funcs.sh
 
 # alias python=/usr/bin/python3
@@ -149,6 +150,9 @@ ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 # Plugins - Install
 ##############################################################################
 
+# printf '%s\n'  >> "${ZDOTDIR:-$HOME}/.zprofile"
+# source $(brew --prefix autoenv)/activate.sh
+
 # Which plugins would you like to load?
 # Standard plugins can be found in $ZSH/plugins/
 # Custom plugins may be added to $ZSH_CUSTOM/plugins/
@@ -161,8 +165,11 @@ if ! gem list colorls -i >/dev/null 2>&1; then
 fi
 
 
+
 typeset -A custom_plugins
 
+# This loop clones and installs custom plugins not in omz repo
+# name of the fuctiontion / github location with function at root
 custom_plugins=(
 "alias-tips" "https://github.com/djui/alias-tips.git"
 "wakatime" "https://github.com/sobolevn/wakatime-zsh-plugin.git"
@@ -190,17 +197,21 @@ for key val in ${(kv)custom_plugins}; do
   fi
 done
 
+## Custom install for fast alias tips
 if ! command -v def-matcher &> /dev/null
 then
   mv "$ZSH_CUSTOM/plugins/fast-alias-tips/def-matcher.go" "$ZSH_CUSTOM/plugins/fast-alias-tips/main.go"
   go build -c "$ZSH_CUSTOM/plugins/fast-alias-tips" -o "$GOPATH/bin/def-matcher"
 fi
 
+## Custom install for gibo
 if [[ ! -d "$ZSH_CUSTOM/plugins/gibo" ]] || [ -z "$(ls -A "$ZSH_CUSTOM/plugins/gibo")" ]; then
     mkdir -p $ZSH_CUSTOM/plugins/gibo/
     ln -s /opt/homebrew/share/zsh/site-functions/_gibo $ZSH_CUSTOM/plugins/gibo/gibo.plugin.zsh
 fi
 
+## TODO: should I source other site-functions from opt/homebrew/share/zsh/site-functions?
+## Configure zsh-syntax-highlighting-theme
 source $ZSH_CUSTOM/plugins/zsh-syntax-highlighting-theme/zsh-syntax-highlighting.sh
 
 plugins=(
@@ -313,16 +324,11 @@ eval "$(fnm env)"
 source /opt/homebrew/opt/git-extras/share/git-extras/git-extras-completion.zsh
 eval "$(direnv hook zsh)"
 
-## REORG
-# Uncomment the following line to change how often to auto-update (in days).
-# export UPDATE_ZSH_DAYS=13
-#ZSH_CUSTOM_AUTOUPDATE_QUIET=true
 
-#!/usr/bin/zsh
-#!/usr/bin/zsh
 
-# List of commands and their parameters
-#Frogs
+##############################################################################
+# Fun Prompt
+##############################################################################
 
 animals=(
 blowfish
@@ -377,6 +383,12 @@ quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
 
+
+
+##############################################################################
+# Personal Aliases
+##############################################################################
+
 # Define aliases to add in the format of "<alias>" "<command> args..."
 typeset -A aliases_to_add=(
   "oping" "command ping"
@@ -392,7 +404,10 @@ typeset -A aliases_to_add=(
   "ogrep" "command grep"
   "ls" "colorls"
   "ols" "command ls"
+  "fdns" "flush_dns"
+  "tfcycle" "tf_destroy_apply"
 )
+
 # Create the aliases_to_add for the corresponding commands if the aliased command exists
 for alias_name command_with_args in ${(kv)aliases_to_add}; do
   # Split the command with arguments into separate variables
@@ -402,3 +417,15 @@ for alias_name command_with_args in ${(kv)aliases_to_add}; do
   fi
 
 done
+
+## TODO:
+## REORG
+# Uncomment the following line to change how often to auto-update (in days).
+# export UPDATE_ZSH_DAYS=13
+#ZSH_CUSTOM_AUTOUPDATE_QUIET=true
+
+#!/usr/bin/zsh
+#!/usr/bin/zsh
+
+# List of commands and their parameters
+#Frogs

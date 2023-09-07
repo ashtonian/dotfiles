@@ -1,0 +1,245 @@
+# Brew and MAS installed software list
+
+## Homebrew
+
+- [ack](https://beyondgrep.com/) - [ack](https://formulae.brew.sh/formula/ack): Search tool like grep, but optimized for programmers
+- [aom](https://aomedia.googlesource.com/aom) - [aom](https://formulae.brew.sh/formula/aom): Codec library for encoding and decoding AV1 video streams
+- [apr](https://apr.apache.org/) - [apr](https://formulae.brew.sh/formula/apr): Apache Portable Runtime library
+- [apr-util](https://apr.apache.org/) - [apr-util](https://formulae.brew.sh/formula/apr-util): Companion library to apr, the Apache Portable Runtime library
+- [argon2](https://github.com/P-H-C/phc-winner-argon2) - [argon2](https://formulae.brew.sh/formula/argon2): Password hashing library and CLI utility
+- [aribb24](https://code.videolan.org/jeeb/aribb24) - [aribb24](https://formulae.brew.sh/formula/aribb24): Library for ARIB STD-B24, decoding JIS 8 bit characters and parsing MPEG-TS
+- [asciinema](https://asciinema.org) - [asciinema](https://formulae.brew.sh/formula/asciinema): Record and share terminal sessions
+- [asdf](https://asdf-vm.com/) - [asdf](https://formulae.brew.sh/formula/asdf): Extendable version manager with support for Ruby, Node.js, Erlang & more
+- [aspell](http://aspell.net/) - [aspell](https://formulae.brew.sh/formula/aspell): Spell checker with better logic than ispell
+- [autoconf](https://www.gnu.org/software/autoconf) - [autoconf](https://formulae.brew.sh/formula/autoconf): Automatic configure script builder
+- [autojump](https://github.com/wting/autojump) - [autojump](https://formulae.brew.sh/formula/autojump): Shell extension to jump to frequently used directories
+- [automake](https://www.gnu.org/software/automake/) - [automake](https://formulae.brew.sh/formula/automake): Tool for generating GNU Standards-compliant Makefiles
+- [awscli](https://aws.amazon.com/cli/) - [awscli](https://formulae.brew.sh/formula/awscli): Official Amazon AWS command-line interface
+- [bash](https://www.gnu.org/software/bash/) - [bash](https://formulae.brew.sh/formula/bash): Bourne-Again SHell, a UNIX command interpreter
+- [bat](https://github.com/sharkdp/bat) - [bat](https://formulae.brew.sh/formula/bat): Clone of cat(1) with syntax highlighting and Git integration
+- [berkeley-db](https://www.oracle.com/database/technologies/related/berkeleydb.html) - [berkeley-db](https://formulae.brew.sh/formula/berkeley-db): High performance key/value database
+- [brotli](https://github.com/google/brotli) - [brotli](https://formulae.brew.sh/formula/brotli): Generic-purpose lossless compression algorithm by Google
+- [browsh](https://www.brow.sh) - [browsh](https://formulae.brew.sh/formula/browsh): The modern, text-based browser
+- [ca-certificates](https://curl.se/docs/caextract.html) - [ca-certificates](https://formulae.brew.sh/formula/ca-certificates): Mozilla CA certificate store
+- [cairo](https://cairographics.org/) - [cairo](https://formulae.brew.sh/formula/cairo): Vector graphics library with cross-device output support
+- [capstone](https://www.capstone-engine.org/) - [capstone](https://formulae.brew.sh/formula/capstone): Multi-platform, multi-architecture disassembly framework
+- [cffi](https://cffi.readthedocs.io/en/latest/) - [cffi](https://formulae.brew.sh/formula/cffi): C Foreign Function Interface for Python
+- [chroma](https://github.com/alecthomas/chroma) - [chroma](https://formulae.brew.sh/formula/chroma): General purpose syntax highlighter in pure Go
+- [cjson](https://github.com/DaveGamble/cJSON) - [cjson](https://formulae.brew.sh/formula/cjson): Ultralightweight JSON parser in ANSI C
+- [cmocka](https://cmocka.org/) - [cmocka](https://formulae.brew.sh/formula/cmocka): Unit testing framework for C
+- [coreutils](https://www.gnu.org/software/coreutils) - [coreutils](https://formulae.brew.sh/formula/coreutils): GNU File, Shell, and Text utilities
+- [cowsay](https://github.com/tnalpgge/rank-amateur-cowsay) - [cowsay](https://formulae.brew.sh/formula/cowsay): Configurable talking characters in ASCII art
+- [curl](https://curl.se) - [curl](https://formulae.brew.sh/formula/curl): Get a file from an HTTP, HTTPS or FTP server
+- [dav1d](https://code.videolan.org/videolan/dav1d) - [dav1d](https://formulae.brew.sh/formula/dav1d): AV1 decoder targeted to be small and fast
+- [diff-so-fancy](https://github.com/so-fancy/diff-so-fancy) - [diff-so-fancy](https://formulae.brew.sh/formula/diff-so-fancy): Good-lookin' diffs with diff-highlight and more
+- [direnv](https://direnv.net/) - [direnv](https://formulae.brew.sh/formula/direnv): Load/unload environment variables based on $PWD
+- [dive](https://github.com/wagoodman/dive) - [dive](https://formulae.brew.sh/formula/dive): Tool for exploring each layer in a docker image
+- [docker-compose](https://docs.docker.com/compose/) - [docker-compose](https://formulae.brew.sh/formula/docker-compose): Isolated development environments using Docker
+- [docker-diff](https://github.com/moul/docker-diff) - [docker-diff](https://formulae.brew.sh/formula/docker-diff): Compare Docker images
+- [dockutil](https://github.com/kcrawford/dockutil) - [dockutil](https://formulae.brew.sh/formula/dockutil): Tool for managing dock items
+- [docutils](https://docutils.sourceforge.io) - [docutils](https://formulae.brew.sh/formula/docutils): Text processing system for reStructuredText
+- [ffmpeg](https://ffmpeg.org/) - [ffmpeg](https://formulae.brew.sh/formula/ffmpeg): Play, record, convert, and stream audio and video
+- [findutils](https://www.gnu.org/software/findutils/) - [findutils](https://formulae.brew.sh/formula/findutils): Collection of GNU find, xargs, and locate
+- [flac](https://xiph.org/flac/) - [flac](https://formulae.brew.sh/formula/flac): Free lossless audio codec
+- [fnm](https://github.com/Schniz/fnm) - [fnm](https://formulae.brew.sh/formula/fnm): Fast and simple Node.js version manager
+- [fontconfig](https://wiki.freedesktop.org/www/Software/fontconfig/) - [fontconfig](https://formulae.brew.sh/formula/fontconfig): XML-based font configuration API for X Windows
+- [fortune](https://www.ibiblio.org/pub/linux/games/amusements/fortune/!INDEX.html) - [fortune](https://formulae.brew.sh/formula/fortune): Infamous electronic fortune-cookie generator
+- [freetds](https://www.freetds.org/) - [freetds](https://formulae.brew.sh/formula/freetds): Libraries to talk to Microsoft SQL Server and Sybase databases
+- [freetype](https://www.freetype.org/) - [freetype](https://formulae.brew.sh/formula/freetype): Software library to render fonts
+- [frei0r](https://frei0r.dyne.org/) - [frei0r](https://formulae.brew.sh/formula/frei0r): Minimalistic plugin API for video effects
+- [fribidi](https://github.com/fribidi/fribidi) - [fribidi](https://formulae.brew.sh/formula/fribidi): Implementation of the Unicode BiDi algorithm
+- [fzf](https://github.com/junegunn/fzf) - [fzf](https://formulae.brew.sh/formula/fzf): Command-line fuzzy finder written in Go
+- [fzy](https://github.com/jhawthorn/fzy) - [fzy](https://formulae.brew.sh/formula/fzy): Fast, simple fuzzy text selector with an advanced scoring algorithm
+- [gd](https://libgd.github.io/) - [gd](https://formulae.brew.sh/formula/gd): Graphics library to dynamically manipulate images
+- [gdbm](https://www.gnu.org/software/gdbm/) - [gdbm](https://formulae.brew.sh/formula/gdbm): GNU database manager
+- [gettext](https://www.gnu.org/software/gettext/) - [gettext](https://formulae.brew.sh/formula/gettext): GNU internationalization (i18n) and localization (l10n) library
+- [gibo](https://github.com/simonwhitaker/gibo) - [gibo](https://formulae.brew.sh/formula/gibo): Access GitHub's .gitignore boilerplates
+- [giflib](https://giflib.sourceforge.io/) - [giflib](https://formulae.brew.sh/formula/giflib): Library and utilities for processing GIFs
+- [git](https://git-scm.com) - [git](https://formulae.brew.sh/formula/git): Distributed revision control system
+- [git-extras](https://github.com/tj/git-extras) - [git-extras](https://formulae.brew.sh/formula/git-extras): Small git utilities
+- [git-lfs](https://git-lfs.github.com/) - [git-lfs](https://formulae.brew.sh/formula/git-lfs): Git extension for versioning large files
+- [glib](https://developer.gnome.org/glib/) - [glib](https://formulae.brew.sh/formula/glib): Core application library for C
+- [gmp](https://gmplib.org/) - [gmp](https://formulae.brew.sh/formula/gmp): GNU multiple precision arithmetic library
+- [gnu-sed](https://www.gnu.org/software/sed/) - [gnu-sed](https://formulae.brew.sh/formula/gnu-sed): GNU implementation of the famous stream editor
+- [gnupg](https://gnupg.org/) - [gnupg](https://formulae.brew.sh/formula/gnupg): GNU Pretty Good Privacy (PGP) package
+- [gnutls](https://gnutls.org/) - [gnutls](https://formulae.brew.sh/formula/gnutls): GNU Transport Layer Security (TLS) Library
+- [go](https://go.dev/) - [go](https://formulae.brew.sh/formula/go): Open source programming language to build simple/reliable/efficient software
+- [golang-migrate](https://github.com/golang-migrate/migrate) - [golang-migrate](https://formulae.brew.sh/formula/golang-migrate): Database migrations CLI tool
+- [graphite2](https://graphite.sil.org/) - [graphite2](https://formulae.brew.sh/formula/graphite2): Smart font renderer for non-Roman scripts
+- [grep](https://www.gnu.org/software/grep/) - [grep](https://formulae.brew.sh/formula/grep): GNU grep, egrep and fgrep
+- [harfbuzz](https://github.com/harfbuzz/harfbuzz) - [harfbuzz](https://formulae.brew.sh/formula/harfbuzz): OpenType text shaping engine
+- [helm](https://helm.sh/) - [helm](https://formulae.brew.sh/formula/helm): Kubernetes package manager
+- [highway](https://github.com/google/highway) - [highway](https://formulae.brew.sh/formula/highway): Performance-portable, length-agnostic SIMD with runtime dispatch
+- [htop](https://htop.dev/) - [htop](https://formulae.brew.sh/formula/htop): Improved top (interactive process viewer)
+- [icu4c](https://icu.unicode.org/home) - [icu4c](https://formulae.brew.sh/formula/icu4c): C/C++ and Java libraries for Unicode and globalization
+- [imath](https://www.openexr.com/) - [imath](https://formulae.brew.sh/formula/imath): Library of 2D and 3D vector, matrix, and math operations
+- [iperf](https://sourceforge.net/projects/iperf2/) - [iperf](https://formulae.brew.sh/formula/iperf): Tool to measure maximum TCP and UDP bandwidth
+- [iperf3](https://github.com/esnet/iperf) - [iperf3](https://formulae.brew.sh/formula/iperf3): Update of iperf: measures TCP, UDP, and SCTP bandwidth
+- [jpeg-turbo](https://www.libjpeg-turbo.org/) - [jpeg-turbo](https://formulae.brew.sh/formula/jpeg-turbo): JPEG image codec that aids compression and decompression
+- [jpeg-xl](https://jpeg.org/jpegxl/index.html) - [jpeg-xl](https://formulae.brew.sh/formula/jpeg-xl): New file format for still image compression
+- [jq](https://stedolan.github.io/jq/) - [jq](https://formulae.brew.sh/formula/jq): Lightweight and flexible command-line JSON processor
+- [krb5](https://web.mit.edu/kerberos/) - [krb5](https://formulae.brew.sh/formula/krb5): Network authentication protocol
+- [lame](https://lame.sourceforge.io/) - [lame](https://formulae.brew.sh/formula/lame): High quality MPEG Audio Layer III (MP3) encoder
+- [ldns](https://nlnetlabs.nl/projects/ldns/) - [ldns](https://formulae.brew.sh/formula/ldns): DNS library written in C
+- [leptonica](http://www.leptonica.org/) - [leptonica](https://formulae.brew.sh/formula/leptonica): Image processing and image analysis library
+- [lftp](https://lftp.yar.ru/) - [lftp](https://formulae.brew.sh/formula/lftp): Sophisticated file transfer program
+- [libarchive](https://www.libarchive.org) - [libarchive](https://formulae.brew.sh/formula/libarchive): Multi-format archive and compression library
+- [libass](https://github.com/libass/libass) - [libass](https://formulae.brew.sh/formula/libass): Subtitle renderer for the ASS/SSA subtitle format
+- [libassuan](https://www.gnupg.org/related_software/libassuan/) - [libassuan](https://formulae.brew.sh/formula/libassuan): Assuan IPC Library
+- [libavif](https://github.com/AOMediaCodec/libavif) - [libavif](https://formulae.brew.sh/formula/libavif): Library for encoding and decoding .avif files
+- [libb2](https://blake2.net/) - [libb2](https://formulae.brew.sh/formula/libb2): Secure hashing function
+- [libbluray](https://www.videolan.org/developers/libbluray.html) - [libbluray](https://formulae.brew.sh/formula/libbluray): Blu-Ray disc playback library for media players like VLC
+- [libcbor](https://github.com/PJK/libcbor) - [libcbor](https://formulae.brew.sh/formula/libcbor): CBOR protocol implementation for C and others
+- [libevent](https://libevent.org/) - [libevent](https://formulae.brew.sh/formula/libevent): Asynchronous event library
+- [libfido2](https://developers.yubico.com/libfido2/) - [libfido2](https://formulae.brew.sh/formula/libfido2): Provides library functionality for FIDO U2F & FIDO 2.0, including USB
+- [libgcrypt](https://gnupg.org/related_software/libgcrypt/) - [libgcrypt](https://formulae.brew.sh/formula/libgcrypt): Cryptographic library based on the code from GnuPG
+- [libgpg-error](https://www.gnupg.org/related_software/libgpg-error/) - [libgpg-error](https://formulae.brew.sh/formula/libgpg-error): Common error values for all GnuPG components
+- [libidn2](https://www.gnu.org/software/libidn/#libidn2) - [libidn2](https://formulae.brew.sh/formula/libidn2): International domain name library (IDNA2008, Punycode and TR46)
+- [libksba](https://www.gnupg.org/related_software/libksba/) - [libksba](https://formulae.brew.sh/formula/libksba): X.509 and CMS library
+- [libnghttp2](https://nghttp2.org/) - [libnghttp2](https://formulae.brew.sh/formula/libnghttp2): HTTP/2 C Library
+- [libogg](https://www.xiph.org/ogg/) - [libogg](https://formulae.brew.sh/formula/libogg): Ogg Bitstream Library
+- [libpng](http://www.libpng.org/pub/png/libpng.html) - [libpng](https://formulae.brew.sh/formula/libpng): Library for manipulating PNG images
+- [libpq](https://www.postgresql.org/docs/15/libpq.html) - [libpq](https://formulae.brew.sh/formula/libpq): Postgres C API library
+- [librist](https://code.videolan.org/rist/) - [librist](https://formulae.brew.sh/formula/librist): Reliable Internet Stream Transport (RIST)
+- [libsamplerate](https://github.com/libsndfile/libsamplerate) - [libsamplerate](https://formulae.brew.sh/formula/libsamplerate): Library for sample rate conversion of audio data
+- [libslirp](https://gitlab.freedesktop.org/slirp/libslirp) - [libslirp](https://formulae.brew.sh/formula/libslirp): General purpose TCP-IP emulator
+- [libsndfile](https://libsndfile.github.io/libsndfile/) - [libsndfile](https://formulae.brew.sh/formula/libsndfile): C library for files containing sampled sound
+- [libsodium](https://libsodium.org/) - [libsodium](https://formulae.brew.sh/formula/libsodium): NaCl networking and cryptography library
+- [libsoxr](https://sourceforge.net/projects/soxr/) - [libsoxr](https://formulae.brew.sh/formula/libsoxr): High quality, one-dimensional sample-rate conversion library
+- [libssh](https://www.libssh.org/) - [libssh](https://formulae.brew.sh/formula/libssh): C library SSHv1/SSHv2 client and server protocols
+- [libssh2](https://www.libssh2.org/) - [libssh2](https://formulae.brew.sh/formula/libssh2): C library implementing the SSH2 protocol
+- [libtasn1](https://www.gnu.org/software/libtasn1/) - [libtasn1](https://formulae.brew.sh/formula/libtasn1): ASN.1 structure parser library
+- [libtiff](https://libtiff.gitlab.io/libtiff/) - [libtiff](https://formulae.brew.sh/formula/libtiff): TIFF library and utilities
+- [libtool](https://www.gnu.org/software/libtool/) - [libtool](https://formulae.brew.sh/formula/libtool): Generic library support script
+- [libunibreak](https://github.com/adah1972/libunibreak) - [libunibreak](https://formulae.brew.sh/formula/libunibreak): Implementation of the Unicode line- and word-breaking algorithms
+- [libunistring](https://www.gnu.org/software/libunistring/) - [libunistring](https://formulae.brew.sh/formula/libunistring): C string library for manipulating Unicode strings
+- [libusb](https://libusb.info/) - [libusb](https://formulae.brew.sh/formula/libusb): Library for USB device access
+- [libvidstab](http://public.hronopik.de/vid.stab/) - [libvidstab](https://formulae.brew.sh/formula/libvidstab): Transcode video stabilization plugin
+- [libvmaf](https://github.com/Netflix/vmaf) - [libvmaf](https://formulae.brew.sh/formula/libvmaf): Perceptual video quality assessment based on multi-method fusion
+- [libvorbis](https://xiph.org/vorbis/) - [libvorbis](https://formulae.brew.sh/formula/libvorbis): Vorbis General Audio Compression Codec
+- [libvpx](https://www.webmproject.org/code/) - [libvpx](https://formulae.brew.sh/formula/libvpx): VP8/VP9 video codec
+- [libx11](https://www.x.org/) - [libx11](https://formulae.brew.sh/formula/libx11): X.Org: Core X11 protocol client library
+- [libxau](https://www.x.org/) - [libxau](https://formulae.brew.sh/formula/libxau): X.Org: A Sample Authorization Protocol for X
+- [libxcb](https://www.x.org/) - [libxcb](https://formulae.brew.sh/formula/libxcb): X.Org: Interface to the X Window System protocol
+- [libxdmcp](https://www.x.org/) - [libxdmcp](https://formulae.brew.sh/formula/libxdmcp): X.Org: X Display Manager Control Protocol library
+- [libxext](https://www.x.org/) - [libxext](https://formulae.brew.sh/formula/libxext): X.Org: Library for common extensions to the X11 protocol
+- [libxrender](https://www.x.org/) - [libxrender](https://formulae.brew.sh/formula/libxrender): X.Org: Library for the Render Extension to the X11 protocol
+- [libyaml](https://github.com/yaml/libyaml) - [libyaml](https://formulae.brew.sh/formula/libyaml): YAML Parser
+- [libzip](https://libzip.org/) - [libzip](https://formulae.brew.sh/formula/libzip): C library for reading, creating, and modifying zip archives
+- [little-cms2](https://www.littlecms.com/) - [little-cms2](https://formulae.brew.sh/formula/little-cms2): Color management engine supporting ICC profiles
+- [lolcat](https://github.com/busyloop/lolcat) - [lolcat](https://formulae.brew.sh/formula/lolcat): Rainbows and unicorns in your console!
+- [lua](https://www.lua.org/) - [lua](https://formulae.brew.sh/formula/lua): Powerful, lightweight programming language
+- [lz4](https://lz4.github.io/lz4/) - [lz4](https://formulae.brew.sh/formula/lz4): Extremely Fast Compression algorithm
+- [lzo](https://www.oberhumer.com/opensource/lzo/) - [lzo](https://formulae.brew.sh/formula/lzo): Real-time data compression library
+- [m4](https://www.gnu.org/software/m4) - [m4](https://formulae.brew.sh/formula/m4): Macro processing language
+- [mackup](https://github.com/lra/mackup) - [mackup](https://formulae.brew.sh/formula/mackup): Keep your Mac's application settings in sync
+- [mas](https://github.com/mas-cli/mas) - [mas](https://formulae.brew.sh/formula/mas): Mac App Store command-line interface
+- [mbedtls](https://tls.mbed.org/) - [mbedtls](https://formulae.brew.sh/formula/mbedtls): Cryptographic & SSL/TLS library
+- [moreutils](https://joeyh.name/code/moreutils/) - [moreutils](https://formulae.brew.sh/formula/moreutils): Collection of tools that nobody wrote when UNIX was young
+- [mpdecimal](https://www.bytereef.org/mpdecimal/) - [mpdecimal](https://formulae.brew.sh/formula/mpdecimal): Library for decimal floating point arithmetic
+- [mpg123](https://www.mpg123.de/) - [mpg123](https://formulae.brew.sh/formula/mpg123): MP3 player for Linux and UNIX
+- [ncurses](https://invisible-island.net/ncurses/announce.html) - [ncurses](https://formulae.brew.sh/formula/ncurses): Text-based UI library
+- [neofetch](https://github.com/dylanaraps/neofetch) - [neofetch](https://formulae.brew.sh/formula/neofetch): Fast, highly customisable system info script
+- [nettle](https://www.lysator.liu.se/~nisse/nettle/) - [nettle](https://formulae.brew.sh/formula/nettle): Low-level cryptographic library
+- [npth](https://gnupg.org/) - [npth](https://formulae.brew.sh/formula/npth): New GNU portable threads library
+- [nvm](https://github.com/nvm-sh/nvm) - [nvm](https://formulae.brew.sh/formula/nvm): Manage multiple Node.js versions
+- [oniguruma](https://github.com/kkos/oniguruma/) - [oniguruma](https://formulae.brew.sh/formula/oniguruma): Regular expressions library
+- [opencore-amr](https://opencore-amr.sourceforge.io/) - [opencore-amr](https://formulae.brew.sh/formula/opencore-amr): Audio codecs extracted from Android open source project
+- [openexr](https://www.openexr.com/) - [openexr](https://formulae.brew.sh/formula/openexr): High dynamic-range image file format
+- [openjdk](https://openjdk.java.net/) - [openjdk](https://formulae.brew.sh/formula/openjdk): Development kit for the Java programming language
+- [openjdk@11](https://openjdk.java.net/) - [openjdk@11](https://formulae.brew.sh/formula/openjdk@11): Development kit for the Java programming language
+- [openjpeg](https://www.openjpeg.org/) - [openjpeg](https://formulae.brew.sh/formula/openjpeg): Library for JPEG-2000 image manipulation
+- [openldap](https://www.openldap.org/software/) - [openldap](https://formulae.brew.sh/formula/openldap): Open source suite of directory software
+- [openssh](https://www.openssh.com/) - [openssh](https://formulae.brew.sh/formula/openssh): OpenBSD freely-licensed SSH connectivity tools
+- [openssl@1.1](https://openssl.org/) - [openssl@1.1](https://formulae.brew.sh/formula/openssl@1.1): Cryptography and SSL/TLS Toolkit
+- [openssl@3](https://openssl.org/) - [openssl@3](https://formulae.brew.sh/formula/openssl@3): Cryptography and SSL/TLS Toolkit
+- [opus](https://www.opus-codec.org/) - [opus](https://formulae.brew.sh/formula/opus): Audio codec
+- [p11-kit](https://p11-glue.freedesktop.org) - [p11-kit](https://formulae.brew.sh/formula/p11-kit): Library to load and enumerate PKCS#11 modules
+- [p7zip](https://github.com/p7zip-project/p7zip) - [p7zip](https://formulae.brew.sh/formula/p7zip): 7-Zip (high compression file archiver) implementation
+- [pango](https://pango.gnome.org) - [pango](https://formulae.brew.sh/formula/pango): Framework for layout and rendering of i18n text
+- [pcre](https://www.pcre.org/) - [pcre](https://formulae.brew.sh/formula/pcre): Perl compatible regular expressions library
+- [pcre2](https://www.pcre.org/) - [pcre2](https://formulae.brew.sh/formula/pcre2): Perl compatible regular expressions library with a new API
+- [perl](https://www.perl.org/) - [perl](https://formulae.brew.sh/formula/perl): Highly capable, feature-rich programming language
+- [php](https://www.php.net/) - [php](https://formulae.brew.sh/formula/php): General-purpose scripting language
+- [pinentry](https://www.gnupg.org/related_software/pinentry/) - [pinentry](https://formulae.brew.sh/formula/pinentry): Passphrase entry dialog utilizing the Assuan protocol
+- [pixman](https://cairographics.org/) - [pixman](https://formulae.brew.sh/formula/pixman): Low-level library for pixel manipulation
+- [popt](https://github.com/rpm-software-management/popt) - [popt](https://formulae.brew.sh/formula/popt): Library like getopt(3) with a number of enhancements
+- [postgresql@14](https://www.postgresql.org/) - [postgresql@14](https://formulae.brew.sh/formula/postgresql@14): Object-relational database system
+- [pre-commit](https://pre-commit.com/) - [pre-commit](https://formulae.brew.sh/formula/pre-commit): Framework for managing multi-language pre-commit hooks
+- [prettyping](https://denilsonsa.github.io/prettyping/) - [prettyping](https://formulae.brew.sh/formula/prettyping): Wrapper to colorize and simplify ping's output
+- [pv](https://www.ivarch.com/programs/pv.shtml) - [pv](https://formulae.brew.sh/formula/pv): Monitor data's progress through a pipe
+- [pycparser](https://github.com/eliben/pycparser) - [pycparser](https://formulae.brew.sh/formula/pycparser): C parser in Python
+- [python@3.11](https://www.python.org/) - [python@3.11](https://formulae.brew.sh/formula/python@3.11): Interpreted, interactive, object-oriented programming language
+- [pyyaml](https://pyyaml.org) - [pyyaml](https://formulae.brew.sh/formula/pyyaml): YAML framework for Python
+- [qemu](https://www.qemu.org/) - [qemu](https://formulae.brew.sh/formula/qemu): Emulator for x86 and PowerPC
+- [rav1e](https://github.com/xiph/rav1e) - [rav1e](https://formulae.brew.sh/formula/rav1e): Fastest and safest AV1 video encoder
+- [readline](https://tiswww.case.edu/php/chet/readline/rltop.html) - [readline](https://formulae.brew.sh/formula/readline): Library for command-line editing
+- [rsync](https://rsync.samba.org/) - [rsync](https://formulae.brew.sh/formula/rsync): Utility that provides fast incremental file transfer
+- [rtmpdump](https://rtmpdump.mplayerhq.hu/) - [rtmpdump](https://formulae.brew.sh/formula/rtmpdump): Tool for downloading RTMP streaming media
+- [rubberband](https://breakfastquay.com/rubberband/) - [rubberband](https://formulae.brew.sh/formula/rubberband): Audio time stretcher tool and library
+- [ruby](https://www.ruby-lang.org/) - [ruby](https://formulae.brew.sh/formula/ruby): Powerful, clean, object-oriented scripting language
+- [scrcpy](https://github.com/Genymobile/scrcpy) - [scrcpy](https://formulae.brew.sh/formula/scrcpy): Display and control your Android device
+- [screenresolution](https://github.com/jhford/screenresolution) - [screenresolution](https://formulae.brew.sh/formula/screenresolution): Get, set, and list display resolution
+- [sdl2](https://www.libsdl.org/) - [sdl2](https://formulae.brew.sh/formula/sdl2): Low-level access to audio, keyboard, mouse, joystick, and graphics
+- [shellcheck](https://www.shellcheck.net/) - [shellcheck](https://formulae.brew.sh/formula/shellcheck): Static analysis and lint tool, for (ba)sh scripts
+- [six](https://github.com/benjaminp/six) - [six](https://formulae.brew.sh/formula/six): Python 2 and 3 compatibility utilities
+- [snappy](https://google.github.io/snappy/) - [snappy](https://formulae.brew.sh/formula/snappy): Compression/decompression library aiming for high speed
+- [speex](https://speex.org/) - [speex](https://formulae.brew.sh/formula/speex): Audio codec designed for speech
+- [sqlite](https://sqlite.org/index.html) - [sqlite](https://formulae.brew.sh/formula/sqlite): Command-line interface for SQLite
+- [srt](https://www.srtalliance.org/) - [srt](https://formulae.brew.sh/formula/srt): Secure Reliable Transport
+- [ssh-copy-id](https://www.openssh.com/) - [ssh-copy-id](https://formulae.brew.sh/formula/ssh-copy-id): Add a public key to a remote machine's authorized_keys file
+- [svt-av1](https://gitlab.com/AOMediaCodec/SVT-AV1) - [svt-av1](https://formulae.brew.sh/formula/svt-av1): AV1 encoder
+- [swagger-codegen](https://swagger.io/swagger-codegen/) - [swagger-codegen](https://formulae.brew.sh/formula/swagger-codegen): Generate clients, server stubs, and docs from an OpenAPI spec
+- [telnet](https://opensource.apple.com/) - [telnet](https://formulae.brew.sh/formula/telnet): User interface to the TELNET protocol
+- [terraform](https://www.terraform.io/) - [terraform](https://formulae.brew.sh/formula/terraform): Tool to build, change, and version infrastructure
+- [tesseract](https://github.com/tesseract-ocr/) - [tesseract](https://formulae.brew.sh/formula/tesseract): OCR (Optical Character Recognition) engine
+- [thefuck](https://github.com/nvbn/thefuck) - [thefuck](https://formulae.brew.sh/formula/thefuck): Programmatically correct mistyped console commands
+- [theora](https://www.theora.org/) - [theora](https://formulae.brew.sh/formula/theora): Open video compression format
+- [tidy-html5](https://www.html-tidy.org/) - [tidy-html5](https://formulae.brew.sh/formula/tidy-html5): Granddaddy of HTML tools, with support for modern standards
+- [tldr](https://tldr.sh/) - [tldr](https://formulae.brew.sh/formula/tldr): Simplified and community-driven man pages
+- [tmux](https://tmux.github.io/) - [tmux](https://formulae.brew.sh/formula/tmux): Terminal multiplexer
+- [tree](http://mama.indstate.edu/users/ice/tree/) - [tree](https://formulae.brew.sh/formula/tree): Display directories as trees (with optional color/HTML output)
+- [unbound](https://www.unbound.net) - [unbound](https://formulae.brew.sh/formula/unbound): Validating, recursive, caching DNS resolver
+- [unixodbc](https://www.unixodbc.org/) - [unixodbc](https://formulae.brew.sh/formula/unixodbc): ODBC 3 connectivity for UNIX
+- [utf8proc](https://juliastrings.github.io/utf8proc/) - [utf8proc](https://formulae.brew.sh/formula/utf8proc): Clean C library for processing UTF-8 Unicode data
+- [vde](https://github.com/virtualsquare/vde-2) - [vde](https://formulae.brew.sh/formula/vde): Ethernet compliant virtual network
+- [vim](https://www.vim.org/) - [vim](https://formulae.brew.sh/formula/vim): Vi 'workalike' with many additional features
+- [virtualenv](https://virtualenv.pypa.io/) - [virtualenv](https://formulae.brew.sh/formula/virtualenv): Tool for creating isolated virtual python environments
+- [wakatime-cli](https://wakatime.com/) - [wakatime-cli](https://formulae.brew.sh/formula/wakatime-cli): Command-line interface to the WakaTime api
+- [webp](https://developers.google.com/speed/webp/) - [webp](https://formulae.brew.sh/formula/webp): Image format providing lossless and lossy compression for web images
+- [wget](https://www.gnu.org/software/wget/) - [wget](https://formulae.brew.sh/formula/wget): Internet file retriever
+- [x264](https://www.videolan.org/developers/x264.html) - [x264](https://formulae.brew.sh/formula/x264): H.264/AVC encoder
+- [x265](https://bitbucket.org/multicoreware/x265_git) - [x265](https://formulae.brew.sh/formula/x265): H.265/HEVC encoder
+- [xorgproto](https://www.x.org/) - [xorgproto](https://formulae.brew.sh/formula/xorgproto): X.Org: Protocol Headers
+- [xvid](https://labs.xvid.com/) - [xvid](https://formulae.brew.sh/formula/xvid): High-performance, high-quality MPEG-4 video library
+- [xxhash](https://github.com/Cyan4973/xxHash) - [xxhash](https://formulae.brew.sh/formula/xxhash): Extremely fast non-cryptographic hash algorithm
+- [xz](https://tukaani.org/xz/) - [xz](https://formulae.brew.sh/formula/xz): General-purpose data compression with high compression ratio
+- [yq](https://github.com/mikefarah/yq) - [yq](https://formulae.brew.sh/formula/yq): Process YAML, JSON, XML, CSV and properties documents from the CLI
+- [zeromq](https://zeromq.org/) - [zeromq](https://formulae.brew.sh/formula/zeromq): High-performance, asynchronous messaging library
+- [zimg](https://github.com/sekrit-twc/zimg) - [zimg](https://formulae.brew.sh/formula/zimg): Scaling, colorspace conversion, and dithering library
+- [zsh](https://www.zsh.org/) - [zsh](https://formulae.brew.sh/formula/zsh): UNIX shell (command interpreter)
+- [zsh-git-prompt](https://github.com/olivierverdier/zsh-git-prompt) - [zsh-git-prompt](https://formulae.brew.sh/formula/zsh-git-prompt): Informative git prompt for zsh
+- [zsh-history-substring-search](https://github.com/zsh-users/zsh-history-substring-search) - [zsh-history-substring-search](https://formulae.brew.sh/formula/zsh-history-substring-search): Zsh port of Fish shell's history search
+- [zsh-lovers](https://grml.org/zsh/#zshlovers) - [zsh-lovers](https://formulae.brew.sh/formula/zsh-lovers): Tips, tricks, and examples for zsh
+- [zstd](https://facebook.github.io/zstd/) - [zstd](https://formulae.brew.sh/formula/zstd): Zstandard is a real-time compression algorithm
+
+## Mac App Store
+
+-   Xcode                   (14.3) - [497799835](https://apps.apple.com/app/id497799835)
+-  Horo                    (2.2.8) - [1437226581](https://apps.apple.com/app/id1437226581)
+-  1Password for Safari    (2.9.0) - [1569813296](https://apps.apple.com/app/id1569813296)
+-   Monosnap                (5.1.9) - [540348655](https://apps.apple.com/app/id540348655)
+-  Day One                 (2023.6) - [1055511498](https://apps.apple.com/app/id1055511498)
+-  StopTheMadness          (36.2) - [1376402589](https://apps.apple.com/app/id1376402589)
+-  OhMyStar                (2.2.8) - [1218642292](https://apps.apple.com/app/id1218642292)
+-  Raivo OTP               (1.0.6) - [1498497896](https://apps.apple.com/app/id1498497896)
+-  Dark Reader for Safari  (1.4.6) - [1438243180](https://apps.apple.com/app/id1438243180)
+-  Vimari                  (2.1.1) - [1480933944](https://apps.apple.com/app/id1480933944)
+-  1440                    (1.4) - [1483764819](https://apps.apple.com/app/id1483764819)
+-   Disk Speed Test         (3.4.2) - [425264550](https://apps.apple.com/app/id425264550)
+-   Todoist                 (8.1.2) - [585829637](https://apps.apple.com/app/id585829637)
+-  Bear                    (1.9.6) - [1091189122](https://apps.apple.com/app/id1091189122)
+-  WireGuard               (1.0.16) - [1451685025](https://apps.apple.com/app/id1451685025)
+-   Yoink                   (3.6.84) - [457622435](https://apps.apple.com/app/id457622435)
+-  Notion Web Clipper      (1.0.3) - [1559269364](https://apps.apple.com/app/id1559269364)
+-  Toggl Track             (8.9.0) - [1291898086](https://apps.apple.com/app/id1291898086)

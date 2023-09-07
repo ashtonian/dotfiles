@@ -386,8 +386,6 @@ Options:
       fi
     fi
   done
-
-
 }
 
 
@@ -574,3 +572,34 @@ function mas_list_md() {
   done
 }
 
+function flush_dns(){
+  sudo dscacheutil -flushcache
+  sudo killall -HUP mDNSResponder
+}
+
+function tf_destroy_apply(){
+  bot "bro you tryna rebuild [y|n]?"
+  read -r "?" response
+  if [[ $response =~ (yes|y|Y) ]];then
+    action "you'da boss."
+    terraform destroy -var-file=.tfvars -auto-approve
+    terraform apply -var-file=.tfvars -auto-approve
+  else
+    ok
+  fi
+}
+
+function tfmt(){
+  find . -name "*.tf" -print0 | xargs -0 terraform fmt
+}
+
+# duplicated from ./funcs.sh not sure h
+function action() {
+    echo -e "\n$COL_YELLOW[action]:$COL_RESET\n ⇒ $1..."
+}
+function ok() {
+    echo -e "$COL_GREEN[ok]$COL_RESET "$1
+}
+function bot() {
+    echo -e "\n$COL_GREEN\[._.]/$COL_RESET - "$1
+}
