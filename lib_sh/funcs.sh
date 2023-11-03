@@ -589,6 +589,63 @@ function tf_destroy_apply(){
   fi
 }
 
+function rename_aws_profile() {
+    if [[ "$1" == "-h" || "$1" == "--help" || $# -ne 2 ]]; then
+        echo "Usage: rename_aws_profile <old_profile_name> <new_profile_name>"
+        echo "Renames an AWS profile in both the credentials and config files."
+        return
+    fi
+
+    local old_profile_name="$1"
+    local new_profile_name="$2"
+    local credentials_file="$HOME/.aws/credentials"
+    local config_file="$HOME/.aws/config"
+    local profile_prefix="profile "
+
+    # Function to check if a file contains a profile
+    profile_exists() {
+        grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" && grep -q "^\[$1\]" "$2" ]]
+    }
+
+    # Function to rename a profile in a file
+    rename_in_file() {
+        local file_path=$1
+        local old_name=$2
+        local new_name=$3
+        local prefix=$4
+
+        if profile_exists "$old_name" "$file_path"; then
+            # BSD sed version (as used in macOS)
+            # sed -i '' "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path"
+
+            # GNU sed version (uncomment the line below if using Linux)
+            # sed -i "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path"
+
+            # Automatic detection of sed version for macOS or Linux
+            sed -i.bak "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path" && rm -- "$file_path.bak"
+
+            echo "Renamed profile from $old_name to $new_name in $file_path"
+        else
+            echo "Profile $old_name not found in $file_path."
+            return 1
+        fi
+    }
+
+    # Rename in credentials file
+    rename_in_file "$credentials_file" "$old_profile_name" "$new_profile_name" ""
+
+    # Rename in config file, handle non-default profiles
+    if [[ "$old_profile_name" != "default" ]]; then
+        old_profile_name="$profile_prefix$old_profile_name"
+        new_profile_name="$profile_prefix$new_profile_name"
+    fi
+
+    rename_in_file "$config_file" "$old_profile_name" "$new_profile_name" "$profile_prefix"
+}
+
+# Add autocomplete for the function
+compctl -k "( $(awk '/^\[/ {print $1}' ~/.aws/credentials | tr -d '[]') )" rename_aws_profile
+
 function tfmt(){
   find . -name "*.tf" -print0 | xargs -0 terraform fmt
 }
