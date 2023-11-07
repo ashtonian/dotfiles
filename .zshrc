@@ -159,22 +159,16 @@ ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 # Example format: plugins=(rails git textmate ruby lighthouse)
 # Add wisely, as too many plugins slow down shell startup.
 
-if ! gem list colorls -i >/dev/null 2>&1; then
-  echo "colorls gem not found, installing..."
-  gem install colorls
-fi
-
-
 
 typeset -A custom_plugins
 
 # This loop clones and installs custom plugins not in omz repo
 # name of the fuctiontion / github location with function at root
 custom_plugins=(
-"alias-tips" "https://github.com/djui/alias-tips.git"
+# "alias-tips" "https://github.com/djui/alias-tips.git"
 "wakatime" "https://github.com/sobolevn/wakatime-zsh-plugin.git"
 "autoupdate" "https://github.com/TamCore/autoupdate-oh-my-zsh-plugins"
-"zsh-tab-colors" "https://github.com/tysonwolker/iterm-tab-colors.git "
+"zsh-tab-colors" "https://github.com/tysonwolker/iterm-tab-colors.git"
 "zsh-256color" "https://github.com/chrissicool/zsh-256color"
 "zsh-autosuggestions" "https://github.com/zsh-users/zsh-autosuggestions"
 "zsh-completions" "https://github.com/zsh-users/zsh-completions"
@@ -200,8 +194,9 @@ done
 ## Custom install for fast alias tips
 if ! command -v def-matcher &> /dev/null
 then
-  mv "$ZSH_CUSTOM/plugins/fast-alias-tips/def-matcher.go" "$ZSH_CUSTOM/plugins/fast-alias-tips/main.go"
-  go build -c "$ZSH_CUSTOM/plugins/fast-alias-tips" -o "$GOPATH/bin/def-matcher"
+  make -C "$ZSH_CUSTOM/plugins/fast-alias-tips/"
+  mkdir -p $GOPATH/bin
+  mv "$ZSH_CUSTOM/plugins/fast-alias-tips/build/def-matcher" "$GOPATH/bin/def-matcher"
 fi
 
 ## Custom install for gibo
@@ -314,16 +309,38 @@ source $ZSH/oh-my-zsh.sh
 # Completions & Evals
 ##############################################################################
 
-# must be after source omz
-autoload -U compinit && compinit
 
+# must be after source omz
+
+# Initialize Homebrew
 eval $(/opt/homebrew/bin/brew shellenv)
-source <(helm completion zsh)
+
+# Initialize Node Version Manager
 eval "$(fnm env)"
-# source <(kubectl completion zsh)
-source /opt/homebrew/opt/git-extras/share/git-extras/git-extras-completion.zsh
+
+# Initialize Direnv
 eval "$(direnv hook zsh)"
 
+# Initialize Zsh completion system
+autoload -U compinit; compinit
+
+# Helm completion
+source <(helm completion zsh)
+
+# Git Extras completion
+source /opt/homebrew/opt/git-extras/share/git-extras/git-extras-completion.zsh
+
+# Uncomment if you use kubectl
+# source <(kubectl completion zsh)
+
+##############################################################################
+# Post Completion installs
+##############################################################################
+
+if ! gem list colorls -i >/dev/null 2>&1; then
+  echo "colorls gem not found, installing..."
+  gem install colorls
+fi
 
 
 ##############################################################################
@@ -382,8 +399,6 @@ quotes=(
 quote=${quotes[$RANDOM % $#quotes + 1]}
 animal=${animals[$RANDOM % $#animals + 1]}
 eval $quote | cowsay -f $animal | lolcat #-a -d 1
-
-
 
 ##############################################################################
 # Personal Aliases

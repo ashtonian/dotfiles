@@ -604,7 +604,7 @@ function rename_aws_profile() {
 
     # Function to check if a file contains a profile
     profile_exists() {
-        grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" && grep -q "^\[$1\]" "$2" ]]
+     #   grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" && grep -q "^\[$1\]" "$2" ]]
     }
 
     # Function to rename a profile in a file
