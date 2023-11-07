@@ -185,7 +185,7 @@ bot "cloning dotfiles locally"
 git clone https://github.com/Ashtonian/dotfiles.git $DOTDIR
 ok
 
-bot "linking makcup file from dotfile to directory"
+bot "soft linking makcup file from dotfiles to directory"
 ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
 ok
 
@@ -199,6 +199,9 @@ git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm
 ok
 
 bot "download alfred and mackup directory"
+bot "NOTE: authenticated github call, with 2fa enabled must use PAT"
+
+## AUTHENTICATED CALL - this only works for me, need to make this more friendly for others.
 cd $HOME/.sync
 git clone https://github.com/Ashtonian/alfred
 git clone https://github.com/Ashtonian/mackup
@@ -226,9 +229,10 @@ cd $HOME/.sync
 git clone https://github.com/dracula/alfred alfred-dracula
 ok
 
-
-
 # check ver first then update or install
+## don't switch
+export RUNZSH=no
+export CHSH=no
 sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
 
 bot "running configure script"
