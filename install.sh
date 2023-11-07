@@ -4,7 +4,7 @@
 # macOS 10.15+ (Catalina) Init script to install dependencies
 #######################################################################################################################################
 
-eval "$(curl -s -L https://raw.githubusercontent.com/Ashtonian/dotfiles/master/lib_sh/echos.sh)"
+eval "$(curl -s -L https://raw.githubusercontent.com/ashtonian/dotfiles/master/lib_sh/echos.sh)"
 bot "I am alive."
 
 #######################################################################################################################################
@@ -182,7 +182,7 @@ fi
 
 export DOTDIR="$HOME/.dotfiles"
 bot "cloning dotfiles locally"
-git clone https://github.com/Ashtonian/dotfiles.git $DOTDIR
+git clone https://github.com/ashtonian/dotfiles.git $DOTDIR
 ok
 
 bot "soft linking makcup file from dotfiles to directory"
@@ -203,8 +203,8 @@ bot "NOTE: authenticated github call, with 2fa enabled must use PAT"
 
 ## AUTHENTICATED CALL - this only works for me, need to make this more friendly for others.
 cd $HOME/.sync
-git clone https://github.com/Ashtonian/alfred
-git clone https://github.com/Ashtonian/mackup
+git clone https://github.com/ashtonian/alfred
+git clone https://github.com/ashtonian/mackup
 ok
 
 bot "download bypass paywall"

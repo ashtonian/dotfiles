@@ -8,7 +8,7 @@ This will initialize a freshly installed Mac OS (catalina) instance with all of 
 ## Instructions
 
 ```sh
-/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Ashtonian/dotfiles/master/install.sh)"
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashtonian/dotfiles/master/install.sh)"
 ```
 
 ## Basic Tool Overview
@@ -40,44 +40,24 @@ See [software](./Software.md) page for macOS packages, vsCode extensions, web ex
 * Todoist - <kbd>⌃</kbd><kbd>⌘</kbd><kbd>T</kbd> show/hide,  <kbd>⌃</kbd><kbd>⌘</kbd><kbd>A</kbd> Quick task
 * yoink - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>Y</kbd>
 * numi - <kbd>⌃</kbd><kbd>⌥</kbd><kbd>N</kbd>
-* TODO: Email/Cal/Contacts, Move Screen to another space, Notion global, alttab?
-
-sudo xcodebuild -license accept
-
-
-
-restart
-mackup restore
-Execute on manual work
 
 ### Manual Work
 
-* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime (app,web plugin), Waka(web plugin, cli, vscode), Todoist (web plugin, app), Notion (web plugin, desktop), Pulse SMS (app), Spotify, Slack, Discord, Signal, Steam, RPi Web Plugin, Pocket (App,Plugin)
 * VSCode, Alfred, Brave Sync Setup
+* Signin to Apple Account, Mail|Contacts|Calendar, RescueTime (app,web plugin), Todoist (web plugin, app), Notion (web plugin, desktop), Spotify, Slack, Discord, Signal, Steam
 * Override Spotlight with Alfred
 * Install [bypass-paywalls-chrome](https://github.com/iamadamdev/bypass-paywalls-chrome.git) - [possible solution](https://stackoverflow.com/questions/16800696/how-install-crx-chrome-extension-via-command-line)
-* go get https://github.com/dborzov/lsp
-* npm install -g how2
 * Open all apps to deal with initial sys preferences and startup settings
 
-## Automation dreams and TODO
+## Automation Dreams
 
 * https://github.com/Lord-Kamina/SwiftDefaultApps/issues/29 -> adjusts default apps, web app, programming -> vscode, video vlc, flac vox,  ssh,telnet + others -> iterm.
 * add dev apps to security, privacy "dev tools" category to avoid security policy.
 * TODO: automate open here https://gist.github.com/pdanford/158d74e2026f393e953ed43ff8168ec1
-* set beyondcompare as merge tool
 * better [.gitconfig](https://github.com/mathiasbynens/dotfiles/blob/main/.gitconfig) or [.gitconfig](https://github.com/atomantic/dotfiles/blob/master/homedir/.gitconfig)
-* Wake on keyboard not mouse
-* figureout t2 chip issue preventing vpn'd mac from using keyboard if route is present. [related hnews](https://news.ycombinator.com/item?id=24838816)
+* figureout t2 chip issue preventing vpn'd mac from using keyboard if route is not present. [related hnews](https://news.ycombinator.com/item?id=24838816)
 * shellsync, search, backup, history persistence, search, sync
 * desktop background + screen saver sync + setup per res
-* soulution - cli journal ? jyputer
-* solution - would snippets help? snippetslab
-* solution - script hide all apps, empty trash, open apps in screen per a profile ie work -> vscode screen 1, iterm screen 2 vs personal
-* cron fetch (docker, git, gohome, alfred, npm, zsh, ohmyzsh, vim, + others
-* horo, monosnap, ohmystar workflow
-* git/projects dir auto fetchs
-* defaults
 
 ## Inspiration and Resources
 
