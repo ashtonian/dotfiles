@@ -99,6 +99,23 @@ ok
 #sudo scutil --set LocalHostName "TODO:0x6D746873"
 #sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.smb.server NetBIOSName -string "TODO:0x6D746873"
 
+running "Disable window opening animations"
+defaults write NSGlobalDomain NSAutomaticWindowAnimationsEnabled -bool false
+ok
+
+running "Speed up window resizing animation"
+defaults write NSGlobalDomain NSWindowResizeTime -float 0.001
+ok
+
+running "Disable the Quick Look animation"
+defaults write -g QLPanelAnimationDuration -float 0
+ok
+
+running "Suppress the Dock launching animation"
+defaults write com.apple.dock launchanim -bool false
+ok
+
+ok
 running "Disable the sound effects on boot."
 sudo nvram SystemAudioVolume=" "
 ok

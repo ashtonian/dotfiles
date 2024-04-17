@@ -129,6 +129,7 @@ bootstrap_ssh_key() {
   fi
   cat --style=changes,snip --paging=never ${public_key_file}
 }
+
 function vscode_extensions_list() {
     # Default output file
     local output_file="vscode_extensions_list.md"
@@ -647,7 +648,8 @@ function rename_aws_profile() {
 compctl -k "( $(awk '/^\[/ {print $1}' ~/.aws/credentials | tr -d '[]') )" rename_aws_profile
 
 function tfmt(){
-  find . -name "*.tf" -print0 | xargs -0 terraform fmt
+  local path="${1:-.}" # Use the first argument as the path, default to "." if not provided
+  find "$path" -name "*.tf" -print0 | xargs -0 terraform fmt
 }
 
 # duplicated from ./funcs.sh not sure h
@@ -659,4 +661,178 @@ function ok() {
 }
 function bot() {
     echo -e "\n$COL_GREEN\[._.]/$COL_RESET - "$1
+}
+
+function upload_gpg_to_github() {
+    # Check for GPG and GitHub CLI
+    if ! command -v gpg &> /dev/null; then
+        echo "GPG is not installed. Please install GPG."
+        return 1
+    fi
+
+    if ! command -v gh &> /dev/null; then
+        echo "GitHub CLI is not installed. Please install GitHub CLI and login."
+        return 1
+    fi
+
+    # List existing GPG keys
+    echo "Checking for existing GPG keys..."
+    gpg --list-secret-keys --keyid-format LONG
+
+    # Prompt for email used in the GPG key
+    echo -n "Enter the email associated with the GPG key: "
+    read email
+
+    # Get the GPG key ID for the given email
+    key_id=$(gpg --list-secret-keys --keyid-format LONG | grep -B 2 $email | head -n 1 | awk '{print $2}' | cut -d '/' -f 2)
+
+    if [[ -z "$key_id" ]]; then
+        echo "No GPG key found for $email. Please generate a key first."
+        return 1
+    fi
+
+    echo "Using GPG key ID: $key_id"
+
+    # Export the GPG key
+    echo "Exporting GPG key..."
+    gpg --armor --export $email > gpg_key.pub
+
+    # Upload the GPG key to GitHub
+    echo "Uploading GPG key to GitHub..."
+    if gh api user/gpg_keys -F armored_public_key=@"gpg_key.pub"; then
+        echo "GPG key successfully uploaded to GitHub."
+    else
+        echo "Failed to upload GPG key to GitHub."
+        return 1
+    fi
+
+    # Configure Git to use the GPG key
+    git config --global user.signingkey $key_id
+    git config --global commit.gpgsign true
+    echo "Git configured to use GPG key: $key_id for signing."
+
+    # Cleanup
+    rm -f gpg_key.pub
+    echo "Temporary GPG key file removed."
+}
+
+
+function install_brewfiles() {
+    if [[ "$1" == "--help" ]]; then
+        echo "Usage: install_brewfiles [options]"
+        echo "Options:"
+        echo "  --help          Show this help message"
+        echo "  all             Install all Brewfiles"
+        echo "  none            Do nothing"
+        echo "  1 2 3...        Install Brewfiles by their listed numbers"
+        echo "  1-3,5           Install a range of Brewfiles and/or specific ones"
+        return 0
+    fi
+
+    setopt localoptions nullglob nocaseglob
+
+    local brewfiles=("${(@f)$(ls Brewfile-*(.))}")
+    if [[ ${#brewfiles[@]} -eq 0 ]]; then
+        echo "No Brewfiles found."
+        return 0
+    fi
+
+    echo "Available Brewfiles:"
+    for i in {1..${#brewfiles[@]}}; do
+        echo "$i. ${brewfiles[$i]#Brewfile-}"
+    done
+
+    echo "Select Brewfiles to install (e.g., 1 2, 3-4, all): "
+    read input
+
+    # Initialize selection array properly
+    typeset -a selection
+
+    if [[ "$input" == "all" ]]; then
+        selection=("${brewfiles[@]}")
+    elif [[ "$input" == "none" ]]; then
+        echo "No Brewfiles selected for installation."
+        return 0
+    else
+        IFS=', ' read -r -a parts <<< "$input"
+        for part in "${parts[@]}"; do
+            if [[ $part == *-* ]]; then
+                IFS='-' read -r start end <<< "$part"
+                selection+=("${brewfiles[@]:$((start - 1)):$((end - start + 1))}")
+            else
+                selection+=("${brewfiles[$((part - 1))]}")
+            fi
+        done
+    fi
+
+    if (( ${#selection[@]} > 0 )); then
+        echo "Combining selected Brewfiles for installation..."
+        : >| brewfile-installed
+        for file in "${selection[@]}"; do
+            cat "$file" >> brewfile-installed
+        done
+
+        echo "Installing combined Brewfile..."
+        brew bundle --file=brewfile-installed
+    else
+        echo "No valid selection made."
+    fi
+}
+
+
+function whodat() {
+    if [[ $1 == "help" ]]; then
+        echo "Usage: whodat <port>"
+        echo "Displays the application name and PID using the specified port."
+        return 0
+    fi
+
+    if [[ -z $1 ]]; then
+        echo "Error: No port number provided."
+        echo "Use 'whodat help' for usage information."
+        return 1
+    fi
+
+    local port=$1
+    local info=$(lsof -i :$port -sTCP:LISTEN -Fpcn)
+
+    if [[ -z $info ]]; then
+        echo "No process found listening on port $port."
+        return 1
+    else
+        echo "Application and PID using port $port:"
+        echo "$info" | grep -E "p[0-9]+" -o | cut -c 2- | xargs -I {} ps -p {} -o comm=
+        echo "$info" | grep -E "p[0-9]+" -o | cut -c 2-
+    fi
+}
+
+function getem() {
+    if [[ $1 == "help" ]]; then
+        echo "Usage: kill_port <port>"
+        echo "Kills the process that is using the specified port."
+        return 0
+    fi
+
+    if [[ -z $1 ]]; then
+        echo "Error: No port number provided."
+        echo "Use 'kill_port help' for usage information."
+        return 1
+    fi
+
+    local port=$1
+    local pid=$(lsof -ti :$port -sTCP:LISTEN)
+
+    if [[ -z $pid ]]; then
+        echo "No process found listening on port $port."
+        return 1
+    else
+        echo "Killing PID $pid that is using port $port."
+        kill $pid
+        if [[ $? -eq 0 ]]; then
+            echo "Process $pid successfully terminated."
+        else
+            echo "Failed to kill process $pid."
+            return 1
+        fi
+    fi
 }
