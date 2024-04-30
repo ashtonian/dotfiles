@@ -808,14 +808,14 @@ function whodat() {
 
 function getem() {
     if [[ $1 == "help" ]]; then
-        echo "Usage: kill_port <port>"
+        echo "Usage: getem <port>"
         echo "Kills the process that is using the specified port."
         return 0
     fi
 
     if [[ -z $1 ]]; then
         echo "Error: No port number provided."
-        echo "Use 'kill_port help' for usage information."
+        echo "Use 'getem help' for usage information."
         return 1
     fi
 
@@ -834,5 +834,70 @@ function getem() {
             echo "Failed to kill process $pid."
             return 1
         fi
+    fi
+}
+function assume_role() {
+    # Help option
+    if [[ "$1" == "--help" ]]; then
+        echo "Usage: assume_role [ROLE_ARN] [SESSION_NAME] [PROFILE_NAME] [OPTIONAL_REGION]"
+        echo "Assume an AWS IAM role and upsert temporary credentials into the AWS credentials file under a specified profile name."
+        return 0
+    fi
+
+    # Check for proper number of arguments
+    if [[ $# -lt 3 ]]; then
+        echo "Error: Missing arguments."
+        echo "Usage: assume_role [ROLE_ARN] [SESSION_NAME] [PROFILE_NAME] [OPTIONAL_REGION]"
+        return 1
+    fi
+
+    # Assign arguments
+    local ROLE_ARN="$1"
+    local SESSION_NAME="$2"
+    local PROFILE_NAME="$3"
+    local REGION="${4:-us-east-1}" # Default to us-east-1 if no region is specified
+    local CREDENTIALS_FILE="$HOME/.aws/credentials"
+
+    # Assume role and capture output
+    local OUTPUT=$(aws sts assume-role --role-arn "$ROLE_ARN" --role-session-name "$SESSION_NAME")
+    if [[ $? -ne 0 ]]; then
+        echo "Error assuming role."
+        return 1
+    fi
+
+    # Extract credentials using jq
+    local AWS_ACCESS_KEY_ID=$(echo "$OUTPUT" | jq -r '.Credentials.AccessKeyId')
+    local AWS_SECRET_ACCESS_KEY=$(echo "$OUTPUT" | jq -r '.Credentials.SecretAccessKey')
+    local AWS_SESSION_TOKEN=$(echo "$OUTPUT" | jq -r '.Credentials.SessionToken')
+    local TOKEN_EXPIRATION=$(echo "$OUTPUT" | jq -r '.Credentials.Expiration') # Extract token expiration
+
+    # Validate that credentials are not empty
+    if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$AWS_SESSION_TOKEN" ]]; then
+        echo "Error: Credentials received are incomplete."
+        return 1
+    fi
+
+    # Prepare the new profile contents
+    local NEW_PROFILE="[${PROFILE_NAME}]\naws_access_key_id = ${AWS_ACCESS_KEY_ID}\naws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}\naws_session_token = ${AWS_SESSION_TOKEN}\nregion = ${REGION}\nx_security_token_expires = ${TOKEN_EXPIRATION}"
+
+    # Check if profile exists
+    if grep -q "\[${PROFILE_NAME}\]" "$CREDENTIALS_FILE"; then
+        # Profile exists, update it
+        awk -v profile="[$PROFILE_NAME]" -v replacement="$NEW_PROFILE" '
+        BEGIN {replaced=0; print_entry=1}
+        /^\[.*\]/ {if ($0 == profile) {print_entry=0; replaced=1; print replacement} else if (!print_entry) {print_entry=1}}
+        print_entry {print}
+        END {if (!replaced) {print replacement}}
+        ' "$CREDENTIALS_FILE" > tmp$$ && mv tmp$$ "$CREDENTIALS_FILE"
+    else
+        # Profile does not exist, append it
+        echo -e "\n$NEW_PROFILE" >> "$CREDENTIALS_FILE"
+    fi
+
+    if [[ $? -eq 0 ]]; then
+        echo "Profile $PROFILE_NAME updated successfully."
+    else
+        echo "Error updating the profile."
+        return 1
     fi
 }
