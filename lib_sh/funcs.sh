@@ -836,6 +836,7 @@ function getem() {
         fi
     fi
 }
+
 function assume_role() {
     # Help option
     if [[ "$1" == "--help" ]]; then
@@ -865,6 +866,8 @@ function assume_role() {
         return 1
     fi
 
+    print $OUTPUT
+
     # Extract credentials using jq
     local AWS_ACCESS_KEY_ID=$(echo "$OUTPUT" | jq -r '.Credentials.AccessKeyId')
     local AWS_SECRET_ACCESS_KEY=$(echo "$OUTPUT" | jq -r '.Credentials.SecretAccessKey')
@@ -878,7 +881,7 @@ function assume_role() {
     fi
 
     # Prepare the new profile contents
-    local NEW_PROFILE="[${PROFILE_NAME}]\naws_access_key_id = ${AWS_ACCESS_KEY_ID}\naws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}\naws_session_token = ${AWS_SESSION_TOKEN}\nregion = ${REGION}\nx_security_token_expires = ${TOKEN_EXPIRATION}"
+    local NEW_PROFILE="[${PROFILE_NAME}]\naws_access_key_id = ${AWS_ACCESS_KEY_ID}\naws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}\naws_session_token = ${AWS_SESSION_TOKEN}\nregion = ${REGION}\nx_security_token_expires = ${TOKEN_EXPIRATION}\n"
 
     # Check if profile exists
     if grep -q "\[${PROFILE_NAME}\]" "$CREDENTIALS_FILE"; then
