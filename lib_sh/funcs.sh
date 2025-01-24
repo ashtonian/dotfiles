@@ -41,7 +41,7 @@ function server() {
 }
 
 # Run `dig` and display the most useful info
-function digga() {
+function digs() {
 	dig +nocmd "$1" any +multiline +noall +answer;
 }
 
@@ -663,6 +663,7 @@ function bot() {
     echo -e "\n$COL_GREEN\[._.]/$COL_RESET - "$1
 }
 
+# uploads to github gpg keys, generate keys with gpg --full-generate-key
 function upload_gpg_to_github() {
     # Check for GPG and GitHub CLI
     if ! command -v gpg &> /dev/null; then
@@ -687,7 +688,7 @@ function upload_gpg_to_github() {
     key_id=$(gpg --list-secret-keys --keyid-format LONG | grep -B 2 $email | head -n 1 | awk '{print $2}' | cut -d '/' -f 2)
 
     if [[ -z "$key_id" ]]; then
-        echo "No GPG key found for $email. Please generate a key first."
+        echo "No GPG key found for $email. Please generate a key first. run: gpg --full-generate-key"
         return 1
     fi
 
