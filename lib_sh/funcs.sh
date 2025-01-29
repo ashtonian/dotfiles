@@ -717,6 +717,292 @@ function upload_gpg_to_github() {
     echo "Temporary GPG key file removed."
 }
 
+# Checks if the current gh authentication token includes required scopes.
+# If missing any scopes, refreshes authentication to request them.
+# You can call this function before running your main SSH upload function.
+
+function ensure_github_scopes() {
+  # List the scopes your script requires:
+  #   - admin:public_key       => allows adding/deleting SSH keys
+  #   - admin:ssh_signing_key  => allows adding code-signing SSH keys
+  local required_scopes=("admin:public_key" "admin:ssh_signing_key")
+
+  echo "Checking GitHub authentication scopes..."
+
+  # Attempt to retrieve HTTP headers from /user endpoint
+  # The -H "Accept: ..." is optional unless your GH version needs it
+  # We'll store everything in 'headers' for parsing
+  local headers
+  # If 'gh api /user --include' fails, we handle that scenario
+  if ! headers="$(gh api /user --include headers 2>/dev/null)"; then
+    echo "Error: Unable to query GitHub API via 'gh api'. Are you logged in?"
+    return 1
+  fi
+
+  # Parse out the "X-OAuth-Scopes" line
+  # Some servers use different capitalization, so use grep -i
+  # Then cut to get the actual scope list after the colon
+  local x_oauth_scopes="$(echo "$headers" | grep -i '^x-oauth-scopes:' | cut -d: -f2- | tr -d ' \r')"
+  if [[ -z "$x_oauth_scopes" ]]; then
+    echo "Warning: Could not detect any 'X-OAuth-Scopes' header. (Might be an older GH CLI?)"
+    echo "Proceeding, but cannot guarantee required scopes are present."
+    return 0
+  fi
+
+  # Keep track of whether we had to refresh
+  local missing_any=false
+
+  # Check each required scope
+  for scope in "${required_scopes[@]}"; do
+    # If the string doesn't contain the required scope, attempt refresh
+    if [[ "$x_oauth_scopes" != *"$scope"* ]]; then
+      echo "Missing scope: $scope"
+      missing_any=true
+      echo "Requesting '$scope' via 'gh auth refresh'..."
+      gh auth refresh -h github.com -s "$scope" || {
+        echo "Error: 'gh auth refresh' failed for scope '$scope'."
+        return 1
+      }
+    fi
+  done
+
+  if $missing_any; then
+    echo "Re-checking scopes after refresh..."
+    if ! headers="$(gh api /user --include headers 2>/dev/null)"; then
+      echo "Error: Unable to query GitHub API after refresh."
+      return 1
+    fi
+    x_oauth_scopes="$(echo "$headers" | grep -i '^x-oauth-scopes:' | cut -d: -f2- | tr -d ' \r')"
+    for scope in "${required_scopes[@]}"; do
+      if [[ "$x_oauth_scopes" != *"$scope"* ]]; then
+        echo "Still missing scope '$scope' after refresh. Please re-run 'gh auth login' manually."
+        return 1
+      fi
+    done
+    echo "All required scopes obtained."
+  else
+    echo "All required scopes already present."
+  fi
+
+  return 0
+}
+
+function upload_github_ssh_key() {
+  local ssh_folder="$HOME/.ssh"   # default SSH folder
+  local key_name=""               # optional title for the key
+  local key_type=""               # "access" or "codesigning"
+  local interactive=true          # if false, run non-interactive
+  local chosen_key_file=""
+
+  # Helper function to display usage/help
+  function _show_help() {
+    cat <<EOF
+Usage: upload_github_ssh_key [options]
+
+Scans a folder for SSH keys (public or private). If a private key is selected,
+this script generates a public key from it and uploads to GitHub via gh CLI.
+
+Options:
+  -h, --help         Show this help message
+  -d, --dir <dir>    Directory to scan for SSH keys (default: \$HOME/.ssh)
+  -t, --type <type>  Key type: 'access' or 'codesigning'
+                     (maps to 'authentication' or 'signing' in gh CLI)
+  -n, --name <name>  Title for the uploaded key
+  -y, --yes          Non-interactive mode: no user prompts
+EOF
+  }
+
+  # Parse command-line arguments
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)
+        _show_help
+        return 0
+        ;;
+      -d|--dir)
+        if [[ -n "$2" ]]; then
+          ssh_folder="$2"
+          shift 2
+        else
+          echo "Error: --dir requires a folder path."
+          return 1
+        fi
+        ;;
+      -t|--type)
+        if [[ -n "$2" ]]; then
+          if [[ "$2" == "access" || "$2" == "codesigning" ]]; then
+            key_type="$2"
+          else
+            echo "Error: --type must be 'access' or 'codesigning'."
+            return 1
+          fi
+          shift 2
+        else
+          echo "Error: --type requires 'access' or 'codesigning'."
+          return 1
+        fi
+        ;;
+      -n|--name)
+        if [[ -n "$2" ]]; then
+          key_name="$2"
+          shift 2
+        else
+          echo "Error: --name requires a string."
+          return 1
+        fi
+        ;;
+      -y|--yes)
+        interactive=false
+        shift
+        ;;
+      *)
+        echo "Unknown argument: $1"
+        _show_help
+        return 1
+        ;;
+    esac
+  done
+
+  # Validate the specified SSH directory
+  if [[ ! -d "$ssh_folder" ]]; then
+    echo "Error: SSH folder '$ssh_folder' does not exist."
+    return 1
+  fi
+
+  # Gather potential key files (public .pub or private key headers)
+  # This will collect all files in the directory, ignoring subfolders
+  # We do '.*' and '*' to catch hidden or standard-named keys.
+  # Adjust as you see fit (maybe only '*' if you don't want hidden).
+  local all_files=(${ssh_folder}/*(N) ${ssh_folder}/.*(N))
+  local possible_keys=()
+
+  for f in "${all_files[@]}"; do
+    # Skip directories
+    [[ -d "$f" ]] && continue
+    # We’ll do a quick check:
+    # 1) If filename ends in .pub, definitely a public key.
+    # 2) Otherwise, read the first few lines for a private key marker
+    #    (e.g. RSA, OPENSSH, ED25519, ECDSA, EC).
+    if [[ "$f" == *.pub ]]; then
+      possible_keys+=("$f")
+    else
+      # Check for typical private key headers
+      if grep -qE '^-----BEGIN (RSA |OPENSSH |EC |ED25519 |ECDSA )?PRIVATE KEY-----' "$f" 2>/dev/null; then
+        possible_keys+=("$f")
+      fi
+    fi
+  done
+
+  if [[ ${#possible_keys[@]} -eq 0 ]]; then
+    echo "No private or public SSH keys found in '$ssh_folder'."
+    return 1
+  fi
+
+  # TODO: fix ensure_github_scopes()
+
+  # Interactive mode - list available keys for user selection
+  if $interactive; then
+    echo "Found the following SSH keys in '$ssh_folder':"
+    local i=1
+    for pk in "${possible_keys[@]}"; do
+      echo "  $i) $(basename "$pk")"
+      ((i++))
+    done
+
+    local selection
+    while true; do
+      read -r "?Enter the number of the key to upload: " selection
+      if [[ "$selection" =~ ^[0-9]+$ ]] && (( selection >= 1 && selection <= ${#possible_keys[@]} )); then
+        chosen_key_file="${possible_keys[$selection]}"
+        break
+      else
+        echo "Invalid selection. Please enter a number from 1 to ${#possible_keys[@]}."
+      fi
+    done
+
+    # Prompt for key title if none given
+    if [[ -z "$key_name" ]]; then
+      read -r "?Enter a title for this key (e.g., 'Work Laptop Key'): " key_name
+      [[ -z "$key_name" ]] && key_name="Untitled Key"
+    fi
+
+    # Prompt for key type if none given
+    if [[ -z "$key_type" ]]; then
+      local type_input
+      while true; do
+        read -r "?Is this an access key or a code signing key? (access/codesigning): " type_input
+        if [[ "$type_input" == "access" || "$type_input" == "codesigning" ]]; then
+          key_type="$type_input"
+          break
+        else
+          echo "Invalid input. Enter 'access' or 'codesigning'."
+        fi
+      done
+    fi
+  else
+    # Non-interactive mode
+    chosen_key_file="${possible_keys[1]}"
+    [[ -z "$key_name" ]] && key_name="Untitled Key"
+    [[ -z "$key_type" ]] && key_type="access"
+  fi
+
+  # Final safety checks
+  if [[ -z "$chosen_key_file" ]]; then
+    echo "Error: no key file selected."
+    return 1
+  fi
+
+  # Decide if it's private or public by extension or content
+  local is_private=false
+  if [[ "$chosen_key_file" != *.pub ]]; then
+    if grep -qE '^-----BEGIN (RSA |OPENSSH |EC |ED25519 |ECDSA )?PRIVATE KEY-----' "$chosen_key_file" 2>/dev/null; then
+      is_private=true
+    fi
+  fi
+
+  # If private key, generate a temporary public key
+  local tmp_pub_key=""
+  if $is_private; then
+    echo "Selected key is a PRIVATE key. Generating public key with ssh-keygen..."
+    tmp_pub_key="$(mktemp /tmp/github_pubkey.XXXXXX)"
+    if ! ssh-keygen -y -f "$chosen_key_file" > "$tmp_pub_key" 2>/dev/null; then
+      echo "Error: Failed to generate a public key from '$chosen_key_file'."
+      rm -f "$tmp_pub_key"
+      return 1
+    fi
+    echo "Public key generated at $tmp_pub_key (temporary)."
+  else
+    # Otherwise, it's already a public key
+    tmp_pub_key="$chosen_key_file"
+  fi
+
+  # Map user type "access" -> gh --type "authentication"
+  #                "codesigning" -> gh --type "signing"
+  local gh_type="authentication"
+  if [[ "$key_type" == "codesigning" ]]; then
+    gh_type="signing"
+  fi
+
+  # Use gh CLI to upload
+  echo "Uploading key '$chosen_key_file' as '$key_name' ($gh_type) to GitHub..."
+  gh ssh-key add "$tmp_pub_key" --title "$key_name" --type "$gh_type"
+  local exit_code=$?
+
+  # Clean up if we generated a temp pubkey
+  if [[ -f "$tmp_pub_key" ]]; then
+    rm -f "$tmp_pub_key"
+  fi
+
+  if [[ $exit_code -eq 0 ]]; then
+    echo "SSH key successfully uploaded to GitHub."
+  else
+    echo "Failed to upload SSH key. (gh exit code: $exit_code)"
+  fi
+
+  return $exit_code
+}
+
+
 
 function install_brewfiles() {
     if [[ "$1" == "--help" ]]; then
@@ -905,3 +1191,4 @@ function assume_role() {
         return 1
     fi
 }
+
