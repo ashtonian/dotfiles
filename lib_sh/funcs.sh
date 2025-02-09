@@ -101,13 +101,33 @@ function move_and_link() {
 }
 
 
-# Usage: bootstrap_ssh_key <key_name> [<key_directory> <key_type> <key_bits> <passphrase>]
+# Example fix_ssh_permissions function (optional).
+# Remove or adjust if you don’t need permissions adjustments.
+fix_ssh_permissions() {
+  local ssh_dir="$1"
+  if [[ ! -d "$ssh_dir" ]]; then
+    echo "Directory '$ssh_dir' does not exist or is not accessible."
+    return 1
+  fi
+  chmod 700 "$ssh_dir"
+  find "$ssh_dir" -type f \( -name "id_*" -o -name "*.key" \) -exec chmod 600 {} \; 2>/dev/null
+  find "$ssh_dir" -type f -name "*.pub" -exec chmod 644 {} \; 2>/dev/null
+}
+
 bootstrap_ssh_key() {
-  local key_name=$1
-  local key_directory=${2:-~/.ssh}
-  local key_type=${3:-rsa}
-  local key_bits=${4:-4096}
-  local passphrase=${5:-""}
+  # Ensure at least a key name is passed
+  # if [[ $# -lt 1 ]]; then
+  #   echo "Usage: bootstrap_ssh_key <key_name> [<key_directory> <key_type> <key_bits> <passphrase>]"
+  #   return 1
+  # fi
+
+  local key_name="${1:-id}"               # <- FIX: remove the extra '$' that was causing errors
+  local key_directory="${2:-$HOME/.ssh}"
+  local key_type="${3:-Ed25519}"
+  local key_bits="${4:-4096}"
+  local passphrase="${5:-}"
+
+  key_name="${key_name}_${key_type}"
 
   local private_key_file="${key_directory}/${key_name}"
   local public_key_file="${private_key_file}.pub"
@@ -115,19 +135,50 @@ bootstrap_ssh_key() {
   # Create the directory if it doesn't exist
   mkdir -p "${key_directory}"
 
-  # Check if the private key file exists
-  if [[ ! -f "${private_key_file}" ]]; then
-    # Generate the SSH key
-    ssh-keygen -t "${key_type}" -b "${key_bits}" -N "${passphrase}" -f "${private_key_file}"
+  # (Optional) Fix directory permissions if desired
+  fix_ssh_permissions "${key_directory}"
 
-    # Add the key to the SSH agent
-    eval "$(ssh-agent -s)"
+  # Generate key if it doesn't already exist
+  if [[ ! -f "${private_key_file}" ]]; then
+    # Ed25519 doesn't allow a custom bit length, so skip -b for Ed25519
+    if [[ "$key_type" =~ ^[Ee][Dd]25519$ ]]; then
+      ssh-keygen -t "${key_type}" \
+                 -N "${passphrase}" \
+                 -f "${private_key_file}" || {
+        echo "Error generating SSH key."
+        return 1
+      }
+    else
+      ssh-keygen -t "${key_type}" \
+                 -b "${key_bits}" \
+                 -N "${passphrase}" \
+                 -f "${private_key_file}" || {
+        echo "Error generating SSH key."
+        return 1
+      }
+    fi
+
+    # (Optional) Start ssh-agent only if none is running
+    if [[ -z "$SSH_AUTH_SOCK" ]]; then
+      eval "$(ssh-agent -s)"
+    fi
+
+    # (Optional) Fix permissions on newly created key files
+    fix_ssh_permissions "${key_directory}"
+
+    # Add the new key to the agent
     ssh-add "${private_key_file}"
 
   else
     echo "SSH key '${key_name}' already exists in '${key_directory}'."
   fi
-  cat --style=changes,snip --paging=never ${public_key_file}
+
+  # Display the public key if it exists (using 'bat' with extra flags)
+  if [[ -f "${public_key_file}" ]]; then
+    bat --style=changes,snip --paging=never "${public_key_file}"
+  else
+    echo "Warning: No public key file found at '${public_key_file}'."
+  fi
 }
 
 function vscode_extensions_list() {
@@ -717,76 +768,6 @@ function upload_gpg_to_github() {
     echo "Temporary GPG key file removed."
 }
 
-# Checks if the current gh authentication token includes required scopes.
-# If missing any scopes, refreshes authentication to request them.
-# You can call this function before running your main SSH upload function.
-
-function ensure_github_scopes() {
-  # List the scopes your script requires:
-  #   - admin:public_key       => allows adding/deleting SSH keys
-  #   - admin:ssh_signing_key  => allows adding code-signing SSH keys
-  local required_scopes=("admin:public_key" "admin:ssh_signing_key")
-
-  echo "Checking GitHub authentication scopes..."
-
-  # Attempt to retrieve HTTP headers from /user endpoint
-  # The -H "Accept: ..." is optional unless your GH version needs it
-  # We'll store everything in 'headers' for parsing
-  local headers
-  # If 'gh api /user --include' fails, we handle that scenario
-  if ! headers="$(gh api /user --include headers 2>/dev/null)"; then
-    echo "Error: Unable to query GitHub API via 'gh api'. Are you logged in?"
-    return 1
-  fi
-
-  # Parse out the "X-OAuth-Scopes" line
-  # Some servers use different capitalization, so use grep -i
-  # Then cut to get the actual scope list after the colon
-  local x_oauth_scopes="$(echo "$headers" | grep -i '^x-oauth-scopes:' | cut -d: -f2- | tr -d ' \r')"
-  if [[ -z "$x_oauth_scopes" ]]; then
-    echo "Warning: Could not detect any 'X-OAuth-Scopes' header. (Might be an older GH CLI?)"
-    echo "Proceeding, but cannot guarantee required scopes are present."
-    return 0
-  fi
-
-  # Keep track of whether we had to refresh
-  local missing_any=false
-
-  # Check each required scope
-  for scope in "${required_scopes[@]}"; do
-    # If the string doesn't contain the required scope, attempt refresh
-    if [[ "$x_oauth_scopes" != *"$scope"* ]]; then
-      echo "Missing scope: $scope"
-      missing_any=true
-      echo "Requesting '$scope' via 'gh auth refresh'..."
-      gh auth refresh -h github.com -s "$scope" || {
-        echo "Error: 'gh auth refresh' failed for scope '$scope'."
-        return 1
-      }
-    fi
-  done
-
-  if $missing_any; then
-    echo "Re-checking scopes after refresh..."
-    if ! headers="$(gh api /user --include headers 2>/dev/null)"; then
-      echo "Error: Unable to query GitHub API after refresh."
-      return 1
-    fi
-    x_oauth_scopes="$(echo "$headers" | grep -i '^x-oauth-scopes:' | cut -d: -f2- | tr -d ' \r')"
-    for scope in "${required_scopes[@]}"; do
-      if [[ "$x_oauth_scopes" != *"$scope"* ]]; then
-        echo "Still missing scope '$scope' after refresh. Please re-run 'gh auth login' manually."
-        return 1
-      fi
-    done
-    echo "All required scopes obtained."
-  else
-    echo "All required scopes already present."
-  fi
-
-  return 0
-}
-
 function upload_github_ssh_key() {
   local ssh_folder="$HOME/.ssh"   # default SSH folder
   local key_name=""               # optional title for the key
@@ -898,8 +879,6 @@ EOF
     return 1
   fi
 
-  # TODO: fix ensure_github_scopes()
-
   # Interactive mode - list available keys for user selection
   if $interactive; then
     echo "Found the following SSH keys in '$ssh_folder':"
@@ -976,6 +955,7 @@ EOF
     tmp_pub_key="$chosen_key_file"
   fi
 
+  gh auth refresh --scopes "admin:public_key,admin:ssh_signing_key"
   # Map user type "access" -> gh --type "authentication"
   #                "codesigning" -> gh --type "signing"
   local gh_type="authentication"
