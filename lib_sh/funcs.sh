@@ -699,8 +699,8 @@ function rename_aws_profile() {
 compctl -k "( $(awk '/^\[/ {print $1}' ~/.aws/credentials | tr -d '[]') )" rename_aws_profile
 
 function tfmt(){
-  local path="${1:-.}" # Use the first argument as the path, default to "." if not provided
-  find "$path" -name "*.tf" -print0 | xargs -0 terraform fmt
+  local lpath="${1:-.}" # Use the first argument as the lpath, default to "." if not provided
+  find "$lpath" -name "*.tf" -print0 | xargs -0 terraform fmt
 }
 
 # duplicated from ./funcs.sh not sure h
