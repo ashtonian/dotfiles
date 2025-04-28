@@ -1172,3 +1172,35 @@ function assume_role() {
     fi
 }
 
+#!/usr/bin/env bash
+
+# Usage: run_on_hosts.sh <host_file> <local_script> [<script_args>...]
+#   - host_file: A file containing one hostname/IP per line
+#   - local_script: Path to the script you want to run on each host
+#   - script_args (optional): Any additional arguments for the script
+
+# Check for at least 2 arguments
+if [ $# -lt 2 ]; then
+  echo "Usage: $0 <host_file> <local_script> [<script_args>...]"
+  exit 1
+fi
+
+HOST_FILE="$1"
+LOCAL_SCRIPT="$2"
+shift 2  # Shift remaining arguments to pass them to the remote script
+
+# Loop through each host in the file
+while read -r HOST; do
+  # Skip empty lines or commented lines
+  [[ -z "$HOST" || "$HOST" == \#* ]] && continue
+
+  echo "----- Running script on $HOST -----"
+
+  # Execute the local script on the remote server
+  # "-- < $LOCAL_SCRIPT" pipes the local script into bash on the remote side
+  # "$@" passes any extra arguments to the remote script
+  ssh -o StrictHostKeyChecking=no "$HOST" "bash -s" -- < "$LOCAL_SCRIPT" "$@"
+
+  echo "----- Done with $HOST -----"
+  echo
+done < "$HOST_FILE"
