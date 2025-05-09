@@ -1173,34 +1173,58 @@ function assume_role() {
 }
 
 function run_on_servers() {
-  local usage="Usage: run_on_servers <command_or_script> <server1> [server2 ...]"
+  # Usage/help text
+  local usage="Usage: run_on_servers [--ignore-fingerprint|-i] <command_or_script> <server1> [server2 ...]"
 
-  # Ensure at least two arguments are passed
+  # Initialize ignore_fingerprint to false by default
+  local ignore_fingerprint=false
+
+  # Parse the optional flag first
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      --ignore-fingerprint|-i)
+        ignore_fingerprint=true
+        shift
+        ;;
+      *)
+        # First non-flag argument encountered; break out of the loop
+        break
+        ;;
+    esac
+  done
+
+  # Now we need at least two arguments: a command/script + at least one server
   if (( $# < 2 )); then
     echo "$usage"
     return 1
   fi
 
-  # First argument is either a script file or a command
+  # The first (non-flag) argument is either a script file or a command.
   local script_or_cmd=$1
   shift
 
-  # Remaining arguments are servers
+  # The remaining arguments are the target servers
   local servers=("$@")
 
-  # If it's a file, treat it as a script that needs to be transferred.
+  # If ignoring fingerprints, construct the SSH options
+  local ssh_opts=""
+  if [[ "$ignore_fingerprint" == true ]]; then
+    ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+  fi
+
+  # If it's a file, we copy and run the file on each server
   if [[ -f "$script_or_cmd" ]]; then
     local script_name="$(basename "$script_or_cmd")"
     for server in "${servers[@]}"; do
       echo "===== [${server}] Transferring and running script: ${script_or_cmd} ====="
-      scp "$script_or_cmd" "${server}:/tmp/${script_name}"
-      ssh "$server" "chmod +x /tmp/${script_name} && /tmp/${script_name}"
+      scp $ssh_opts "$script_or_cmd" "${server}:/tmp/${script_name}"
+      ssh $ssh_opts "$server" "chmod +x /tmp/${script_name} && /tmp/${script_name}"
     done
   else
-    # Otherwise treat the argument as a direct command
+    # Otherwise, treat the first argument as a command and run directly over SSH
     for server in "${servers[@]}"; do
       echo "===== [${server}] Running command: ${script_or_cmd} ====="
-      ssh "$server" "$script_or_cmd"
+      ssh $ssh_opts "$server" "$script_or_cmd"
     done
   fi
 }
