@@ -1172,35 +1172,67 @@ function assume_role() {
     fi
 }
 
-#!/usr/bin/env bash
+function run_on_servers() {
+  local usage="Usage: run_on_servers <command_or_script> <server1> [server2 ...]"
 
-# Usage: run_on_hosts.sh <host_file> <local_script> [<script_args>...]
-#   - host_file: A file containing one hostname/IP per line
-#   - local_script: Path to the script you want to run on each host
-#   - script_args (optional): Any additional arguments for the script
+  # Ensure at least two arguments are passed
+  if (( $# < 2 )); then
+    echo "$usage"
+    return 1
+  fi
 
-# Check for at least 2 arguments
-if [ $# -lt 2 ]; then
-  echo "Usage: $0 <host_file> <local_script> [<script_args>...]"
-  exit 1
-fi
+  # First argument is either a script file or a command
+  local script_or_cmd=$1
+  shift
 
-HOST_FILE="$1"
-LOCAL_SCRIPT="$2"
-shift 2  # Shift remaining arguments to pass them to the remote script
+  # Remaining arguments are servers
+  local servers=("$@")
 
-# Loop through each host in the file
-while read -r HOST; do
-  # Skip empty lines or commented lines
-  [[ -z "$HOST" || "$HOST" == \#* ]] && continue
+  # If it's a file, treat it as a script that needs to be transferred.
+  if [[ -f "$script_or_cmd" ]]; then
+    local script_name="$(basename "$script_or_cmd")"
+    for server in "${servers[@]}"; do
+      echo "===== [${server}] Transferring and running script: ${script_or_cmd} ====="
+      scp "$script_or_cmd" "${server}:/tmp/${script_name}"
+      ssh "$server" "chmod +x /tmp/${script_name} && /tmp/${script_name}"
+    done
+  else
+    # Otherwise treat the argument as a direct command
+    for server in "${servers[@]}"; do
+      echo "===== [${server}] Running command: ${script_or_cmd} ====="
+      ssh "$server" "$script_or_cmd"
+    done
+  fi
+}
 
-  echo "----- Running script on $HOST -----"
 
-  # Execute the local script on the remote server
-  # "-- < $LOCAL_SCRIPT" pipes the local script into bash on the remote side
-  # "$@" passes any extra arguments to the remote script
-  ssh -o StrictHostKeyChecking=no "$HOST" "bash -s" -- < "$LOCAL_SCRIPT" "$@"
+# # Usage: run_on_hosts.sh <host_file> <local_script> [<script_args>...]
+# #   - host_file: A file containing one hostname/IP per line
+# #   - local_script: Path to the script you want to run on each host
+# #   - script_args (optional): Any additional arguments for the script
 
-  echo "----- Done with $HOST -----"
-  echo
-done < "$HOST_FILE"
+# # Check for at least 2 arguments
+# if [ $# -lt 2 ]; then
+#   echo "Usage: $0 <host_file> <local_script> [<script_args>...]"
+#   exit 1
+# fi
+
+# HOST_FILE="$1"
+# LOCAL_SCRIPT="$2"
+# shift 2  # Shift remaining arguments to pass them to the remote script
+
+# # Loop through each host in the file
+# while read -r HOST; do
+#   # Skip empty lines or commented lines
+#   [[ -z "$HOST" || "$HOST" == \#* ]] && continue
+
+#   echo "----- Running script on $HOST -----"
+
+#   # Execute the local script on the remote server
+#   # "-- < $LOCAL_SCRIPT" pipes the local script into bash on the remote side
+#   # "$@" passes any extra arguments to the remote script
+#   ssh -o StrictHostKeyChecking=no "$HOST" "bash -s" -- < "$LOCAL_SCRIPT" "$@"
+
+#   echo "----- Done with $HOST -----"
+#   echo
+# done < "$HOST_FILE"
