@@ -1206,25 +1206,26 @@ function run_on_servers() {
   # The remaining arguments are the target servers
   local servers=("$@")
 
-  # If ignoring fingerprints, construct the SSH options
-  local ssh_opts=""
+  # Build an array of SSH/SCP options
+  local ssh_opts=()
   if [[ "$ignore_fingerprint" == true ]]; then
-    ssh_opts="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
+    ssh_opts=( -o "StrictHostKeyChecking=no" -o "UserKnownHostsFile=/dev/null" )
   fi
 
   # If it's a file, we copy and run the file on each server
   if [[ -f "$script_or_cmd" ]]; then
-    local script_name="$(basename "$script_or_cmd")"
+    local script_name
+    script_name="$(basename "$script_or_cmd")"
     for server in "${servers[@]}"; do
       echo "===== [${server}] Transferring and running script: ${script_or_cmd} ====="
-      scp $ssh_opts "$script_or_cmd" "${server}:/tmp/${script_name}"
-      ssh $ssh_opts "$server" "chmod +x /tmp/${script_name} && /tmp/${script_name}"
+      scp "${ssh_opts[@]}" "$script_or_cmd" "${server}:/tmp/${script_name}"
+      ssh "${ssh_opts[@]}" "$server" "chmod +x /tmp/${script_name} && /tmp/${script_name}"
     done
   else
     # Otherwise, treat the first argument as a command and run directly over SSH
     for server in "${servers[@]}"; do
       echo "===== [${server}] Running command: ${script_or_cmd} ====="
-      ssh $ssh_opts "$server" "$script_or_cmd"
+      ssh "${ssh_opts[@]}" "$server" "$script_or_cmd"
     done
   fi
 }
