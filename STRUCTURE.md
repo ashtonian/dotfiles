@@ -1,259 +1,276 @@
 # Dotfiles Structure
 
-This document explains the organization of the dotfiles repository.
+Complete directory layout and explanation of the zinit-based dotfiles setup.
 
 ## Directory Layout
 
 ```
 ~/.dotfiles/
-├── stow/                        # GNU Stow packages
-│   ├── zsh/                     # Zsh configuration
-│   │   └── .zshrc               # Main zsh config
-│   ├── git/                     # Git configuration
-│   │   └── .gitconfig           # Git settings
-│   ├── ssh/                     # SSH configuration template
-│   │   └── .ssh/
-│   │       └── config           # SSH config (no keys!)
-│   └── atuin/                   # Atuin shell history
-│       └── .config/
-│           └── atuin/
-│               └── config.toml  # Atuin settings
+├── stow/                              # GNU Stow packages
+│   ├── zsh/                           # Zsh configuration
+│   │   ├── .zshrc                     # Entry point (minimal, sources modules)
+│   │   └── .config/zsh/               # Modular configuration
+│   │       ├── 00-init.zsh            # Zinit bootstrap & core options
+│   │       ├── 10-path.zsh            # PATH & environment variables
+│   │       ├── 20-history.zsh         # History settings & Atuin
+│   │       ├── 30-plugins.zsh         # Zinit plugin definitions (turbo)
+│   │       ├── 40-keybindings.zsh     # Key bindings
+│   │       ├── 50-aliases.zsh         # Aliases
+│   │       └── 60-functions.zsh       # External function sources
+│   ├── git/
+│   │   └── .gitconfig                 # Git settings (includes .local)
+│   ├── ssh/
+│   │   └── .ssh/config                # SSH config template
+│   └── atuin/
+│       └── .config/atuin/config.toml  # Atuin shell history config
 │
-├── lib_sh/                      # Shell helper libraries
-│   ├── echos.sh                 # Colorized output functions
-│   ├── funcs.sh                 # General utility functions
-│   ├── requirers.sh             # Package requirement helpers
-│   └── claude.sh                # Claude CLI helpers
+├── lib_sh/                            # Shell function libraries
+│   ├── echos.sh                       # Colorized output (ok, bot, running, etc.)
+│   ├── funcs.sh                       # Utility functions (server, mkd, etc.)
+│   ├── requirers.sh                   # Package requirement helpers
+│   └── claude.sh                      # Claude CLI helper functions
 │
-├── bin/                         # Executable scripts
-│   └── dotfiles-install-launchagent
+├── bin/                               # Executable scripts
+│   ├── dotfiles-install-launchagents.sh  # LaunchAgent installer
+│   └── dotfiles-update.sh             # Weekly update script
 │
-├── launchagents/                # macOS LaunchAgent definitions
-│   └── com.dotfiles.sync.plist  # Auto-sync job (4 hours)
+├── launchagents/                      # macOS LaunchAgent definitions
+│   ├── com.dotfiles.sync.plist        # Dotfiles sync (4 hours)
+│   └── com.dotfiles.update.plist      # System updates (Friday 9 AM)
 │
-├── install.sh                   # Initial machine setup
-├── config.sh                    # macOS system preferences
-├── sync.sh                      # Git sync automation
-├── Brewfile                     # Homebrew packages
-├── README.md                    # Main documentation
-└── STRUCTURE.md                 # This file
+├── install.sh                         # Initial machine setup
+├── config.sh                          # macOS system preferences
+├── sync.sh                            # Git sync automation
+├── Brewfile                           # Homebrew packages
+├── README.md                          # Main documentation
+└── STRUCTURE.md                       # This file
 ```
 
-## Stow Packages
+## Zsh Configuration Modules
 
-Each subdirectory in `stow/` is a "package" that mirrors the home directory structure. When you run `stow <package>`, it creates symlinks in your home directory.
+### 00-init.zsh - Zinit Bootstrap
 
-### zsh
+- Auto-installs zinit if missing
+- Loads zinit annexes for extended features
+- Sets core zsh options (AUTO_CD, CORRECT, etc.)
 
-Contains `.zshrc` with:
-- Oh-My-Zsh configuration
-- Plugin management
-- Path configuration
-- History settings
-- Custom aliases
-- Atuin integration
-- Claude CLI helpers
+### 10-path.zsh - Environment
 
-### git
+- Homebrew initialization
+- Go, Ruby, Python, Java paths
+- User bin directories
+- Environment variables (EDITOR, LANG, etc.)
 
-Contains `.gitconfig` with:
-- User settings
-- Diff/merge tools
-- Aliases
-- URL shortcuts
-- Color settings
-- Include for `~/.gitconfig.local` (private settings)
+### 20-history.zsh - History & Atuin
 
-### ssh
+- History file settings (50k entries)
+- History options (dedup, share, ignore space)
+- Atuin integration (if installed)
 
-Contains SSH config template. Note: **Never put SSH keys in this repo!**
+### 30-plugins.zsh - Zinit Plugins
 
-The config includes:
-- Default settings for all hosts
-- Include directive for `config.local` (machine-specific)
+**Immediate load:**
+- Dracula theme
+- zsh-syntax-highlighting
+- zsh-autosuggestions
+- zsh-completions
 
-### atuin
+**Turbo mode (async after prompt):**
+- zoxide (replaces autojump, much faster)
+- fzf (fuzzy finder)
+- OMZ libraries (clipboard, completion, git, etc.)
+- OMZ plugins (gitfast, docker, terraform, etc.)
+- fast-alias-tips (Rust-based)
 
-Contains Atuin shell history configuration:
-- Sync settings
-- Search preferences
-- Privacy filters
+### 40-keybindings.zsh - Keys
 
-## Shell Libraries
+- Emacs mode
+- Word navigation (Option+Arrow)
+- History search (Ctrl+R/S)
+- Autosuggestion accept (Ctrl+F)
 
-### lib_sh/echos.sh
+### 50-aliases.zsh - Aliases
 
-Colorized output functions for scripts:
-- `ok` - Green success message
-- `bot` - Bot-style message
-- `running` - Yellow action indicator
-- `warn` - Warning message
-- `error` - Red error message
+- Better defaults (cat→bat, ls→colorls, etc.)
+- Directory navigation
+- Git shortcuts
+- Safety aliases (rm -i, etc.)
 
-### lib_sh/funcs.sh
+### 60-functions.zsh - External Sources
 
-General utility functions:
-- `server` - Start local HTTP server
-- `mkd` - Make directory and cd into it
-- `fs` - File/directory size
-- `digs` - Simplified dig output
-- `bootstrap_ssh_key` - SSH key generation
-- `whodat` / `getem` - Port process management
-- Various AWS, brew, and system helpers
-
-### lib_sh/requirers.sh
-
-Package management helpers:
-- `require_brew` - Install brew package if missing
-- `require_cask` - Install brew cask if missing
-- `require_gem` - Install gem if missing
-- `require_npm` - Install npm package if missing
-
-### lib_sh/claude.sh
-
-Claude Code CLI helpers for AI-assisted development:
-
-**Session Management:**
-- `cworktree` - Create git worktree + Claude session
-- `ccontinue` - Continue last session
-- `cresume` - Resume session picker
-
-**Documentation:**
-- `cdoc` - Generate CLAUDE.md
-- `creadme` - Update all READMEs
-- `carch` - Architecture documentation
-
-**Code Quality:**
-- `creview` - Review branch changes
-- `cdebt` - Find technical debt
-- `csecurity` - Security audit
-- `cdeps` - Dependency audit
-
-**Maintenance:**
-- `clint` - Fix linting issues
-- `cupdate` - Update dependencies
-- `ctests` - Add missing tests
-- `cpr` - Prepare pull request
-
-## Scripts
-
-### install.sh
-
-Initial machine setup:
-1. Configure sudo
-2. Install Xcode CLI tools
-3. Install Homebrew
-4. Clone dotfiles repo
-5. Configure git
-6. Install Oh-My-Zsh
-7. Run config.sh
-
-### config.sh
-
-macOS system preferences:
-- Login window settings
-- Finder preferences
-- Dock configuration
-- Keyboard/trackpad settings
-- Security settings
-- App-specific settings
-
-### sync.sh
-
-Automated git sync:
-- Check connectivity
-- Commit local changes
-- Pull remote changes (with rebase)
-- Push to origin
-- Optional: run stow to update symlinks
-
-Usage:
-```sh
-./sync.sh sync   # Git sync only
-./sync.sh stow   # Update symlinks only
-./sync.sh all    # Both
-```
+- Sources lib_sh/funcs.sh
+- Sources lib_sh/claude.sh
+- Tool completions (helm, git-extras)
+- direnv, fnm initialization
 
 ## LaunchAgents
 
 ### com.dotfiles.sync.plist
 
-Runs `sync.sh` every 4 hours (14400 seconds) to:
-- Auto-commit local changes
-- Pull remote updates
-- Push to origin
+**Purpose:** Keep dotfiles synced across machines
 
-Install with:
+| Setting | Value |
+|---------|-------|
+| Frequency | Every 4 hours |
+| Run at load | Yes |
+| Actions | git add, commit, pull, push |
+| Logs | ~/.dotfiles/logs/sync.log |
+
+### com.dotfiles.update.plist
+
+**Purpose:** Keep system packages updated
+
+| Setting | Value |
+|---------|-------|
+| Frequency | Friday 9:00 AM |
+| Run at load | No |
+| Actions | brew update/upgrade, zinit update |
+| Logs | ~/.dotfiles/logs/update.log |
+
+## Shell Function Libraries
+
+### lib_sh/echos.sh
+
+Output helpers:
+- `ok` - Green success
+- `bot` - Bot message
+- `running` - Action indicator
+- `warn` / `error` - Warnings and errors
+
+### lib_sh/funcs.sh
+
+Utilities:
+- `server [port]` - Start HTTP server
+- `mkd <dir>` - Make and cd
+- `fs [path]` - File/directory size
+- `digs <domain>` - Simplified dig
+- `bootstrap_ssh_key` - Generate SSH keys
+- `whodat <port>` - Process using port
+- `getem <port>` - Kill process on port
+
+### lib_sh/claude.sh
+
+Claude CLI helpers:
+
+**Session:**
+- `cworktree <branch>` - Worktree + session (ID = repo-branch)
+- `ccontinue` / `cresume` - Continue/resume sessions
+- `copus` - Use Opus model
+
+**Documentation:**
+- `cdoc` - Generate CLAUDE.md
+- `creadme` - Update READMEs
+- `carch` - Architecture docs
+
+**Code Quality:**
+- `creview` - Review changes
+- `cdebt` - Find tech debt
+- `csecurity` - Security audit
+
+**Maintenance:**
+- `clint` - Fix linting
+- `cupdate` - Update deps
+- `cpr` - Prepare PR
+
+## Stow Usage
+
+### Link packages
+
 ```sh
-~/.dotfiles/bin/dotfiles-install-launchagent
+cd ~/.dotfiles/stow
+stow -v -t ~ zsh git atuin ssh
 ```
 
-## Private Configuration
+This creates:
+- `~/.zshrc` → `stow/zsh/.zshrc`
+- `~/.config/zsh/` → `stow/zsh/.config/zsh/`
+- `~/.gitconfig` → `stow/git/.gitconfig`
+- etc.
 
-For sensitive settings, create a separate private repo at `~/.dotfiles-private/`:
+### Unlink
 
-```
-~/.dotfiles-private/
-├── stow/
-│   ├── ssh/
-│   │   └── .ssh/
-│   │       └── config.local    # Host-specific SSH config
-│   └── git-private/
-│       └── .gitconfig.local    # Private git settings
-└── install-private.sh
+```sh
+stow -D -t ~ zsh
 ```
 
-This repo should:
-- Be private on GitHub
-- Never contain actual secrets (use 1Password CLI, etc.)
-- Be stowed after the public dotfiles
+### Relink after changes
+
+```sh
+stow -R -t ~ zsh
+```
+
+## Migration from OMZ
+
+The zinit config loads most OMZ plugins via `zinit snippet OMZP::plugin-name`. Key differences:
+
+| OMZ | Zinit |
+|-----|-------|
+| `source $ZSH/oh-my-zsh.sh` | Zinit loads plugins individually |
+| Plugins load synchronously | Turbo mode loads async |
+| autojump | zoxide (faster) |
+| ~/.oh-my-zsh/custom/ | ~/.local/share/zinit/ |
+
+## Local Customization
+
+### ~/.zshrc.local
+
+Machine-specific settings (not in git):
+
+```sh
+# API keys
+export OPENAI_API_KEY="..."
+
+# Local aliases
+alias work="cd ~/work/projects"
+
+# Override settings
+export EDITOR="code"
+```
+
+### ~/.gitconfig.local
+
+Private git settings (included by main .gitconfig):
+
+```ini
+[user]
+    signingkey = ABC123
+[commit]
+    gpgsign = true
+```
 
 ## Workflow
 
-### Fresh Machine Setup
+### Fresh machine
 
 ```sh
-# 1. Run install script
+# 1. Run installer
 /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/ashtonian/dotfiles/master/install.sh)"
 
-# 2. Stow packages
-cd ~/.dotfiles/stow
-stow -v -t ~ zsh git atuin ssh
+# 2. Stow configs
+cd ~/.dotfiles/stow && stow -v -t ~ zsh git atuin ssh
 
-# 3. Install LaunchAgent
-~/.dotfiles/bin/dotfiles-install-launchagent
+# 3. Install LaunchAgents
+~/.dotfiles/bin/dotfiles-install-launchagents.sh
 
-# 4. Setup Atuin
-brew install atuin
-atuin login -u <username>
-atuin import zsh
+# 4. Restart shell
+exec zsh
 ```
 
-### Making Changes
+### Daily use
+
+- Edit files in `~/.dotfiles/stow/zsh/.config/zsh/`
+- Run `stow -R -t ~ zsh` to update symlinks
+- Changes auto-commit every 4 hours
+
+### Manual operations
 
 ```sh
-# 1. Edit files in ~/.dotfiles/
-vim ~/.dotfiles/stow/zsh/.zshrc
+# Sync now
+~/.dotfiles/sync.sh sync
 
-# 2. Re-stow if needed
-cd ~/.dotfiles/stow && stow -R -t ~ zsh
+# Update now
+~/.dotfiles/bin/dotfiles-update.sh --all
 
-# 3. Commit changes (or let auto-sync handle it)
-cd ~/.dotfiles
-git add -A && git commit -m "Update zshrc"
-git push
-```
-
-### Adding New Stow Package
-
-```sh
-# 1. Create package structure
-mkdir -p ~/.dotfiles/stow/newapp/.config/newapp
-
-# 2. Add config file
-vim ~/.dotfiles/stow/newapp/.config/newapp/config
-
-# 3. Stow it
-cd ~/.dotfiles/stow
-stow -v -t ~ newapp
+# Check plugin load times
+zinit times
 ```
