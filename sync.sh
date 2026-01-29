@@ -32,6 +32,20 @@ check_connectivity() {
     return 0
 }
 
+# Run mackup backup to capture app configs
+run_mackup_backup() {
+    if command -v mackup &>/dev/null; then
+        log "INFO: Running mackup backup..."
+        if mackup backup --force 2>&1 | tee -a "$LOG_FILE"; then
+            log "INFO: Mackup backup complete"
+        else
+            log "WARN: Mackup backup failed"
+        fi
+    else
+        log "INFO: mackup not installed, skipping app config backup"
+    fi
+}
+
 # Main sync function
 sync_dotfiles() {
     cd "$DOTFILES_DIR" || {
@@ -121,6 +135,7 @@ main() {
     case "${1:-sync}" in
         sync)
             check_connectivity || exit 0
+            run_mackup_backup
             sync_dotfiles
             ;;
         stow)
@@ -128,6 +143,7 @@ main() {
             ;;
         all)
             check_connectivity || exit 0
+            run_mackup_backup
             sync_dotfiles
             run_stow
             ;;

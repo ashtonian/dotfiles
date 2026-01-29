@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Produced by Beyond Compare 4 from Scooter Software -->
+<BCColors Version="1" MinVersion="1">
+	<TDirColors>
+		<BGColor Value="$362A28"/>
+		<ConflictBGColor Value="$0000CA"/>
+		<ConflictFGColor Value="-"/>
+		<DiffFGColor Value="$5555FF"/>
+		<DisjointFGColor Value="$00FF00"/>
+		<FGColor Value="$F2F8F8"/>
+		<FilteredBGColor Value="$F2F8F8"/>
+		<FilteredFGColor Value="$7BFA50"/>
+		<FolderInfoFGColor Value="$5A4744"/>
+		<FontStr Value="Segoe UI;9"/>
+		<LeftBGColor Value="$5B5B00"/>
+		<LeftFGColor Value="-"/>
+		<LogColor Value="$FDE98B"/>
+		<MergeableBGColor Value="$008080"/>
+		<MergeableFGColor Value="-"/>
+		<NewerFGColor Value="$7BFA50"/>
+		<OlderFGColor Value="$6CB8FF"/>
+		<OrphanFGColor Value="$F993BD"/>
+		<RightBGColor Value="$660066"/>
+		<RightFGColor Value="-"/>
+		<SameFGColor Value="$F2F8F8"/>
+		<SelFocusedBGColor Value="$362A28"/>
+		<SelFocusedFGColor Value="$F2F8F8"/>
+		<StripeBGColor Value="$5A4744"/>
+		<UnknownFGColor Value="$A47262"/>
+	</TDirColors>
+	<TFileColors>
+		<BGColor Value="$362A28"/>
+		<EditorFontStr Value="Consolas;10"/>
+		<ElementPSs>
+			<Item>
+				<ElementStr Value="&#2;Comment"/>
+				<ValueStr Value="$A47262"/>
+			</Item>
+			<Item>
+				<ElementStr Value="&#2;Directive"/>
+				<ValueStr Value="$7BFA50"/>
+			</Item>
+			<Item>
+				<ElementStr Value="&#2;EnvironmentVar"/>
+				<ValueStr Value="$6CB8FF"/>
+			</Item>
+			<Item>
+				<ElementStr Value="&#2;Keyword"/>
+				<ValueStr Value="$C679FF"/>
+			</Item>
+			<Item>
+				<ElementStr Value="&#2;Number"/>
+				<ValueStr Value="$F993BD"/>
+			</Item>
+			<Item>
+				<ElementStr Value="&#2;String"/>
+				<ValueStr Value="$8CFAF1"/>
+			</Item>
+		</ElementPSs>
+		<FGColor Value="$F2F8F8"/>
+		<GutterBGColor Value="$5A4744"/>
+		<GutterFGColor Value="$F2F8F8"/>
+		<HasInsigDiffBGColor Value="$FF000010"/>
+		<HasInsigLeftBGColor Value="$FFCC00"/>
+		<HasInsigOrphanBGColor Value="$F993BD"/>
+		<HasInsigRightBGColor Value="$CC99FF"/>
+		<HasSigDiffBGColor Value="$5555FF"/>
+		<HasSigLeftBGColor Value="$FF0000"/>
+		<HasSigOrphanBGColor Value="$C679FF"/>
+		<HasSigRightBGColor Value="$800080"/>
+		<HexFontStr Value="Consolas;10"/>
+		<InsigDiffFGColor Value="$FDE98B"/>
+		<ListFontStr Value="Segoe UI;9"/>
+		<SelFocusedBGColor Value="$5A4744"/>
+		<SigDiffFGColor Value="-"/>
+		<WhitespaceFGColor Value="$FF000010"/>
+	</TFileColors>
+	<TPixColors>
+		<BGColor Value="$362A28"/>
+		<DiffColor Value="$5555FF"/>
+		<SameColor Value="$362A28"/>
+		<SimilarColor Value="$FDE98B"/>
+	</TPixColors>
+</BCColors>

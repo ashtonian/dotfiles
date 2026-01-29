@@ -1,0 +1,138 @@
+:root {
+  --bg-color: #F7F7F7;
+  --bg-even-color: #F7F7F7;
+  --bg-odd-color: #EEEEEE;
+  --border: #d4d4d4;
+  --green-color: #35b047;
+  --index-number-text: #000000;
+  --info-text: #000000;
+  --red-color: #FF3A30;
+  --subtitle-text: #272727;
+  --time-text: #0068D9;
+}
+
+  /* infoBar */
+.infoBar {
+  color: var(--info-text);
+  font-family: Menlo, monospace;
+  font-size: 10px;
+  list-style: none;
+  margin: 0;
+  padding: 20px;
+}
+
+ul.infoBar > li {
+  display: inline-block;
+  padding-left: 40px;
+  padding-right: 30px;
+}
+
+.right {
+  float: right;
+}
+
+.green {
+  color: var(--green-color);
+}
+
+.red {
+  color: var(--red-color);
+}
+
+body {
+  background-color: var(--bg-color);
+  color: var(--bg-color);
+  font-family: Helvetica, sans-serif;
+  margin: 2ch 0 0 0;
+}
+
+tbody tr:nth-child(odd) {
+  background-color: var(--bg-odd-color);
+}
+
+tbody tr:nth-child(even) {
+  background-color: var(--bg-even-color);
+}
+
+table {
+  margin-top: 2ch;
+}
+
+table td {
+  border: 1px solid var(--border);
+}
+
+table tr:first-child td {
+  border-top: 0;
+}
+
+table tr td:first-child {
+  border-left: 0;
+}
+
+table tr:last-child td {
+  border-bottom: 0;
+}
+
+table tr td:last-child {
+  border-right: 0;
+}
+
+table tr td:first-child + td {
+  border-collapse: collapse;
+  padding-bottom: 2ch;
+  padding-left: 2ch;
+  padding-right: 2ch;
+  padding-top: 2ch;
+  width: 12ch;
+}
+
+table tr td:first-child + td + td {
+  border-collapse: collapse;
+  padding-bottom: 2ch;
+  padding-left: 1ch;
+  padding-top: 2ch;
+  text-align: center;
+  vertical-align: center;
+}
+
+.id {
+  border-color: var(--border);
+  color: var(--index-number-text);
+  font-family: Menlo, monospace;
+  font-weight: bold;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.time {
+  border-collapse: collapse;
+  border-color: var(--border);
+  color: var(--time-text);
+  font-family: Menlo, monospace;
+  font-size: 12px;
+}
+
+.sub {
+  border-collapse: collapse;
+  border-color: var(--border);
+  color: var(--subtitle-text);
+  font-family: Helvetica, sans-serif;
+  font-size: 15px;
+  line-height: 1.3em;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #2E2D33;
+    --bg-even-color: #343236;
+    --bg-odd-color: #515255;
+    --border: #343434;
+    --green-color: #62BA46;
+    --index-number-text: #DCDCDC;
+    --info-text: #ffffff;
+    --red-color: #FE5258;
+    --subtitle-text: #DCDCDC;
+    --time-text: #419CFF;
+  }
+}

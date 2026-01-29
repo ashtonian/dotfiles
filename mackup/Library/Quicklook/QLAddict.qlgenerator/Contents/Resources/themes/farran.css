@@ -1,0 +1,32 @@
+h1 {
+  color: #566ebf;
+  font-size: 16px;
+}
+h1 a {
+  color: #566ebf;
+  text-decoration: none;
+}
+
+h1 a:hover:before {
+  color: #566ebf;
+}
+
+/* body */
+body {
+  color: #272822;
+}
+
+/* table */
+table {
+  border-color: #272822;
+}
+table td {
+  border-color: #272822;
+}
+tbody tr:nth-child(odd) {
+  background-color: #f5f7fa;
+}
+
+tbody tr:nth-child(even) {
+  background-color: #e6e9ed;
+}
