@@ -1,15 +1,4 @@
 ##############################################################################
-# THEME - instant Prompt
-##############################################################################
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
-
-##############################################################################
 # PATH
 ##############################################################################
 export GOPATH=$HOME/go
@@ -75,7 +64,7 @@ bindkey "^X^_" redo
 # load a random theme each time oh-my-zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-ZSH_THEME="powerlevel10k/powerlevel10k"
+ZSH_THEME="dracula"
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load
@@ -189,6 +178,19 @@ ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 # Add wisely, as too many plugins slow down shell startup.
 
 
+##############################################################################
+# Theme - Dracula Installation
+##############################################################################
+# Install Dracula theme if not present
+DRACULA_THEME_DIR="$ZSH_CUSTOM/themes/dracula"
+if [[ ! -d "$DRACULA_THEME_DIR" ]]; then
+  git clone https://github.com/dracula/zsh.git "$DRACULA_THEME_DIR"
+fi
+# Symlink the theme file to themes directory
+if [[ ! -f "$ZSH_CUSTOM/themes/dracula.zsh-theme" ]]; then
+  ln -sf "$DRACULA_THEME_DIR/dracula.zsh-theme" "$ZSH_CUSTOM/themes/dracula.zsh-theme"
+fi
+
 typeset -A custom_plugins
 
 # This loop clones and installs custom plugins not in omz repo
@@ -220,12 +222,16 @@ for key val in ${(kv)custom_plugins}; do
   fi
 done
 
-## Custom install for fast alias tips
-if ! command -v def-matcher &> /dev/null
-then
-  make -C "$ZSH_CUSTOM/plugins/fast-alias-tips/"
-  mkdir -p $GOPATH/bin
-  mv "$ZSH_CUSTOM/plugins/fast-alias-tips/build/def-matcher" "$GOPATH/bin/def-matcher"
+## Custom install for fast-alias-tips (requires Rust/Cargo)
+FAST_ALIAS_TIPS_BIN="$ZSH_CUSTOM/plugins/fast-alias-tips/target/release/alias-matcher"
+if [[ ! -x "$FAST_ALIAS_TIPS_BIN" ]]; then
+  if command -v cargo &>/dev/null; then
+    echo "Building fast-alias-tips (one-time Rust compile)..."
+    (cd "$ZSH_CUSTOM/plugins/fast-alias-tips" && cargo build --release 2>/dev/null) || \
+      echo "Warning: fast-alias-tips build failed. Install Rust: brew install rust"
+  else
+    echo "Note: fast-alias-tips requires Rust. Install with: brew install rust"
+  fi
 fi
 
 ## Custom install for gibo
