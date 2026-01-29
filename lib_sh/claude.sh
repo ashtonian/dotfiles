@@ -20,7 +20,13 @@ cworktree() {
   fi
 
   mkdir -p "../worktrees"
-  git worktree add "$worktree_dir" -b "$branch" "$base" || return 1
+
+  # Check if branch already exists
+  if git show-ref --verify --quiet "refs/heads/$branch"; then
+    git worktree add "$worktree_dir" "$branch" || return 1
+  else
+    git worktree add "$worktree_dir" -b "$branch" "$base" || return 1
+  fi
 
   echo "Created worktree at $worktree_dir"
   echo "Starting Claude session (use 'claude --resume' later to find it)"
