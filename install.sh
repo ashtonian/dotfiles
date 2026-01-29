@@ -1,239 +1,275 @@
 #!/usr/bin/env bash
+#
+# dotfiles installer - Bootstrap a new macOS machine
+#
+# Usage:
+#   curl -fsSL https://raw.githubusercontent.com/ashtonian/dotfiles/master/install.sh | bash
+#
+# Or clone first:
+#   git clone https://github.com/ashtonian/dotfiles.git ~/.dotfiles
+#   ~/.dotfiles/install.sh
+#
 
-#######################################################################################################################################
-# macOS 10.15+ (Catalina) Init script to install dependencies
-#######################################################################################################################################
+set -euo pipefail
 
-eval "$(curl -s -L https://raw.githubusercontent.com/ashtonian/dotfiles/master/lib_sh/echos.sh)"
-bot "I am alive."
+#=============================================================================
+# CONFIGURATION
+#=============================================================================
+DOTFILES_DIR="${HOME}/.dotfiles"
+DOTFILES_REPO="https://github.com/ashtonian/dotfiles.git"
+SYNC_DIR="${HOME}/.sync"
 
-#######################################################################################################################################
-# Sudo
-#######################################################################################################################################
+#=============================================================================
+# COLORS & OUTPUT
+#=============================================================================
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
 
-# Do we need to ask for sudo password or is it already passwordless?
-grep -q 'NOPASSWD:     ALL' /etc/sudoers.d/$LOGNAME > /dev/null 2>&1
-if [ $? -ne 0 ]; then
-  # echo "no suder file"
-  sudo -v
+info() { echo -e "${BLUE}[INFO]${NC} $*"; }
+success() { echo -e "${GREEN}[OK]${NC} $*"; }
+warn() { echo -e "${YELLOW}[WARN]${NC} $*"; }
+error() { echo -e "${RED}[ERROR]${NC} $*"; }
 
-  # Keep-alive: update existing sudo time stamp until the script has finished
-  while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+#=============================================================================
+# SUDO SETUP
+#=============================================================================
+setup_sudo() {
+    info "Checking sudo access..."
 
-  bot "Do you want me to setup this machine to allow you to run sudo without a password?\nPlease read here to see what I am doing: http://wiki.summercode.com/sudo_without_a_password_in_mac_os_x"
-  read -r -p "[y|n]?" response
+    # Check if already passwordless
+    if sudo -n true 2>/dev/null; then
+        success "Sudo access OK"
+        return
+    fi
 
-  if [[ $response =~ (yes|y|Y) ]];then
-      running "enabling passwordless sudo"
-      if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers; then
-        echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers > /dev/null
-      fi
-      echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD:     ALL" | sudo tee /etc/sudoers.d/$LOGNAME
-      # bot "You can now run sudo commands without password!"
-      print_success
-  else
-    ok
-  fi
-fi;
+    # Request sudo
+    sudo -v
 
+    # Keep sudo alive
+    while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
 
-# ###########################################################
-# Install non-brew various tools (PRE-BREW Installs)
-# ###########################################################
+    echo ""
+    read -r -p "Enable passwordless sudo? [y/N] " response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        info "Enabling passwordless sudo..."
+        if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers 2>/dev/null; then
+            echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers > /dev/null
+        fi
+        echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$LOGNAME" > /dev/null
+        success "Passwordless sudo enabled"
+    fi
+}
 
-running "ensuring build/install tools are available"
-if ! xcode-select --print-path &> /dev/null; then
-    running "installing tools"
-    # Prompt user to install the XCode Command Line Tools
-    xcode-select --install &> /dev/null
+#=============================================================================
+# XCODE COMMAND LINE TOOLS
+#=============================================================================
+install_xcode_cli() {
+    if xcode-select --print-path &>/dev/null; then
+        success "Xcode CLI tools already installed"
+        return
+    fi
 
-    # Wait until the XCode Command Line Tools are installed
-    until xcode-select --print-path &> /dev/null; do
+    info "Installing Xcode Command Line Tools..."
+    xcode-select --install &>/dev/null
+
+    # Wait for installation
+    until xcode-select --print-path &>/dev/null; do
         sleep 5
     done
 
-    print_result $? ' XCode Command Line Tools Installed'
+    sudo xcodebuild -license accept 2>/dev/null || true
+    success "Xcode CLI tools installed"
+}
 
-    # Prompt user to agree to the terms of the Xcode license
-    # https://github.com/alrra/dotfiles/issues/10
+#=============================================================================
+# HOMEBREW
+#=============================================================================
+install_homebrew() {
+    export PATH="/opt/homebrew/bin:$PATH"
 
-    sudo xcodebuild -license accept
-
-    print_result $? 'Agree with the XCode Command Line Tools licence'
-else
-    sudo xcodebuild -license accept
-fi;
-
-# ###########################################################
-# install homebrew
-# ###########################################################
-
-export PATH="$PATH:/opt/homebrew/bin"
-running "checking homebrew"
-brew_bin=$(which brew) 2>&1 > /dev/null
-
-if [[ $? != 0 ]]; then
-  running "install homebrew"
-  bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-  eval "$(/opt/homebrew/bin/brew shellenv)"
-  print_success
-  if [[ $? != 0 ]]; then
-    error "unable to install homebrew, script $0 abort!"
-    exit 2
-  fi
-  running "brew analytics off"
-  brew analytics off
-  print_success
-else
-  print_success
-  bot "run brew update && upgrade -[y|n]?"
-  read -r "" response
-  if [[ $response =~ (y|yes|Y) ]]; then
-    running "updating homebrew..."
-    brew update
-    print_success
-    running "upgrading brew packages..."
-    brew upgrade
-    print_success
-  else
-    ok
-  fi
-fi
-
-running "upgrading brew packages..."
-# Just to avoid a potential bug
-mkdir -p ~/Library/Caches/Homebrew/Formula
-brew doctor
-print_success
-
-# ###########################################################
-# Git Config
-# ###########################################################
-bot "OK, now I am going to update the .gitconfig for your user info:"
-grep 'user = GITHUBUSER' ./homedir/.gitconfig > /dev/null 2>&1
-if [[ $? = 0 ]]; then
-    read -r -p "What is your git username? " githubuser
-
-  fullname=`osascript -e "long user name of (system info)"`
-
-  if [[ -n "$fullname" ]];then
-    lastname=$(echo $fullname | awk '{print $2}');
-    firstname=$(echo $fullname | awk '{print $1}');
-  fi
-
-  if [[ -z $lastname ]]; then
-    lastname=`dscl . -read /Users/$(whoami) | grep LastName | sed "s/LastName: //"`
-  fi
-  if [[ -z $firstname ]]; then
-    firstname=`dscl . -read /Users/$(whoami) | grep FirstName | sed "s/FirstName: //"`
-  fi
-  email=`dscl . -read /Users/$(whoami)  | grep EMailAddress | sed "s/EMailAddress: //"`
-
-  if [[ ! "$firstname" ]]; then
-    response='n'
-  else
-    echo -e "I see that your full name is $COL_YELLOW$firstname $lastname$COL_RESET"
-    read -r -p "Is this correct? [Y|n] " response
-  fi
-
-  if [[ $response =~ ^(no|n|N) ]]; then
-    read -r -p "What is your first name? " firstname
-    read -r -p "What is your last name? " lastname
-  fi
-  fullname="$firstname $lastname"
-
-  bot "Great $fullname, "
-
-  if [[ ! $email ]]; then
-    response='n'
-  else
-    echo -e "The best I can make out, your email address is $COL_YELLOW$email$COL_RESET"
-    read -r -p "Is this correct? [Y|n] " response
-  fi
-
-  if [[ $response =~ ^(no|n|N) ]]; then
-    read -r -p "What is your email? " email
-    if [[ ! $email ]];then
-      error "you must provide an email to configure .gitconfig"
-      exit 1
+    if command -v brew &>/dev/null; then
+        success "Homebrew already installed"
+        return
     fi
-  fi
 
+    info "Installing Homebrew..."
+    /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+    eval "$(/opt/homebrew/bin/brew shellenv)"
+    brew analytics off
+    success "Homebrew installed"
+}
 
-  running "replacing items in .gitconfig with your info ($COL_YELLOW$fullname, $email, $githubuser$COL_RESET)"
+#=============================================================================
+# DOTFILES
+#=============================================================================
+clone_dotfiles() {
+    if [[ -d "$DOTFILES_DIR/.git" ]]; then
+        success "Dotfiles already cloned"
+        info "Pulling latest changes..."
+        cd "$DOTFILES_DIR" && git pull
+        return
+    fi
 
-  # test if gnu-sed or MacOS sed
+    info "Cloning dotfiles..."
+    git clone "$DOTFILES_REPO" "$DOTFILES_DIR"
+    success "Dotfiles cloned to $DOTFILES_DIR"
+}
 
-  sed -i "s/GITHUBFULLNAME/$firstname $lastname/" ./homedir/.gitconfig > /dev/null 2>&1 | true
-  if [[ ${PIPESTATUS[0]} != 0 ]]; then
-    echo
-    running "looks like you are using MacOS sed rather than gnu-sed, accommodating"
-    sed -i '' "s/GITHUBFULLNAME/$firstname $lastname/" ./homedir/.gitconfig
-    sed -i '' 's/GITHUBEMAIL/'$email'/' ./homedir/.gitconfig
-    sed -i '' 's/GITHUBUSER/'$githubuser'/' ./homedir/.gitconfig
-    ok
-  else
-    echo
-    bot "looks like you are already using gnu-sed. woot!"
-    sed -i 's/GITHUBEMAIL/'$email'/' ./homedir/.gitconfig
-    sed -i 's/GITHUBUSER/'$githubuser'/' ./homedir/.gitconfig
-  fi
-fi
+#=============================================================================
+# SYNC DIRECTORY & THEMES
+#=============================================================================
+setup_sync_dir() {
+    info "Setting up ~/.sync directory..."
+    mkdir -p "$SYNC_DIR"
 
-export DOTDIR="$HOME/.dotfiles"
-bot "cloning dotfiles locally"
-git clone https://github.com/ashtonian/dotfiles.git $DOTDIR
-ok
+    # Clone themes and resources
+    local repos=(
+        "dracula/iterm.git:dracula-iterm"
+        "dracula/colorls.git:colorls"
+        "dracula/alfred:alfred-dracula"
+    )
 
-bot "dotfiles cloned successfully"
-ok
+    for repo_spec in "${repos[@]}"; do
+        local repo="${repo_spec%:*}"
+        local dir="${repo_spec#*:}"
 
-bot "creating sync directory"
-mkdir $HOME/.sync
-cd $HOME/.sync
-ok
+        if [[ -d "$SYNC_DIR/$dir" ]]; then
+            info "  $dir already exists, skipping"
+        else
+            info "  Cloning $dir..."
+            git clone "https://github.com/$repo" "$SYNC_DIR/$dir" 2>/dev/null || warn "Failed to clone $dir"
+        fi
+    done
 
-bot "clone iterm dracula theme"
-git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm
-ok
+    # Setup colorls theme
+    if [[ -f "$SYNC_DIR/colorls/dark_colors.yaml" ]]; then
+        mkdir -p "$HOME/.config/colorls"
+        cp "$SYNC_DIR/colorls/dark_colors.yaml" "$HOME/.config/colorls/dark_colors.yaml"
+    fi
 
-bot "download alfred directory"
-bot "NOTE: authenticated github call, with 2fa enabled must use PAT"
+    # Initialize mackup repo if not exists
+    if [[ ! -d "$SYNC_DIR/mackup/.git" ]]; then
+        info "Initializing mackup backup repo..."
+        mkdir -p "$SYNC_DIR/mackup"
+        cd "$SYNC_DIR/mackup"
+        git init
+        git commit --allow-empty -m "Initial commit"
+    fi
 
-## AUTHENTICATED CALL - this only works for me, need to make this more friendly for others.
-cd $HOME/.sync
-git clone https://github.com/ashtonian/alfred || echo "Skipping alfred clone (may require authentication)"
-ok
+    success "Sync directory ready"
+}
 
-bot "download bypass paywall"
-cd $HOME/.sync
-git clone https://github.com/iamadamdev/bypass-paywalls-chrome.git
-ok
+#=============================================================================
+# STOW PACKAGES
+#=============================================================================
+setup_stow() {
+    if ! command -v stow &>/dev/null; then
+        info "Installing stow..."
+        brew install stow
+    fi
 
-bot "download and install colorls dracula theme"
-cd $HOME/.sync
-git clone https://github.com/dracula/colorls.git
-mkdir -p $HOME/.config/colorls
-cp $HOME/.sync/colorls/dark_colors.yaml ~/.config/colorls/dark_colors.yaml
-ok
+    info "Setting up stow packages..."
+    cd "$DOTFILES_DIR/stow"
 
-bot "download and install iterm dracula theme"
-cd $HOME/.sync
-git clone https://github.com/dracula/iterm.git
-ok
+    for package in */; do
+        package="${package%/}"
+        info "  Stowing $package..."
+        stow -v -R -t "$HOME" "$package" 2>&1 | grep -v "^LINK:" || true
+    done
 
-bot "download and install alfred dracula theme"
-cd $HOME/.sync
-git clone https://github.com/dracula/alfred alfred-dracula
-ok
+    success "Stow packages linked"
+}
 
-# check ver first then update or install
-## don't switch
-export RUNZSH=no
-export CHSH=no
-sh -c "$(curl -fsSL https://raw.github.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+#=============================================================================
+# BREW BUNDLE
+#=============================================================================
+install_packages() {
+    info "Installing packages from Brewfile..."
+    cd "$DOTFILES_DIR"
 
-bot "running configure script"
-cd $DOTDIR
-zsh -c ./config.sh
-ok
+    if [[ -f "Brewfile" ]]; then
+        brew bundle --no-lock || warn "Some packages may have failed to install"
+        success "Packages installed"
+    else
+        warn "No Brewfile found, skipping package installation"
+    fi
+}
+
+#=============================================================================
+# MACKUP
+#=============================================================================
+setup_mackup() {
+    if ! command -v mackup &>/dev/null; then
+        info "Installing mackup..."
+        brew install mackup
+    fi
+
+    info "Mackup configured (run 'mackup restore' to restore app configs)"
+    success "Mackup ready"
+}
+
+#=============================================================================
+# LAUNCH AGENTS
+#=============================================================================
+install_launch_agents() {
+    info "Installing LaunchAgents..."
+
+    if [[ -x "$DOTFILES_DIR/bin/dotfiles-install-launchagents.sh" ]]; then
+        "$DOTFILES_DIR/bin/dotfiles-install-launchagents.sh"
+        success "LaunchAgents installed"
+    else
+        warn "LaunchAgent installer not found"
+    fi
+}
+
+#=============================================================================
+# MACOS PREFERENCES
+#=============================================================================
+configure_macos() {
+    echo ""
+    read -r -p "Configure macOS preferences? (runs config.sh) [y/N] " response
+    if [[ "$response" =~ ^[Yy]$ ]]; then
+        info "Configuring macOS preferences..."
+        cd "$DOTFILES_DIR"
+        zsh -c "./config.sh" || warn "Some preferences may have failed"
+        success "macOS configured"
+    fi
+}
+
+#=============================================================================
+# MAIN
+#=============================================================================
+main() {
+    echo ""
+    echo "======================================"
+    echo "  dotfiles installer"
+    echo "======================================"
+    echo ""
+
+    setup_sudo
+    install_xcode_cli
+    install_homebrew
+    clone_dotfiles
+    setup_sync_dir
+    install_packages
+    setup_stow
+    setup_mackup
+    install_launch_agents
+    configure_macos
+
+    echo ""
+    echo "======================================"
+    success "Installation complete!"
+    echo "======================================"
+    echo ""
+    info "Next steps:"
+    echo "  1. Restart your terminal"
+    echo "  2. Run 'mackup restore' if you have existing app configs"
+    echo "  3. Run '~/.dotfiles/sync.sh' to start syncing"
+    echo ""
+}
+
+main "$@"

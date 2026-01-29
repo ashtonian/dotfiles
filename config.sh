@@ -8,13 +8,8 @@
 
 # include library helpers for colorized echo and require_brew
 export DOTDIR="$HOME/.dotfiles"
-export ZSH="$HOME/.oh-my-zsh"
-source $ZSH/oh-my-zsh.sh
 source ./lib_sh/echos.sh
 source ./lib_sh/requirers.sh
-
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
-
 
 bot "Hi! I'm going to install tooling and tweak your system settings."
 
