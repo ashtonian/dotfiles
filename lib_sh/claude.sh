@@ -8,13 +8,11 @@
 
 # Create git worktree and start Claude session
 # Usage: cworktree <branch-name> [base-branch]
-# Session ID is based on branch name for easy identification
+# Sessions are auto-named by Claude; use `claude --resume` to find them later
 cworktree() {
   local branch="${1:-feature-$(date +%s)}"
   local base="${2:-main}"
   local worktree_dir="../worktrees/${branch}"
-  local repo_name="$(basename "$(git rev-parse --show-toplevel 2>/dev/null)")"
-  local session_id="${repo_name}-${branch}"
 
   if [[ ! -d ".git" ]] && [[ ! -f ".git" ]]; then
     echo "Error: Not in a git repository"
@@ -25,8 +23,8 @@ cworktree() {
   git worktree add "$worktree_dir" -b "$branch" "$base" || return 1
 
   echo "Created worktree at $worktree_dir"
-  echo "Starting Claude session: $session_id"
-  cd "$worktree_dir" && claude --session-id "$session_id"
+  echo "Starting Claude session (use 'claude --resume' later to find it)"
+  cd "$worktree_dir" && claude
 }
 
 cworktree-list() { git worktree list; }
