@@ -47,16 +47,9 @@ zinit light z-shell/zsh-diff-so-fancy
 zinit ice wait"0" lucid from"gh-r" as"program"
 zinit light junegunn/fzf
 
-# Fast alias tips (Rust-based)
-zinit ice wait"1" lucid cargo"!alias-matcher" \
-    atload'export FAST_ALIAS_TIPS_PREFIX="💡 ";
-           __fast_alias_tips_preexec() {
-               local suggested="$(alias | alias-matcher "$2" 2>/dev/null)"
-               [[ -n "$suggested" ]] && echo "${FAST_ALIAS_TIPS_PREFIX}${suggested}"
-           }
-           autoload -Uz add-zsh-hook
-           add-zsh-hook preexec __fast_alias_tips_preexec'
-zinit light zdharma-continuum/null
+# Alias tips (shows alias when you type full command)
+zinit ice wait"1" lucid
+zinit light djui/alias-tips
 
 #=============================================================================
 # OMZ LIBRARIES (cherry-picked essentials)
@@ -175,9 +168,16 @@ zinit snippet OMZP::web-search
 zinit ice wait"2" lucid
 zinit light sobolevn/wakatime-zsh-plugin
 
-# iTerm2 integration
-zinit ice wait"1" lucid
-zinit snippet OMZP::iterm2
+# iTerm2 Shell Integration (full version, not just OMZ plugin)
+# Provides: imgcat, imgls, it2api, it2setcolor, it2setkeylabel, etc.
+# Also enables: shell integration marks, command history with timestamps,
+# automatic profile switching, current dir reporting, and more
+zinit ice wait"0" lucid \
+    id-as"iterm2-shell-integration" \
+    atclone"curl -fsSL https://iterm2.com/shell_integration/zsh -o iterm2_shell_integration.zsh" \
+    atpull"%atclone" \
+    src"iterm2_shell_integration.zsh"
+zinit light zdharma-continuum/null
 
 # Git-it-on (open git repo in browser)
 zinit ice wait"2" lucid

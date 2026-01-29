@@ -50,10 +50,12 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias -- -='cd -'
 
-# Zoxide (if installed, replaces cd)
+# Zoxide (if installed, replaces cd and autojump's j)
 if command -v zoxide &>/dev/null; then
     alias cd='z'
     alias cdi='zi'  # Interactive selection
+    alias j='z'     # For autojump muscle memory
+    alias ji='zi'
 fi
 
 #=============================================================================
