@@ -11,7 +11,7 @@
 # Sessions are auto-named by Claude; use `claude --resume` to find them later
 cworktree() {
   local branch="${1:-feature-$(date +%s)}"
-  local base="${2:-main}"
+  local base="${2:-$(git branch --show-current)}"
   local worktree_dir="../worktrees/${branch}"
 
   if [[ ! -d ".git" ]] && [[ ! -f ".git" ]]; then
