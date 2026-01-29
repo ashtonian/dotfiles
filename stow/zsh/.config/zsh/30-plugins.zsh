@@ -168,16 +168,10 @@ zinit snippet OMZP::web-search
 zinit ice wait"2" lucid
 zinit light sobolevn/wakatime-zsh-plugin
 
-# iTerm2 Shell Integration (full version, not just OMZ plugin)
-# Provides: imgcat, imgls, it2api, it2setcolor, it2setkeylabel, etc.
-# Also enables: shell integration marks, command history with timestamps,
-# automatic profile switching, current dir reporting, and more
-zinit ice wait"0" lucid \
-    id-as"iterm2-shell-integration" \
-    atclone"curl -fsSL https://iterm2.com/shell_integration/zsh -o iterm2_shell_integration.zsh" \
-    atpull"%atclone" \
-    src"iterm2_shell_integration.zsh"
-zinit light zdharma-continuum/null
+# iTerm2 integration (simple OMZ plugin - stable with Dracula theme)
+# For full shell integration, install via: iTerm2 > Install Shell Integration
+zinit ice wait"1" lucid
+zinit snippet OMZP::iterm2
 
 # Git-it-on (open git repo in browser)
 zinit ice wait"2" lucid
