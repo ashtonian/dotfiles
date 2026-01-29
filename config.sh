@@ -1549,9 +1549,9 @@ for app in "Activity Monitor" \
 	killall "${app}" &> /dev/null
 done
 
-Bot "Done. Note that some of these changes require a logout/restart to take effect."
+bot "Done. Note that some of these changes require a logout/restart to take effect."
 
-Bot "Do you want me to restart?"
+bot "Do you want me to restart?"
 read -r -p "[y|n]?" response
 if [[ $response =~ (yes|y|Y) ]];then
     ok

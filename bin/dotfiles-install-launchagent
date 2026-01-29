@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+#
+# Install the dotfiles sync LaunchAgent
+#
+
+set -euo pipefail
+
+DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+PLIST_SRC="${DOTFILES_DIR}/launchagents/com.dotfiles.sync.plist"
+PLIST_DST="$HOME/Library/LaunchAgents/com.dotfiles.sync.plist"
+
+echo "Installing dotfiles sync LaunchAgent..."
+
+# Create LaunchAgents directory if it doesn't exist
+mkdir -p "$HOME/Library/LaunchAgents"
+
+# Unload existing agent if running
+if launchctl list | grep -q "com.dotfiles.sync"; then
+    echo "Unloading existing LaunchAgent..."
+    launchctl unload "$PLIST_DST" 2>/dev/null || true
+fi
+
+# Copy the plist file
+cp "$PLIST_SRC" "$PLIST_DST"
+
+# Replace $HOME with actual path in the plist
+sed -i '' "s|\$HOME|$HOME|g" "$PLIST_DST"
+
+# Load the agent
+echo "Loading LaunchAgent..."
+launchctl load "$PLIST_DST"
+
+# Verify it's running
+if launchctl list | grep -q "com.dotfiles.sync"; then
+    echo "LaunchAgent installed and running successfully!"
+    echo "Dotfiles will sync every 4 hours."
+else
+    echo "Warning: LaunchAgent may not have loaded correctly."
+    echo "Check: launchctl list | grep dotfiles"
+fi
+
+echo ""
+echo "To manually trigger a sync: ~/.dotfiles/sync.sh sync"
+echo "To unload: launchctl unload ~/Library/LaunchAgents/com.dotfiles.sync.plist"

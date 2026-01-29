@@ -1,0 +1,37 @@
+# Atuin configuration
+# https://docs.atuin.sh/configuration/config/
+
+## General Settings
+dialect = "us"
+auto_sync = true
+sync_frequency = "5m"
+sync_address = "https://api.atuin.sh"  # Or self-hosted URL
+
+## Search Settings
+search_mode = "fuzzy"
+filter_mode = "global"
+filter_mode_shell_up_key_binding = "host"
+
+## UI Settings
+style = "compact"
+inline_height = 20
+show_preview = true
+show_help = true
+exit_mode = "return-original"
+
+## Privacy
+secrets_filter = true  # Filter commands with secrets
+cwd_filter = ["/tmp"]  # Directories to exclude from history
+
+## Key bindings (defaults)
+# ctrl-r: search
+# up arrow: search (can be disabled with --disable-up-arrow)
+
+## History settings
+history_filter = [
+    "^cd ",
+    "^ls ",
+    "^ll ",
+    "^clear$",
+    "^exit$",
+]

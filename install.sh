@@ -185,8 +185,7 @@ bot "cloning dotfiles locally"
 git clone https://github.com/ashtonian/dotfiles.git $DOTDIR
 ok
 
-bot "soft linking makcup file from dotfiles to directory"
-ln -s $HOME/.dotfiles/.mackup.cfg $HOME/.mackup.cfg
+bot "dotfiles cloned successfully"
 ok
 
 bot "creating sync directory"
@@ -198,13 +197,12 @@ bot "clone iterm dracula theme"
 git clone https://github.com/dracula/iterm.git $HOME/.sync/dracula-iterm
 ok
 
-bot "download alfred and mackup directory"
+bot "download alfred directory"
 bot "NOTE: authenticated github call, with 2fa enabled must use PAT"
 
 ## AUTHENTICATED CALL - this only works for me, need to make this more friendly for others.
 cd $HOME/.sync
-git clone https://github.com/ashtonian/alfred
-git clone https://github.com/ashtonian/mackup
+git clone https://github.com/ashtonian/alfred || echo "Skipping alfred clone (may require authentication)"
 ok
 
 bot "download bypass paywall"
