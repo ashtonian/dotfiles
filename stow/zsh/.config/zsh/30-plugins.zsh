@@ -82,9 +82,9 @@ zinit snippet OMZL::key-bindings.zsh
 #=============================================================================
 # OMZ PLUGINS (turbo loaded)
 #=============================================================================
-# Git (fast version)
+# Git (using regular git plugin - gitfast requires SVN checkout for multi-file support)
 zinit ice wait"0" lucid
-zinit snippet OMZP::gitfast
+zinit snippet OMZP::git
 
 zinit ice wait"0" lucid
 zinit snippet OMZP::git-auto-fetch
@@ -106,12 +106,18 @@ zinit ice wait"1" lucid
 zinit snippet OMZP::copyfile
 
 # macOS utilities
-zinit ice wait"1" lucid
-zinit snippet OMZP::macos
+# NOTE: Requires `brew install subversion` for full functionality (music/spotify scripts)
+# Uncomment once svn is installed:
+# zinit ice wait"1" lucid svn
+# zinit snippet OMZP::macos
 
-# Docker completions
-zinit ice wait"1" lucid as"completion"
-zinit snippet OMZP::docker/_docker
+# Docker completions (from docker CLI directly if available, fallback to bundled)
+zinit ice wait"1" lucid as"completion" \
+    id-as"docker-completion" \
+    has"docker" \
+    atclone"docker completion zsh > _docker" \
+    atpull"%atclone"
+zinit light zdharma-continuum/null
 
 zinit ice wait"1" lucid
 zinit snippet OMZP::docker-compose
