@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+================================================================================
+com.dotfiles.update.plist - Weekly System Update LaunchAgent
+================================================================================
+
+DESCRIPTION:
+    Automatically updates Homebrew packages, Zinit plugins, and syncs dotfiles.
+    Runs every Friday at 9:00 AM.
+
+WHAT IT DOES:
+    1. Updates Homebrew (brew update && brew upgrade && brew cleanup)
+    2. Updates all Zinit plugins (zinit update --all)
+    3. Syncs dotfiles (git pull/push)
+
+LOGS:
+    - stdout: /tmp/dotfiles-update.out
+    - stderr: /tmp/dotfiles-update.err
+    - Full log: ~/.dotfiles/logs/update.log
+
+INSTALLATION:
+    ~/.dotfiles/bin/dotfiles-install-launchagents.sh
+
+MANUAL COMMANDS:
+    # Check if running:
+    launchctl list | grep com.dotfiles.update
+
+    # Manually trigger update:
+    launchctl start com.dotfiles.update
+
+    # View recent logs:
+    tail -100 ~/.dotfiles/logs/update.log
+
+    # Unload (disable):
+    launchctl unload ~/Library/LaunchAgents/com.dotfiles.update.plist
+
+    # Reload (after editing):
+    launchctl unload ~/Library/LaunchAgents/com.dotfiles.update.plist
+    launchctl load ~/Library/LaunchAgents/com.dotfiles.update.plist
+
+================================================================================
+-->
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for this job -->
+    <key>Label</key>
+    <string>com.dotfiles.update</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>$HOME/.dotfiles/bin/dotfiles-update.sh --all</string>
+    </array>
+
+    <!-- Schedule: Every Friday at 9:00 AM -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <!-- Weekday: 0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday -->
+        <key>Weekday</key>
+        <integer>5</integer>
+        <!-- Hour: 9 AM (24-hour format) -->
+        <key>Hour</key>
+        <integer>9</integer>
+        <!-- Minute: 0 -->
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Run missed jobs if computer was asleep/off -->
+    <key>StartInterval</key>
+    <integer>604800</integer>
+
+    <!-- Log files -->
+    <key>StandardOutPath</key>
+    <string>/tmp/dotfiles-update.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/dotfiles-update.err</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/ashtonian</string>
+        <key>DOTFILES_DIR</key>
+        <string>/Users/ashtonian/.dotfiles</string>
+    </dict>
+
+    <!-- Run at lower priority -->
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <!-- Process type -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Don't run at load (wait for schedule) -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

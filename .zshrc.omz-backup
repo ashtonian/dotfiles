@@ -1,17 +1,4 @@
 ##############################################################################
-# THEME - instant Prompt
-##############################################################################
-# Enable Powerlevel10k instant prompt. Should stay close to the top of ~/.zshrc.
-# Initialization code that may require console input (password prompts, [y/n]
-# confirmations, etc.) must go above this block; everything else may go below.
-typeset -g POWERLEVEL9K_INSTANT_PROMPT=off
-
-if [[ -r "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh" ]]; then
-  source "${XDG_CACHE_HOME:-$HOME/.cache}/p10k-instant-prompt-${(%):-%n}.zsh"
-fi
-
-
-##############################################################################
 # PATH
 ##############################################################################
 export GOPATH=$HOME/go
@@ -47,6 +34,19 @@ export ZSH_CUSTOM="$ZSH/custom"
 # Add custom functions
 source $HOME/.dotfiles/lib_sh/funcs.sh
 
+# Claude CLI helpers (session management, documentation workflows, code quality)
+if [[ -f $HOME/.dotfiles/lib_sh/claude.sh ]]; then
+  source $HOME/.dotfiles/lib_sh/claude.sh
+fi
+
+# Atuin shell history (cross-device sync)
+# Install: brew install atuin && atuin login -u <username>
+if command -v atuin &>/dev/null; then
+  eval "$(atuin init zsh)"
+  # Optional: disable up-arrow binding if you prefer ctrl-r only
+  # eval "$(atuin init zsh --disable-up-arrow)"
+fi
+
 # alias python=/usr/bin/python3
 # autoload -U +X compinit && compinit
 
@@ -64,7 +64,7 @@ bindkey "^X^_" redo
 # load a random theme each time oh-my-zsh is loaded, in which case,
 # to know which specific one was loaded, run: echo $RANDOM_THEME
 # See https://github.com/ohmyzsh/ohmyzsh/wiki/Themes
-ZSH_THEME="powerlevel10k/powerlevel10k"
+ZSH_THEME="dracula"
 
 # Set list of themes to pick from when loading at random
 # Setting this variable when ZSH_THEME=random will cause zsh to load
@@ -116,7 +116,25 @@ ZSH_THEME="powerlevel10k/powerlevel10k"
 # "mm/dd/yyyy"|"dd.mm.yyyy"|"yyyy-mm-dd"
 # or set a custom format using the strftime function format specifications,
 # see 'man strftime' for details.
-# HIST_STAMPS="mm/dd/yyyy"
+HIST_STAMPS="yyyy-mm-dd"
+
+##############################################################################
+# History Configuration
+##############################################################################
+HISTFILE="${HISTFILE:-$HOME/.zsh_history}"
+HISTSIZE=50000
+SAVEHIST=50000
+setopt EXTENDED_HISTORY          # Write the history file in the ':start:elapsed;command' format
+setopt INC_APPEND_HISTORY        # Write to the history file immediately, not when the shell exits
+setopt SHARE_HISTORY             # Share history between all sessions
+setopt HIST_EXPIRE_DUPS_FIRST    # Expire duplicate entries first when trimming history
+setopt HIST_IGNORE_DUPS          # Don't record an entry that was just recorded again
+setopt HIST_IGNORE_ALL_DUPS      # Delete old recorded entry if new entry is a duplicate
+setopt HIST_FIND_NO_DUPS         # Do not display a line previously found
+setopt HIST_IGNORE_SPACE         # Don't record an entry starting with a space
+setopt HIST_SAVE_NO_DUPS         # Don't write duplicate entries in the history file
+setopt HIST_REDUCE_BLANKS        # Remove superfluous blanks before recording entry
+setopt HIST_VERIFY               # Don't execute immediately upon history expansion
 
 ##############################################################################
 # Plugins - NVM
@@ -160,6 +178,19 @@ ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 # Add wisely, as too many plugins slow down shell startup.
 
 
+##############################################################################
+# Theme - Dracula Installation
+##############################################################################
+# Install Dracula theme if not present
+DRACULA_THEME_DIR="$ZSH_CUSTOM/themes/dracula"
+if [[ ! -d "$DRACULA_THEME_DIR" ]]; then
+  git clone https://github.com/dracula/zsh.git "$DRACULA_THEME_DIR"
+fi
+# Symlink the theme file to themes directory
+if [[ ! -f "$ZSH_CUSTOM/themes/dracula.zsh-theme" ]]; then
+  ln -sf "$DRACULA_THEME_DIR/dracula.zsh-theme" "$ZSH_CUSTOM/themes/dracula.zsh-theme"
+fi
+
 typeset -A custom_plugins
 
 # This loop clones and installs custom plugins not in omz repo
@@ -191,12 +222,16 @@ for key val in ${(kv)custom_plugins}; do
   fi
 done
 
-## Custom install for fast alias tips
-if ! command -v def-matcher &> /dev/null
-then
-  make -C "$ZSH_CUSTOM/plugins/fast-alias-tips/"
-  mkdir -p $GOPATH/bin
-  mv "$ZSH_CUSTOM/plugins/fast-alias-tips/build/def-matcher" "$GOPATH/bin/def-matcher"
+## Custom install for fast-alias-tips (requires Rust/Cargo)
+FAST_ALIAS_TIPS_BIN="$ZSH_CUSTOM/plugins/fast-alias-tips/target/release/alias-matcher"
+if [[ ! -x "$FAST_ALIAS_TIPS_BIN" ]]; then
+  if command -v cargo &>/dev/null; then
+    echo "Building fast-alias-tips (one-time Rust compile)..."
+    (cd "$ZSH_CUSTOM/plugins/fast-alias-tips" && cargo build --release 2>/dev/null) || \
+      echo "Warning: fast-alias-tips build failed. Install Rust: brew install rust"
+  else
+    echo "Note: fast-alias-tips requires Rust. Install with: brew install rust"
+  fi
 fi
 
 ## Custom install for gibo
@@ -219,7 +254,7 @@ plugins=(
     encode64
     extract
     gem
-    git #SLOW!
+    # git - removed in favor of gitfast (duplicate functionality, gitfast is faster)
     git-auto-fetch
     git-extras
     git-prompt
@@ -302,7 +337,7 @@ timezsh() {
 source $ZSH/oh-my-zsh.sh
 
 # To customize prompt, run `p10k configure` or edit ~/.p10k.zsh.
-[[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
+# [[ ! -f ~/.p10k.zsh ]] || source ~/.p10k.zsh
 
 
 ##############################################################################
@@ -334,71 +369,40 @@ source /opt/homebrew/opt/git-extras/share/git-extras/git-extras-completion.zsh
 # source <(kubectl completion zsh)
 
 ##############################################################################
-# Post Completion installs
+# Post Completion installs (idempotent - only runs once)
 ##############################################################################
 
-if ! gem list colorls -i >/dev/null 2>&1; then
-  echo "colorls gem not found, installing..."
-  gem install colorls
+# colorls installation marker
+COLORLS_MARKER="$HOME/.local/share/dotfiles/.colorls_installed"
+if [[ ! -f "$COLORLS_MARKER" ]]; then
+  if ! gem list colorls -i >/dev/null 2>&1; then
+    echo "colorls gem not found, installing..."
+    gem install colorls && {
+      mkdir -p "$(dirname "$COLORLS_MARKER")"
+      touch "$COLORLS_MARKER"
+    }
+  else
+    mkdir -p "$(dirname "$COLORLS_MARKER")"
+    touch "$COLORLS_MARKER"
+  fi
 fi
 
 
 ##############################################################################
-# Fun Prompt
+# Fun Prompt (optional - set SHOW_COWSAY=true to enable)
 ##############################################################################
 
-animals=(
-blowfish
-dragon-and-cow
-hellokitty
-milk
-smallturkey
-bong
-dragon
-kiss
-moofasa
-turtle
-bud-frogs
-elephant-in-snake
-kitty
-moose
-stegosaurus
-tux
-bunnyelephant
-koala
-mutilated
-stimpy
-udder
-cheese
-eyes
-kosh
-ren
-supermilker
-vader-koala
-luke-koala
-satanic
-surgery
-vader
-daemon
-ghostbusters
-sheep
-telebears
-www
-beavis.zen
-default
-head-in
-meow
-skeleton
-three-eyes
-)
-
-quotes=(
-  "fortune -s computers"
-)
-
-quote=${quotes[$RANDOM % $#quotes + 1]}
-animal=${animals[$RANDOM % $#animals + 1]}
-eval $quote | cowsay -f $animal | lolcat #-a -d 1
+if [[ "${SHOW_COWSAY:-false}" == "true" ]] && command -v cowsay &>/dev/null && command -v fortune &>/dev/null && command -v lolcat &>/dev/null; then
+  animals=(
+    blowfish dragon-and-cow hellokitty milk smallturkey bong dragon kiss
+    moofasa turtle bud-frogs elephant-in-snake kitty moose stegosaurus tux
+    bunnyelephant koala mutilated stimpy udder cheese eyes kosh ren supermilker
+    vader-koala luke-koala satanic surgery vader daemon ghostbusters sheep
+    telebears www beavis.zen default head-in meow skeleton three-eyes
+  )
+  animal=${animals[$RANDOM % $#animals + 1]}
+  fortune -s computers | cowsay -f $animal | lolcat
+fi
 
 ##############################################################################
 # Personal Aliases
@@ -438,9 +442,6 @@ done
 # Uncomment the following line to change how often to auto-update (in days).
 # export UPDATE_ZSH_DAYS=13
 #ZSH_CUSTOM_AUTOUPDATE_QUIET=true
-
-#!/usr/bin/zsh
-#!/usr/bin/zsh
 
 # List of commands and their parameters
 #Frogs

@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+================================================================================
+com.dotfiles.sync.plist - Dotfiles Auto-Sync LaunchAgent
+================================================================================
+
+DESCRIPTION:
+    Automatically commits and syncs dotfiles changes every 4 hours.
+    Keeps your dotfiles in sync across machines without manual intervention.
+
+WHAT IT DOES:
+    1. Checks for network connectivity
+    2. Commits any local changes with timestamp
+    3. Pulls remote changes (with rebase)
+    4. Pushes local commits to origin
+
+FREQUENCY:
+    Every 4 hours (14400 seconds)
+
+LOGS:
+    - stdout: /tmp/dotfiles-sync.out
+    - stderr: /tmp/dotfiles-sync.err
+    - Full log: ~/.dotfiles/logs/sync.log
+
+INSTALLATION:
+    ~/.dotfiles/bin/dotfiles-install-launchagents.sh
+
+MANUAL COMMANDS:
+    # Check if running:
+    launchctl list | grep com.dotfiles.sync
+
+    # Manually trigger sync:
+    launchctl start com.dotfiles.sync
+
+    # Or run directly:
+    ~/.dotfiles/sync.sh sync
+
+    # View recent logs:
+    tail -50 ~/.dotfiles/logs/sync.log
+
+    # Unload (disable):
+    launchctl unload ~/Library/LaunchAgents/com.dotfiles.sync.plist
+
+================================================================================
+-->
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for this job -->
+    <key>Label</key>
+    <string>com.dotfiles.sync</string>
+
+    <!-- Command to run -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>-l</string>
+        <string>-c</string>
+        <string>$HOME/.dotfiles/sync.sh sync</string>
+    </array>
+
+    <!-- Run every 4 hours (14400 seconds) -->
+    <key>StartInterval</key>
+    <integer>14400</integer>
+
+    <!-- Also run when first loaded -->
+    <key>RunAtLoad</key>
+    <true/>
+
+    <!-- Log files -->
+    <key>StandardOutPath</key>
+    <string>/tmp/dotfiles-sync.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/dotfiles-sync.err</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>/Users/ashtonian</string>
+        <key>DOTFILES_DIR</key>
+        <string>/Users/ashtonian/.dotfiles</string>
+    </dict>
+
+    <!-- Run at lower priority (don't impact user experience) -->
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <!-- Background process -->
+    <key>ProcessType</key>
+    <string>Background</string>
+</dict>
+</plist>

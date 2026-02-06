@@ -8,13 +8,8 @@
 
 # include library helpers for colorized echo and require_brew
 export DOTDIR="$HOME/.dotfiles"
-export ZSH="$HOME/.oh-my-zsh"
-source $ZSH/oh-my-zsh.sh
 source ./lib_sh/echos.sh
 source ./lib_sh/requirers.sh
-
-git clone --depth=1 https://github.com/romkatv/powerlevel10k.git ${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}/themes/powerlevel10k
-
 
 bot "Hi! I'm going to install tooling and tweak your system settings."
 
@@ -1549,9 +1544,9 @@ for app in "Activity Monitor" \
 	killall "${app}" &> /dev/null
 done
 
-Bot "Done. Note that some of these changes require a logout/restart to take effect."
+bot "Done. Note that some of these changes require a logout/restart to take effect."
 
-Bot "Do you want me to restart?"
+bot "Do you want me to restart?"
 read -r -p "[y|n]?" response
 if [[ $response =~ (yes|y|Y) ]];then
     ok

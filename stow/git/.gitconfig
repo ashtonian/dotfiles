@@ -5,6 +5,10 @@
 [github]
   user = ashtonian
 
+# Include local/private config if it exists
+[include]
+  path = ~/.gitconfig.local
+
 [advice]
   statusHints = true
 
@@ -43,10 +47,15 @@
 
 	pager = diff-so-fancy | less --tabs=4 -RFX
 
-# [commit]
+[commit]
+	# https://help.github.com/articles/signing-commits-using-gpg/
+	gpgsign = true
 
-# 	# https://help.github.com/articles/signing-commits-using-gpg/
-# 	gpgsign = true
+[user]
+	signingkey = 8D8E2EDE4DB48014
+
+[gpg]
+	program = /opt/homebrew/bin/gpg
 
 
 [apply]

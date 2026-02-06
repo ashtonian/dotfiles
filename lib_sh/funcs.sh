@@ -31,13 +31,10 @@ function fs() {
 }
 
 # Start an HTTP server from a directory, optionally specifying the port
-# TODO: conv to go static
 function server() {
 	local port="${1:-8000}";
 	sleep 1 && open "http://localhost:${port}/" &
-	# Set the default Content-Type to `text/plain` instead of `application/octet-stream`
-	# And serve everything as UTF-8 (although not technically correct, this doesn’t break anything for binary files)
-	python -c $'import SimpleHTTPServer;\nmap = SimpleHTTPServer.SimpleHTTPRequestHandler.extensions_map;\nmap[""] = "text/plain";\nfor key, value in map.items():\n\tmap[key] = value + ";charset=UTF-8";\nSimpleHTTPServer.test();' "$port";
+	python3 -m http.server "$port";
 }
 
 # Run `dig` and display the most useful info
@@ -53,11 +50,11 @@ function tre() {
 	tree -aC -I '.git|node_modules|bower_components' --dirsfirst "$@" | less -FRNX;
 }
 
-function whoisport (){
-        port=$1
-        pidInfo=$(fuser $port/tcp 2> /dev/null)
-        pid=$(echo $pidInfo | cut -d':' -f2)
-        ls -l /proc/$pid/exe
+# Find process using a port (macOS compatible)
+# Note: Use 'whodat' function for a more user-friendly alternative
+function whoisport() {
+	local port="${1:?Usage: whoisport <port>}"
+	lsof -i ":${port}" -sTCP:LISTEN
 }
 
 function realpath() {
@@ -656,7 +653,7 @@ function rename_aws_profile() {
 
     # Function to check if a file contains a profile
     profile_exists() {
-     #   grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" && grep -q "^\[$1\]" "$2" ]]
+        grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" ]] && grep -q "^\[$1\]" "$2"
     }
 
     # Function to rename a profile in a file
