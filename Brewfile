@@ -79,6 +79,7 @@ brew "rust"
 brew "scrcpy"
 brew "shellcheck"
 brew "ssh-copy-id", link: true
+brew "sshpass"
 brew "stow"
 brew "swagger-codegen"
 brew "telnet"
