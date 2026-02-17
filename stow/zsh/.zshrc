@@ -28,3 +28,6 @@ done
 # LOCAL OVERRIDES (not in git)
 #=============================================================================
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
+
+# Enable Claude Code agent teams
+export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
