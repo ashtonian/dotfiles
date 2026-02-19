@@ -443,12 +443,12 @@ running "Restart automatically if the computer freezes."
 sudo systemsetup -setrestartfreeze on
 ok
 
-running "Sleep the display after 5 minutes."
-sudo pmset -a displaysleep 5
+running "Disable display sleep."
+sudo pmset -a displaysleep 0
 ok
 
-running "Sleep the display after 5 minutes on battery."
-sudo pmset -b displaysleep 5
+running "Disable display sleep on battery."
+sudo pmset -b displaysleep 0
 ok
 
 # running "Disable machine sleep while charging."
