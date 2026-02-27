@@ -194,32 +194,6 @@ cask "webpquicklook"
 cask "wireshark-app"
 cask "wkhtmltopdf"
 cask "zoom"
-mas "1440", id: 1483764819
-mas "1Password for Safari", id: 1569813296
-mas "Bear", id: 1091189122
-mas "Blackmagic Disk Speed Test", id: 425264550
-mas "Dark Reader for Safari", id: 1438243180
-mas "Day One", id: 1055511498
-mas "GarageBand", id: 682658836
-mas "Horo", id: 1437226581
-mas "iMovie", id: 408981434
-mas "Keynote", id: 409183694
-mas "Monosnap", id: 540348655
-mas "Notion Web Clipper", id: 1559269364
-mas "Numbers", id: 409203825
-mas "OhMyStar", id: 1218642292
-mas "Okta Verify", id: 490179405
-mas "Pages", id: 409201541
-mas "Parallels Desktop", id: 1085114709
-mas "Raivo OTP", id: 1498497896
-mas "StopTheMadness", id: 1376402589
-mas "Todoist", id: 585829637
-mas "Toggl Track", id: 1291898086
-mas "UTM", id: 1538878817
-mas "Vimari", id: 1480933944
-mas "WireGuard", id: 1451685025
-mas "Xcode", id: 497799835
-mas "Yoink", id: 457622435
 vscode "4ops.packer"
 vscode "anthropic.claude-code"
 vscode "aws-scripting-guy.cform"
