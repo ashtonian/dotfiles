@@ -85,6 +85,7 @@ brew "rsync"
 brew "rust"
 brew "scrcpy"
 brew "shellcheck"
+brew "snappy"
 brew "ssh-copy-id", link: true
 brew "sshpass"
 brew "stow"
