@@ -206,5 +206,6 @@
 	directory = /__w/eleveldb/eleveldb
 	directory = /__w/eleveldb/eleveldb
 	directory = /__w/eleveldb/eleveldb
+	directory = /__w/eleveldb/eleveldb
 [pull]
 	rebase = false
