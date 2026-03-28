@@ -1,4 +1,10 @@
 Brewfile.lock.json
 Brewfile.local
 *.DS_Store
+*.bak
+*.swp
+*.swo
+*~
+.env
+.env.*
 logs/

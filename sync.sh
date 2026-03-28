@@ -87,8 +87,11 @@ run_mackup_backup() {
         mkdir -p "$HOME/.sync/$host_dir"
 
         # Temporarily update mackup config to use host-specific directory
+        # Use trap to guarantee restore even if mackup is killed
         if [[ -f "$cfg" ]]; then
-            sed -i.bak "s|^directory = .*|directory = $host_dir|" "$cfg"
+            cp "$cfg" "${cfg}.bak"
+            sed -i '' "s|^directory = .*|directory = $host_dir|" "$cfg"
+            trap 'mv "${cfg}.bak" "$cfg" 2>/dev/null; trap - RETURN' RETURN
         fi
 
         log "INFO: Running mackup backup (copy mode -> $host_dir)..."
@@ -96,11 +99,6 @@ run_mackup_backup() {
             log "INFO: Mackup backup complete"
         else
             log "WARN: Mackup backup failed"
-        fi
-
-        # Restore original config
-        if [[ -f "${cfg}.bak" ]]; then
-            mv "${cfg}.bak" "$cfg"
         fi
     else
         log "INFO: mackup not installed, skipping app config backup"
