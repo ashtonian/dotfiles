@@ -6,8 +6,8 @@
 # Syncs:
 #   1. ~/.dotfiles (this repo)
 #   2. All git repos in ~/.sync/ (mackup, themes, etc.)
-#   3. Brewfile (auto-dumps current packages)
-#   4. App configs via mackup (copy mode)
+#   3. Brewfile (installs missing shared packages, does NOT overwrite)
+#   4. App configs via mackup (copy mode, isolated per hostname)
 #
 
 set -euo pipefail
@@ -21,10 +21,14 @@ MAX_LOG_SIZE=1048576  # 1MB
 # Ensure directories exist
 mkdir -p "$LOG_DIR" "$SYNC_DIR"
 
-# Rotate log if too large
+# Rotate log if too large (timestamped to avoid multi-machine collisions)
 if [[ -f "$LOG_FILE" ]] && [[ $(stat -f%z "$LOG_FILE" 2>/dev/null || stat --printf="%s" "$LOG_FILE" 2>/dev/null) -gt $MAX_LOG_SIZE ]]; then
-    mv "$LOG_FILE" "${LOG_FILE}.old"
+    mv "$LOG_FILE" "${LOG_FILE}.$(date +%s).old"
 fi
+# Clean up old rotated logs (keep only 3 most recent)
+for old_log in $(ls -t "${LOG_FILE}".*.old 2>/dev/null | tail -n +4); do
+    rm -f "$old_log"
+done
 
 log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
@@ -42,30 +46,61 @@ check_connectivity() {
 #=============================================================================
 # BREWFILE SYNC
 #=============================================================================
-dump_brewfile() {
+# Installs packages from the curated shared Brewfile (and Brewfile.local if present).
+# Does NOT overwrite the Brewfile — edit it manually to add/remove shared packages.
+# Use Brewfile.local (gitignored) for machine-specific packages.
+sync_brewfile() {
     if command -v brew &>/dev/null; then
-        log "INFO: Dumping Brewfile..."
         local brewfile="${DOTFILES_DIR}/Brewfile"
-        if brew bundle dump --force --file="$brewfile" 2>&1 | tee -a "$LOG_FILE"; then
-            log "INFO: Brewfile updated"
-        else
-            log "WARN: Brewfile dump failed"
+        local brewfile_local="${DOTFILES_DIR}/Brewfile.local"
+
+        # Install missing packages from shared Brewfile
+        if [[ -f "$brewfile" ]]; then
+            log "INFO: Installing missing packages from shared Brewfile..."
+            brew bundle --no-lock --file="$brewfile" 2>&1 | tee -a "$LOG_FILE" || {
+                log "WARN: Some shared Brewfile packages failed to install"
+            }
+        fi
+
+        # Install from machine-specific Brewfile.local if it exists
+        if [[ -f "$brewfile_local" ]]; then
+            log "INFO: Installing from Brewfile.local..."
+            brew bundle --no-lock --file="$brewfile_local" 2>&1 | tee -a "$LOG_FILE" || {
+                log "WARN: Some Brewfile.local packages failed to install"
+            }
         fi
     else
-        log "INFO: brew not installed, skipping Brewfile dump"
+        log "INFO: brew not installed, skipping Brewfile sync"
     fi
 }
 
 #=============================================================================
-# MACKUP BACKUP (copy mode)
+# MACKUP BACKUP (copy mode, per-host isolation)
 #=============================================================================
+# Backs up to ~/.sync/mackup/$(hostname -s)/ to prevent multi-machine overwrites.
 run_mackup_backup() {
     if command -v mackup &>/dev/null; then
-        log "INFO: Running mackup backup (copy mode)..."
+        local cfg="$HOME/.mackup.cfg"
+        local host_dir="mackup/$(hostname -s)"
+
+        # Ensure host-specific backup directory exists
+        mkdir -p "$HOME/.sync/$host_dir"
+
+        # Temporarily update mackup config to use host-specific directory
+        if [[ -f "$cfg" ]]; then
+            sed -i.bak "s|^directory = .*|directory = $host_dir|" "$cfg"
+        fi
+
+        log "INFO: Running mackup backup (copy mode -> $host_dir)..."
         if mackup backup --force 2>&1 | tee -a "$LOG_FILE"; then
             log "INFO: Mackup backup complete"
         else
             log "WARN: Mackup backup failed"
+        fi
+
+        # Restore original config
+        if [[ -f "${cfg}.bak" ]]; then
+            mv "${cfg}.bak" "$cfg"
         fi
     else
         log "INFO: mackup not installed, skipping app config backup"
@@ -137,11 +172,32 @@ sync_git_repo() {
         git stash pop 2>&1 | tee -a "$LOG_FILE" || log "WARN: Failed to pop stash"
     fi
 
-    # Push changes
-    if git push origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
-        log "INFO: Pushed $repo_name to origin"
-    else
-        log "WARN: Push failed for $repo_name, will retry next sync"
+    # Push changes with retry (handles multi-machine race conditions)
+    local max_retries=3
+    local retry_delay=30
+    local pushed=false
+
+    for attempt in $(seq 1 $max_retries); do
+        if git push origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
+            log "INFO: Pushed $repo_name to origin"
+            pushed=true
+            break
+        else
+            if [[ $attempt -lt $max_retries ]]; then
+                log "WARN: Push failed for $repo_name (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
+                sleep "$retry_delay"
+                git pull --rebase origin "$branch" 2>&1 | tee -a "$LOG_FILE" || {
+                    git rebase --abort 2>/dev/null || true
+                    log "WARN: Rebase failed during retry for $repo_name"
+                    break
+                }
+                retry_delay=$((retry_delay * 2))
+            fi
+        fi
+    done
+
+    if [[ "$pushed" != "true" ]]; then
+        log "WARN: Push failed for $repo_name after $max_retries attempts, will retry next sync"
     fi
 }
 
@@ -195,7 +251,7 @@ main() {
         sync)
             check_connectivity || exit 0
             log "========== Starting full sync =========="
-            dump_brewfile
+            sync_brewfile
             run_mackup_backup
             sync_dotfiles
             sync_auxiliary_repos
@@ -213,7 +269,7 @@ main() {
             run_stow
             ;;
         brewfile)
-            dump_brewfile
+            sync_brewfile
             ;;
         mackup)
             run_mackup_backup
@@ -221,7 +277,7 @@ main() {
         all)
             check_connectivity || exit 0
             log "========== Starting full sync + stow =========="
-            dump_brewfile
+            sync_brewfile
             run_mackup_backup
             sync_dotfiles
             sync_auxiliary_repos
@@ -236,8 +292,8 @@ main() {
             echo "  dotfiles  - Sync only ~/.dotfiles"
             echo "  repos     - Sync only repos in ~/.sync/"
             echo "  stow      - Run stow to update symlinks"
-            echo "  brewfile  - Dump current brew packages to Brewfile"
-            echo "  mackup    - Run mackup backup"
+            echo "  brewfile  - Install missing packages from shared Brewfile"
+            echo "  mackup    - Run mackup backup (per-host isolated)"
             echo "  all       - Full sync + stow"
             exit 1
             ;;

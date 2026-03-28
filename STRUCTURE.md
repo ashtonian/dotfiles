@@ -229,14 +229,27 @@ export EDITOR="code"
 
 ### ~/.gitconfig.local
 
-Private git settings (included by main .gitconfig):
+Machine-specific git settings (included by main .gitconfig). See `stow/git/.gitconfig.local.example`:
 
 ```ini
-[user]
-    signingkey = ABC123
 [commit]
     gpgsign = true
+[user]
+    signingkey = YOUR_GPG_KEY_ID
+[gpg]
+    program = /opt/homebrew/bin/gpg
 ```
+
+### Brewfile.local
+
+Machine-specific Homebrew packages (gitignored). The shared `Brewfile` is curated manually and installed on all machines. Use `Brewfile.local` for packages only needed on one machine.
+
+### Multi-Machine Sync Architecture
+
+- **Brewfile**: `sync.sh` installs from the shared Brewfile — it never overwrites it. `Brewfile.local` handles per-machine packages.
+- **Mackup**: `sync.sh` backs up to `~/.sync/mackup/<hostname>/` so each machine has isolated app config backups.
+- **Git push**: Uses retry with exponential backoff (3 attempts) to handle simultaneous pushes from multiple machines.
+- **Local overrides**: `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` are never tracked in git.
 
 ## Workflow
 

@@ -154,12 +154,48 @@ AI-assisted development workflows from `lib_sh/claude.sh`:
 | `creview` | Review branch changes |
 | `csecurity` | Security audit |
 
+## Multi-Machine Setup
+
+This repo is designed to sync across multiple machines via LaunchAgent (every 4 hours). Each machine installs shared packages and backs up its own app configs without overwriting the other.
+
+### After install on a new machine:
+
+1. **GPG signing** — create `~/.gitconfig.local` (see `stow/git/.gitconfig.local.example`):
+   ```ini
+   [commit]
+       gpgsign = true
+   [user]
+       signingkey = YOUR_GPG_KEY_ID
+   [gpg]
+       program = /opt/homebrew/bin/gpg
+   ```
+
+2. **Machine-specific packages** — create `Brewfile.local` in `~/.dotfiles/` (gitignored):
+   ```ruby
+   brew "some-package-only-on-this-machine"
+   cask "some-app"
+   ```
+
+3. **Machine-specific shell config** — create `~/.zshrc.local`
+
+4. **Machine-specific SSH hosts** — create `~/.ssh/config.local`
+
+5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
+
+### How multi-machine sync works
+
+- **Brewfile**: The shared `Brewfile` is curated manually. Sync installs missing packages from it — it never overwrites it. Use `Brewfile.local` for machine-specific packages.
+- **Mackup**: Each machine backs up to `~/.sync/mackup/<hostname>/` so configs don't collide.
+- **Git push**: Retries with exponential backoff if another machine pushed first.
+- **Local overrides**: `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` are never tracked.
+
 ## Mackup: App Config Backup
 
-Mackup uses **copy mode** (not symlinks) - required for macOS Sonoma+.
+Mackup uses **copy mode** (not symlinks) - required for macOS Sonoma+. Backups are isolated per hostname to prevent multi-machine overwrites.
 
 ```sh
-# Backup app configs to ~/.sync/mackup
+# Automated backup goes to ~/.sync/mackup/$(hostname -s)/
+# Manual commands use ~/.sync/mackup/ by default:
 mackup backup
 
 # Restore on new machine

@@ -47,16 +47,13 @@
 
 	pager = diff-so-fancy | less --tabs=4 -RFX
 
-[commit]
-	# https://help.github.com/articles/signing-commits-using-gpg/
-	gpgsign = true
-
-[user]
-	signingkey = 8D8E2EDE4DB48014
-
-[gpg]
-	program = /opt/homebrew/bin/gpg
-
+# Commit signing is machine-specific. Configure in ~/.gitconfig.local:
+#   [commit]
+#       gpgsign = true
+#   [user]
+#       signingkey = YOUR_KEY_ID
+#   [gpg]
+#       program = /opt/homebrew/bin/gpg
 
 [apply]
 	# Detect whitespace errors when applying a patch.
@@ -166,54 +163,3 @@
 
 
 
-[safe]
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-	directory = /__w/eleveldb/eleveldb
-[pull]
-	rebase = false

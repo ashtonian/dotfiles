@@ -1,0 +1,15 @@
+# ~/.gitconfig.local - Machine-specific git configuration
+# Copy this to ~/.gitconfig.local and customize for each machine.
+# This file is automatically included by .gitconfig via [include].
+
+# GPG commit signing (get your key ID with: gpg --list-secret-keys --keyid-format long)
+# [commit]
+#     gpgsign = true
+# [user]
+#     signingkey = YOUR_GPG_KEY_ID
+# [gpg]
+#     program = /opt/homebrew/bin/gpg
+
+# Machine-specific safe directories
+# [safe]
+#     directory = /path/to/your/repos
