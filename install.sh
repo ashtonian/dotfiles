@@ -50,15 +50,22 @@ setup_sudo() {
 
     # Keep sudo alive
     while true; do sudo -n true; sleep 60; kill -0 "$$" || exit; done 2>/dev/null &
+    SUDO_PID=$!
+    trap 'kill $SUDO_PID 2>/dev/null' EXIT
 
     echo ""
     read -r -p "Enable passwordless sudo? [y/N] " response
     if [[ "$response" =~ ^[Yy]$ ]]; then
+        if [[ ! "$LOGNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+            error "Invalid username: $LOGNAME"
+            exit 1
+        fi
         info "Enabling passwordless sudo..."
         if ! grep -q "#includedir /private/etc/sudoers.d" /etc/sudoers 2>/dev/null; then
             echo '#includedir /private/etc/sudoers.d' | sudo tee -a /etc/sudoers > /dev/null
         fi
         echo -e "Defaults:$LOGNAME    !requiretty\n$LOGNAME ALL=(ALL) NOPASSWD: ALL" | sudo tee "/etc/sudoers.d/$LOGNAME" > /dev/null
+        sudo chmod 0440 "/etc/sudoers.d/$LOGNAME"
         success "Passwordless sudo enabled"
     fi
 }

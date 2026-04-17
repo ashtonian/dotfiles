@@ -34,4 +34,8 @@ history_filter = [
     "^ll ",
     "^clear$",
     "^exit$",
+    "^export ",
+    ".*password.*",
+    ".*secret.*",
+    ".*AWS_SECRET.*",
 ]

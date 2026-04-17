@@ -36,11 +36,23 @@ log() {
 
 # Check if we're online
 check_connectivity() {
-    if ! ping -c 1 -W 2 github.com &>/dev/null; then
+    if ! curl -sf -m 5 "https://github.com" >/dev/null 2>&1; then
         log "WARN: No network connectivity, skipping sync"
         return 1
     fi
     return 0
+}
+
+# Prevent concurrent runs
+LOCK_DIR="$LOG_DIR/sync.lock"
+acquire_lock() {
+    if mkdir "$LOCK_DIR" 2>/dev/null; then
+        trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
+        return 0
+    else
+        log "WARN: Another sync is already running"
+        return 1
+    fi
 }
 
 #=============================================================================
@@ -131,7 +143,7 @@ sync_git_repo() {
         log "INFO: $repo_name has no remote, committing locally only"
         # Just commit local changes
         if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-            git add -A
+            git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
             git commit -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(hostname -s)" 2>&1 | tee -a "$LOG_FILE" || true
         fi
         return 0
@@ -142,7 +154,7 @@ sync_git_repo() {
 
     # Check for local changes (staged, unstaged, and untracked)
     if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-        git add -A
+        git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
         local commit_msg="auto: sync $(date '+%Y-%m-%d %H:%M') from $(hostname -s)"
         git commit -m "$commit_msg" 2>&1 | tee -a "$LOG_FILE" || true
         log "INFO: Committed local changes in $repo_name"
@@ -245,6 +257,8 @@ run_stow() {
 # MAIN
 #=============================================================================
 main() {
+    acquire_lock || exit 0
+
     case "${1:-sync}" in
         sync)
             check_connectivity || exit 0

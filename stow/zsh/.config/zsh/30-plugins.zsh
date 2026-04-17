@@ -44,12 +44,13 @@ zinit ice wait"1" lucid as"program" pick"bin/git-dsf"
 zinit light z-shell/zsh-diff-so-fancy
 
 # FZF (fuzzy finder)
-zinit ice wait"0" lucid from"gh-r" as"program"
+zinit ice wait"0" lucid from"gh-r" as"program" \
+    atload'eval "$(fzf --zsh)"'
 zinit light junegunn/fzf
 
-# Alias tips (shows alias when you type full command)
+# Alias reminder (shows alias when you type full command)
 zinit ice wait"1" lucid
-zinit light djui/alias-tips
+zinit light MichaelAquilina/zsh-you-should-use
 
 #=============================================================================
 # OMZ LIBRARIES (cherry-picked essentials)
@@ -63,14 +64,9 @@ zinit snippet OMZL::completion.zsh
 zinit ice wait"0" lucid
 zinit snippet OMZL::directories.zsh
 
-zinit ice wait"0" lucid
-zinit snippet OMZL::git.zsh
-
-zinit ice wait"0" lucid
-zinit snippet OMZL::history.zsh
-
-zinit ice wait"0" lucid
-zinit snippet OMZL::key-bindings.zsh
+# NOTE: OMZL::git.zsh removed - OMZP::git loads it internally
+# NOTE: OMZL::history.zsh removed - custom settings in 20-history.zsh
+# NOTE: OMZL::key-bindings.zsh removed - custom bindings in 40-keybindings.zsh
 
 #=============================================================================
 # OMZ PLUGINS (turbo loaded)
@@ -164,18 +160,13 @@ zinit snippet OMZP::web-search
 #=============================================================================
 # CUSTOM PLUGINS
 #=============================================================================
-# Wakatime
-zinit ice wait"2" lucid
-zinit light sobolevn/wakatime-zsh-plugin
+# NOTE: wakatime-zsh-plugin removed - wakatime-cli handles tracking natively
+# NOTE: git-it-on.zsh removed - use `gh repo view --web` instead
 
 # iTerm2 integration (simple OMZ plugin - stable with Dracula theme)
 # For full shell integration, install via: iTerm2 > Install Shell Integration
 zinit ice wait"1" lucid
 zinit snippet OMZP::iterm2
-
-# Git-it-on (open git repo in browser)
-zinit ice wait"2" lucid
-zinit light peterhurford/git-it-on.zsh
 
 #=============================================================================
 # COMPLETIONS (loaded last, after compinit)
@@ -183,13 +174,7 @@ zinit light peterhurford/git-it-on.zsh
 zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ."
 zinit light zsh-users/zsh-completions
 
-# Initialize completion system
-autoload -Uz compinit
-if [[ -n ${ZDOTDIR}/.zcompdump(#qN.mh+24) ]]; then
-    compinit
-else
-    compinit -C
-fi
+# NOTE: compinit is handled by OMZL::completion.zsh - no manual call needed
 
 # Replay completions
 zinit cdreplay -q

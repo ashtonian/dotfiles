@@ -69,6 +69,7 @@
 [diff]
 	# Detect copies as well as renames.
 	renames = copies
+	algorithm = histogram
 
 [diff "bin"]
 	# Use `hexdump` to diff binary files.
@@ -90,7 +91,7 @@
 
 [credential]
     # cache creds (git help credential-cache)
-  helper = cache
+  helper = osxkeychain
 
 [filter "tabspace"]
   clean = expand -t 4
@@ -138,7 +139,7 @@
 
 [help]
 	# Automatically correct and execute mistyped commands.
-	autocorrect = 1
+	autocorrect = 10
 
 # URL shorthands
 [url "git@github.com:"]
@@ -157,5 +158,8 @@
 [url "git://gist.github.com/"]
 	insteadOf = "gist:"
 
+[fetch]
+	writeCommitGraph = true
 
-
+[protocol]
+	version = 2

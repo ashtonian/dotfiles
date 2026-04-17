@@ -31,3 +31,5 @@ done
 
 # Enable Claude Code agent teams
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
+
+alias claudemore='claude --effort max --dangerously-skip-permissions --disallowedTools "Agent"'

@@ -4,8 +4,8 @@
 # BETTER DEFAULTS (only if command exists)
 #=============================================================================
 # Ping
-if command -v prettyping &>/dev/null; then
-    alias ping='prettyping --nolegend'
+if command -v gping &>/dev/null; then
+    alias ping='gping'
     alias oping='command ping'
 fi
 
@@ -27,12 +27,12 @@ if command -v ncdu &>/dev/null; then
     alias odu='command du'
 fi
 
-# Ls -> Colorls (or exa/eza as fallback)
-if command -v colorls &>/dev/null; then
-    alias ls='colorls'
-    alias ols='command ls'
-elif command -v eza &>/dev/null; then
+# Ls -> eza (preferred, Rust-based) or colorls as fallback
+if command -v eza &>/dev/null; then
     alias ls='eza --icons'
+    alias ols='command ls'
+elif command -v colorls &>/dev/null; then
+    alias ls='colorls'
     alias ols='command ls'
 fi
 

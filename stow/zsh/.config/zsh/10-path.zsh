@@ -42,9 +42,10 @@ typeset -U path
 #=============================================================================
 export EDITOR="${EDITOR:-vim}"
 export VISUAL="${VISUAL:-$EDITOR}"
-export PAGER="${PAGER:-less}"
+if command -v bat &>/dev/null; then
+    export PAGER="bat --plain"
+else
+    export PAGER="${PAGER:-less}"
+fi
 export LANG="${LANG:-en_US.UTF-8}"
 export LC_ALL="${LC_ALL:-en_US.UTF-8}"
-
-# Wakatime
-export ZSH_WAKATIME_BIN="${ZSH_WAKATIME_BIN:-/opt/homebrew/bin/wakatime-cli}"
