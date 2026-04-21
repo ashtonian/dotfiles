@@ -186,10 +186,5 @@ zinit snippet OMZP::iterm2
 #=============================================================================
 # COMPLETIONS (loaded last, after compinit)
 #=============================================================================
-zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ."
+zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ." atload"zinit cdreplay -q"
 zinit light zsh-users/zsh-completions
-
-# NOTE: compinit is handled by OMZL::completion.zsh - no manual call needed
-
-# Replay completions
-zinit cdreplay -q
