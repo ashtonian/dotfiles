@@ -73,7 +73,7 @@ zinit light dracula/zsh-syntax-highlighting
 zinit ice wait"0" lucid
 zinit snippet OMZL::clipboard.zsh
 
-zinit ice wait"0" lucid
+# Loaded synchronously — turbo plugins call compdef, which requires compinit
 zinit snippet OMZL::completion.zsh
 
 zinit ice wait"0" lucid
