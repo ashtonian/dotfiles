@@ -21,6 +21,12 @@ zinit light zsh-users/zsh-autosuggestions
 zinit light zsh-users/zsh-completions
 
 #=============================================================================
+# COMPINIT (must run before turbo plugins that call compdef)
+#=============================================================================
+autoload -Uz compinit && compinit
+zinit cdreplay -q
+
+#=============================================================================
 # TURBO MODE PLUGINS (loaded async after prompt)
 # wait"0" = load immediately after prompt
 # wait"1" = load 1 second after prompt
@@ -73,8 +79,7 @@ zinit light dracula/zsh-syntax-highlighting
 zinit ice wait"0" lucid
 zinit snippet OMZL::clipboard.zsh
 
-# Loaded synchronously — turbo plugins call compdef, which requires compinit
-zinit snippet OMZL::completion.zsh
+# NOTE: OMZL::completion.zsh removed — compinit called explicitly above
 
 zinit ice wait"0" lucid
 zinit snippet OMZL::directories.zsh
@@ -186,5 +191,5 @@ zinit snippet OMZP::iterm2
 #=============================================================================
 # COMPLETIONS (loaded last, after compinit)
 #=============================================================================
-zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ." atload"zinit cdreplay -q"
+zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ."
 zinit light zsh-users/zsh-completions
