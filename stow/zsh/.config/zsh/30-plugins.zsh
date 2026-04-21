@@ -53,6 +53,21 @@ zinit ice wait"1" lucid
 zinit light MichaelAquilina/zsh-you-should-use
 
 #=============================================================================
+# PLUGIN CONFIGURATION
+#=============================================================================
+# SSH agent forwarding
+zstyle :omz:plugins:ssh-agent agent-forwarding on
+
+# Custom web search engines
+ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
+
+#=============================================================================
+# DRACULA SYNTAX HIGHLIGHTING THEME
+#=============================================================================
+zinit ice wait"0" lucid
+zinit light dracula/zsh-syntax-highlighting
+
+#=============================================================================
 # OMZ LIBRARIES (cherry-picked essentials)
 #=============================================================================
 zinit ice wait"0" lucid

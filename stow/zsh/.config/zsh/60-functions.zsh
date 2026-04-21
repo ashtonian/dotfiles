@@ -36,6 +36,14 @@ fi
 # command -v kubectl &>/dev/null && source <(kubectl completion zsh)
 
 #=============================================================================
+# SHELL PROFILING
+#=============================================================================
+timezsh() {
+    shell=${1-$SHELL}
+    for i in $(seq 1 10); do /usr/bin/time $shell -i -c exit; done
+}
+
+#=============================================================================
 # DIRENV (auto-load .envrc files)
 #=============================================================================
 if command -v direnv &>/dev/null; then
