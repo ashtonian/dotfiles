@@ -32,4 +32,26 @@ done
 # Enable Claude Code agent teams
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
-alias claudemore='claude --effort max --dangerously-skip-permissions --disallowedTools "Agent"'
+claudemore() {
+  local base="${PWD##*/}"
+  local max=0 n
+  for f in ~/.claude/sessions/*.json(N); do
+    n=$(python3 -c "import json;d=json.load(open('$f'));name=d.get('name','');parts=name.rsplit('-',1);print(parts[1] if len(parts)==2 and parts[0]=='$base' and parts[1].isdigit() else '')" 2>/dev/null)
+    [[ -n "$n" && "$n" -gt "$max" ]] && max=$n
+  done
+  local name="${base}-$((max + 1))"
+  echo "Session: ${name}"
+  claude --effort max --dangerously-skip-permissions --disallowedTools "Agent" --name "${name}" "$@"
+}
+
+claudeclean() {
+  local removed=0
+  for f in ~/.claude/sessions/*.json(N); do
+    local pid="${f:t:r}"
+    if ! kill -0 "$pid" 2>/dev/null; then
+      rm -f "$f"
+      ((removed++))
+    fi
+  done
+  echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
+}
