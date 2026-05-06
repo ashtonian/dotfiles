@@ -34,14 +34,16 @@ export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
 claudemore() {
   local base="${PWD##*/}"
+  local host="${HOST%%.*}"
+  local prefix="${base}@${host}"
   local max=0 n
   for f in ~/.claude/sessions/*.json(N); do
-    n=$(python3 -c "import json;d=json.load(open('$f'));name=d.get('name','');parts=name.rsplit('-',1);print(parts[1] if len(parts)==2 and parts[0]=='$base' and parts[1].isdigit() else '')" 2>/dev/null)
+    n=$(python3 -c "import json;d=json.load(open('$f'));name=d.get('name','');parts=name.rsplit('-',1);print(parts[1] if len(parts)==2 and parts[0]=='$prefix' and parts[1].isdigit() else '')" 2>/dev/null)
     [[ -n "$n" && "$n" -gt "$max" ]] && max=$n
   done
-  local name="${base}-$((max + 1))"
+  local name="${prefix}-$((max + 1))"
   echo "Session: ${name}"
-  claude --effort max --dangerously-skip-permissions --disallowedTools "Agent" --name "${name}" "$@"
+  claude --model 'claude-opus-4-7[1m]' --effort max --allow-dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
 }
 
 claudeclean() {
