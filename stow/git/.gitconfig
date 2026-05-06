@@ -87,7 +87,7 @@
 
 [branch]
     # Automatically set up pull to be --rebase
-    autosetuprebase = always
+	autoSetupRebase = never
 
 [credential]
     # cache creds (git help credential-cache)
@@ -163,3 +163,5 @@
 
 [protocol]
 	version = 2
+[pull]
+	rebase = false
