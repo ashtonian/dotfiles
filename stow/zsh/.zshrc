@@ -43,7 +43,7 @@ claudemore() {
   done
   local name="${prefix}-$((max + 1))"
   echo "Session: ${name}"
-  claude --model 'claude-opus-4-7[1m]' --effort max --allow-dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  claude --model 'claude-opus-4-8[1m]' --effort max --allow-dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
 }
 
 claudeclean() {
