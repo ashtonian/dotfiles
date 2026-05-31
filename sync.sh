@@ -34,6 +34,12 @@ log() {
     echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
 }
 
+# Stable per-machine name. `hostname -s` follows the DHCP/network name on macOS
+# and changes between networks; LocalHostName (the Bonjour name) is stable.
+stable_host() {
+    scutil --get LocalHostName 2>/dev/null || hostname -s
+}
+
 # Check if we're online
 check_connectivity() {
     if ! curl -sf -m 5 "https://github.com" >/dev/null 2>&1; then
@@ -89,21 +95,29 @@ sync_brewfile() {
 #=============================================================================
 # MACKUP BACKUP (copy mode, per-host isolation)
 #=============================================================================
-# Backs up to ~/.sync/mackup/$(hostname -s)/ to prevent multi-machine overwrites.
+# Backs up to ~/.sync/mackup/<LocalHostName>/ to prevent multi-machine overwrites.
 run_mackup_backup() {
     if command -v mackup &>/dev/null; then
         local cfg="$HOME/.mackup.cfg"
-        local host_dir="mackup/$(hostname -s)"
+        local host_dir="mackup/$(stable_host)"
 
         # Ensure host-specific backup directory exists
         mkdir -p "$HOME/.sync/$host_dir"
 
-        # Temporarily update mackup config to use host-specific directory
-        # Use trap to guarantee restore even if mackup is killed
-        if [[ -f "$cfg" ]]; then
-            cp "$cfg" "${cfg}.bak"
-            sed -i '' "s|^directory = .*|directory = $host_dir|" "$cfg"
-            trap 'mv "${cfg}.bak" "$cfg" 2>/dev/null; trap - RETURN' RETURN
+        # Point mackup at the host-specific directory WITHOUT editing the stowed
+        # config: ~/.mackup.cfg is a stow symlink, and `sed -i` would clobber the
+        # link and rewrite the tracked file. Swap in a temp config, restore on return.
+        if [[ -e "$cfg" ]]; then
+            local tmp_cfg orig
+            tmp_cfg="$(mktemp)"
+            sed "s|^directory = .*|directory = $host_dir|" "$cfg" > "$tmp_cfg"
+            if orig="$(readlink "$cfg" 2>/dev/null)" && [[ -n "$orig" ]]; then
+                ln -sf "$tmp_cfg" "$cfg"
+                trap "ln -sf '$orig' '$cfg'; rm -f '$tmp_cfg'; trap - RETURN" RETURN
+            else
+                cp "$cfg" "${cfg}.syncbak"; cp "$tmp_cfg" "$cfg"
+                trap "mv '${cfg}.syncbak' '$cfg'; rm -f '$tmp_cfg'; trap - RETURN" RETURN
+            fi
         fi
 
         log "INFO: Running mackup backup (copy mode -> $host_dir)..."
@@ -149,7 +163,7 @@ sync_git_repo() {
         # Just commit local changes
         if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
             git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
-            git commit -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(hostname -s)" 2>&1 | tee -a "$LOG_FILE" || true
+            git commit -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)" 2>&1 | tee -a "$LOG_FILE" || true
         fi
         return 0
     fi
@@ -160,7 +174,7 @@ sync_git_repo() {
     # Check for local changes (staged, unstaged, and untracked)
     if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
         git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
-        local commit_msg="auto: sync $(date '+%Y-%m-%d %H:%M') from $(hostname -s)"
+        local commit_msg="auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)"
         git commit -m "$commit_msg" 2>&1 | tee -a "$LOG_FILE" || true
         log "INFO: Committed local changes in $repo_name"
     fi
