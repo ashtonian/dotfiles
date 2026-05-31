@@ -44,3 +44,7 @@ service-account*.json
 .secret
 *.secret
 secrets.*
+
+# gh CLI writes its oauth_token into hosts.yml on `gh auth login` -- it must
+# never land in this PUBLIC repo. Untracked; keep it local only.
+stow/gh/.config/gh/hosts.yml

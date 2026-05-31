@@ -69,7 +69,7 @@ sync_brewfile() {
         # Install missing packages from shared Brewfile
         if [[ -f "$brewfile" ]]; then
             log "INFO: Installing missing packages from shared Brewfile..."
-            brew bundle --no-lock --file="$brewfile" 2>&1 | tee -a "$LOG_FILE" || {
+            brew bundle --file="$brewfile" 2>&1 | tee -a "$LOG_FILE" || {
                 log "WARN: Some shared Brewfile packages failed to install"
             }
         fi
@@ -77,7 +77,7 @@ sync_brewfile() {
         # Install from machine-specific Brewfile.local if it exists
         if [[ -f "$brewfile_local" ]]; then
             log "INFO: Installing from Brewfile.local..."
-            brew bundle --no-lock --file="$brewfile_local" 2>&1 | tee -a "$LOG_FILE" || {
+            brew bundle --file="$brewfile_local" 2>&1 | tee -a "$LOG_FILE" || {
                 log "WARN: Some Brewfile.local packages failed to install"
             }
         fi
