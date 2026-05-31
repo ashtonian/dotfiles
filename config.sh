@@ -1,5 +1,8 @@
 #!/usr/bin/env zsh
-set -euo pipefail
+# NOTE: intentionally NOT `-e`. This is a best-effort macOS defaults script;
+# many `defaults`/`killall`/`xattr` calls legitimately exit non-zero (app not
+# running, key absent) and must not abort the whole run half-configured.
+set -uo pipefail
 
 #######################################################################################################################################
 # macOS 10.15+ (Catalina) Install script
@@ -9,8 +12,9 @@ set -euo pipefail
 
 # include library helpers for colorized echo and require_brew
 export DOTDIR="$HOME/.dotfiles"
-source ./lib_sh/echos.sh
-source ./lib_sh/requirers.sh
+# Source helpers relative to THIS script, not the caller's cwd.
+source "${0:A:h}/lib_sh/echos.sh"
+source "${0:A:h}/lib_sh/requirers.sh"
 
 bot "Hi! I'm going to install tooling and tweak your system settings."
 
@@ -1548,8 +1552,10 @@ done
 bot "Done. Note that some of these changes require a logout/restart to take effect."
 
 bot "Do you want me to restart?"
-read -r -p "[y|n]?" response
-if [[ $response =~ (yes|y|Y) ]];then
+read -r -p "[y/N]? " response </dev/tty || response="n"
+# Anchored, case-insensitive. The old unanchored (yes|y|Y) matched ANY reply
+# containing y (e.g. "nay"), triggering an unintended reboot.
+if [[ "${response:l}" == (y|yes) ]]; then
     ok
     sudo reboot now
 else

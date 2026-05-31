@@ -54,7 +54,7 @@ setup_sudo() {
     trap 'kill $SUDO_PID 2>/dev/null' EXIT
 
     echo ""
-    read -r -p "Enable passwordless sudo? [y/N] " response
+    read -r -p "Enable passwordless sudo? [y/N] " response </dev/tty || response=""
     if [[ "$response" =~ ^[Yy]$ ]]; then
         if [[ ! "$LOGNAME" =~ ^[a-zA-Z0-9_-]+$ ]]; then
             error "Invalid username: $LOGNAME"
@@ -95,7 +95,8 @@ install_xcode_cli() {
 # HOMEBREW
 #=============================================================================
 install_homebrew() {
-    export PATH="/opt/homebrew/bin:$PATH"
+    local brew_prefix; [[ "$(uname -m)" == "arm64" ]] && brew_prefix="/opt/homebrew" || brew_prefix="/usr/local"
+    export PATH="$brew_prefix/bin:$PATH"
 
     if command -v brew &>/dev/null; then
         success "Homebrew already installed"
@@ -104,7 +105,7 @@ install_homebrew() {
 
     info "Installing Homebrew..."
     /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
-    eval "$(/opt/homebrew/bin/brew shellenv)"
+    eval "$("$brew_prefix/bin/brew" shellenv)"
     brew analytics off
     success "Homebrew installed"
 }
@@ -116,7 +117,7 @@ clone_dotfiles() {
     if [[ -d "$DOTFILES_DIR/.git" ]]; then
         success "Dotfiles already cloned"
         info "Pulling latest changes..."
-        cd "$DOTFILES_DIR" && git pull
+        git -C "$DOTFILES_DIR" pull --ff-only || warn "Could not fast-forward dotfiles (local changes?)"
         return
     fi
 
@@ -161,9 +162,11 @@ setup_sync_dir() {
     if [[ ! -d "$SYNC_DIR/mackup/.git" ]]; then
         info "Initializing mackup backup repo..."
         mkdir -p "$SYNC_DIR/mackup"
-        cd "$SYNC_DIR/mackup"
-        git init
-        git commit --allow-empty -m "Initial commit"
+        git -C "$SYNC_DIR/mackup" init
+        # Inline identity so this doesn't abort on a fresh machine with no
+        # global git user configured yet.
+        git -C "$SYNC_DIR/mackup" -c user.name="${USER}" -c user.email="${USER}@$(hostname -s)" \
+            commit --allow-empty -m "Initial commit"
     fi
 
     success "Sync directory ready"
@@ -181,10 +184,14 @@ setup_stow() {
     info "Setting up stow packages..."
     cd "$DOTFILES_DIR/stow"
 
+    local stow_out
     for package in */; do
         package="${package%/}"
         info "  Stowing $package..."
-        stow -v -R -t "$HOME" "$package" 2>&1 | grep -v "^LINK:" || true
+        if ! stow_out=$(stow -R -t "$HOME" "$package" 2>&1); then
+            warn "  stow reported conflicts for '$package' (pre-existing files left unstowed):"
+            echo "$stow_out" | grep -iE 'conflict|existing|cannot' | sed 's/^/      /'
+        fi
     done
 
     success "Stow packages linked"
@@ -198,7 +205,7 @@ install_packages() {
     cd "$DOTFILES_DIR"
 
     if [[ -f "Brewfile" ]]; then
-        brew bundle --no-lock || warn "Some packages may have failed to install"
+        brew bundle || warn "Some packages may have failed to install"
         success "Packages installed"
     else
         warn "No Brewfile found, skipping package installation"
@@ -237,7 +244,7 @@ install_launch_agents() {
 #=============================================================================
 configure_macos() {
     echo ""
-    read -r -p "Configure macOS preferences? (runs config.sh) [y/N] " response
+    read -r -p "Configure macOS preferences? (runs config.sh) [y/N] " response </dev/tty || response=""
     if [[ "$response" =~ ^[Yy]$ ]]; then
         info "Configuring macOS preferences..."
         cd "$DOTFILES_DIR"
