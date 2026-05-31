@@ -8,3 +8,39 @@ Brewfile.local
 .env
 .env.*
 logs/
+
+# Machine-generated zsh completion cache (regenerated each shell; never track —
+# it would otherwise be auto-committed and pushed as per-machine junk)
+.zcompdump*
+*.zwc
+
+# === Secrets & credentials =================================================
+# This repo auto-commits and pushes to a PUBLIC GitHub remote every few hours
+# (see sync.sh / launchagents). Anything tracked becomes world-readable, so keep
+# credential material and machine-local overrides OUT by default.
+*.local
+!*.local.example          # keep committed *.local.example templates
+.envrc
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.ppk
+id_rsa*
+id_ed25519*
+id_ecdsa*
+*.gpg
+*.asc
+.netrc
+.npmrc
+.pypirc
+credentials
+*credentials*
+kubeconfig
+*.kubeconfig
+service-account*.json
+*-key.json
+.secret
+*.secret
+secrets.*
