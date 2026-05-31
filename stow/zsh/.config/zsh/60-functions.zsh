@@ -44,6 +44,17 @@ timezsh() {
 }
 
 #=============================================================================
+# ZOXIDE (smart cd)
+# Loaded synchronously (not via zinit turbo) so `cd`/`z` work in
+# non-interactive shells too. --cmd cd makes `cd` a superset of the builtin:
+# real paths (`cd /abs/path`, `cd -`, `cd ..`) behave normally; bare names
+# fall back to frecency-ranked jumps. Provides `cd` and `cdi`.
+#=============================================================================
+if command -v zoxide &>/dev/null; then
+    eval "$(zoxide init zsh --cmd cd)"
+fi
+
+#=============================================================================
 # DIRENV (auto-load .envrc files)
 #=============================================================================
 if command -v direnv &>/dev/null; then

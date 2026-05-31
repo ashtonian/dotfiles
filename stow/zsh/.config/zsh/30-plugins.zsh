@@ -23,6 +23,18 @@ zinit light zsh-users/zsh-completions
 #=============================================================================
 # COMPINIT (must run before turbo plugins that call compdef)
 #=============================================================================
+# Prune dangling completion symlinks before compinit. zinit's `creinstall`
+# symlinks every _completion from a plugin into its completions dir; when a
+# plugin drops one upstream (e.g. zsh-completions removed _android, _artisan,
+# _homestead) the symlink dangles and compinit errors "no such file or
+# directory" on every startup. This self-heals it each launch.
+() {
+    local _cdir="${ZINIT[COMPLETIONS_DIR]:-${XDG_DATA_HOME:-$HOME/.local/share}/zinit/completions}"
+    local _link
+    for _link in "$_cdir"/*(N@); do
+        [[ -e "$_link" ]] || command rm -f "$_link"
+    done
+}
 autoload -Uz compinit && compinit
 zinit cdreplay -q
 
@@ -32,10 +44,11 @@ zinit cdreplay -q
 # wait"1" = load 1 second after prompt
 #=============================================================================
 
-# Fast directory jumping (replaces autojump - much faster)
-zinit ice wait"0" lucid from"gh-r" as"program" pick"zoxide" \
-    atclone"./zoxide init zsh > init.zsh" atpull"%atclone" src"init.zsh"
-zinit light ajeetdsouza/zoxide
+# Fast directory jumping: zoxide is installed via Homebrew and initialized
+# SYNCHRONOUSLY in 60-functions.zsh (eval "$(zoxide init zsh --cmd cd)"), not
+# here. Turbo-loading it (wait"0") only runs after the first interactive
+# prompt, which left `cd` (aliased to zoxide's `z`) undefined in non-interactive
+# shells -> "command not found: z". Synchronous init fixes that.
 
 # Autopair brackets/quotes
 zinit ice wait"0" lucid

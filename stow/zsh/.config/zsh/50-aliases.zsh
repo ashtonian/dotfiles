@@ -50,12 +50,16 @@ alias ...='cd ../..'
 alias ....='cd ../../..'
 alias -- -='cd -'
 
-# Zoxide (if installed, replaces cd and autojump's j)
+# Zoxide muscle-memory aliases. zoxide is initialized in 60-functions.zsh via
+# `zoxide init zsh --cmd cd`, which defines `cd` (a smart superset of the
+# builtin: `cd /abs/path`, `cd -`, `cd ~` all still work) and `cdi` (interactive
+# picker). Do NOT `alias cd=z` here -- `z` only exists after init runs, which
+# breaks `cd` in non-interactive shells. These aliases just keep old habits.
 if command -v zoxide &>/dev/null; then
-    alias cd='z'
-    alias cdi='zi'  # Interactive selection
-    alias j='z'     # For autojump muscle memory
-    alias ji='zi'
+    alias z='cd'     # `z foo` -> smart jump
+    alias zi='cdi'   # interactive picker
+    alias j='cd'     # autojump muscle memory
+    alias ji='cdi'
 fi
 
 #=============================================================================
