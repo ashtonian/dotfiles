@@ -57,9 +57,9 @@ function whoisport() {
 	lsof -i ":${port}" -sTCP:LISTEN
 }
 
-function realpath() {
-    [[ $1 = /* ]] && echo "$1" || echo "$PWD/${1#./}"
-}
+# NOTE: removed a custom realpath() that shadowed the system binary with a
+# broken, symlink-unaware implementation. Use the real `realpath` (macOS 12+
+# ships one; `brew install coreutils` provides `grealpath`).
 
 function move_and_link() {
     if [ $# -ne 2 ]; then
@@ -692,8 +692,13 @@ function rename_aws_profile() {
     rename_in_file "$config_file" "$old_profile_name" "$new_profile_name" "$profile_prefix"
 }
 
-# Add autocomplete for the function
-compctl -k "( $(awk '/^\[/ {print $1}' ~/.aws/credentials | tr -d '[]') )" rename_aws_profile
+# AWS profile completion for rename_aws_profile. Deferred: the credentials file
+# is read at completion time (compctl -K calls the function), NOT on every shell
+# startup, and a missing file is harmless.
+_aws_profile_names() {
+    reply=(${(f)"$(awk -F'[][]' '/^\[/{print $2}' "$HOME/.aws/credentials" 2>/dev/null)"})
+}
+compctl -K _aws_profile_names rename_aws_profile
 
 function tfmt(){
   local lpath="${1:-.}" # Use the first argument as the lpath, default to "." if not provided
