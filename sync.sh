@@ -122,6 +122,11 @@ run_mackup_backup() {
 #=============================================================================
 sync_git_repo() {
     local repo_dir="$1"
+    # auto_resolve=true: conflict-tolerant merge favoring THIS machine -- for
+    # backup repos (e.g. mackup) that hold binary SQLite DBs and must never
+    # wedge. Default false: rebase + abort-on-conflict, for source-of-truth
+    # repos (dotfiles) where conflicts must be surfaced, not auto-resolved.
+    local auto_resolve="${2:-false}"
     local repo_name
     repo_name=$(basename "$repo_dir")
 
@@ -160,27 +165,45 @@ sync_git_repo() {
         log "INFO: Committed local changes in $repo_name"
     fi
 
-    # Get current branch
+    # Get current branch (fallback to master -- both repos use master)
     local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "main")
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")
 
-    # Pull with rebase (stash if needed)
-    local stashed=false
-    if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-        git stash push -m "auto-stash for sync" 2>&1 | tee -a "$LOG_FILE"
-        stashed=true
-    fi
-
-    if git pull --rebase origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
-        log "INFO: Pulled latest changes for $repo_name"
-    else
-        log "WARN: Pull failed for $repo_name, aborting rebase"
-        git rebase --abort 2>/dev/null || true
-    fi
-
-    if [[ "$stashed" == "true" ]]; then
-        git stash pop 2>&1 | tee -a "$LOG_FILE" || log "WARN: Failed to pop stash"
-    fi
+    # Integrate remote changes.
+    integrate_remote() {
+        if [[ "$auto_resolve" == "true" ]]; then
+            # Backup repo: merge favoring THIS machine's just-backed-up files
+            # (-X ours). Unlike a rebase this resolves binary (SQLite) conflicts
+            # in one step and never wedges; other hosts' per-host subdirs don't
+            # conflict so they're preserved.
+            if git merge -X ours --no-edit origin/"$branch" 2>&1 | tee -a "$LOG_FILE"; then
+                log "INFO: Merged remote into $repo_name (local-wins)"
+            else
+                log "WARN: Merge conflict in $repo_name; aborting (will retry next sync)"
+                git merge --abort 2>/dev/null || true
+                return 1
+            fi
+        else
+            # Source-of-truth repo (dotfiles): rebase, but DO NOT silently
+            # resolve -- abort and surface conflicts so nothing is lost.
+            local stashed=false
+            if ! git diff-index --quiet HEAD -- 2>/dev/null; then
+                git stash push -m "auto-stash for sync" 2>&1 | tee -a "$LOG_FILE"
+                stashed=true
+            fi
+            if git pull --rebase origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
+                log "INFO: Pulled latest changes for $repo_name"
+            else
+                log "WARN: Pull failed for $repo_name (conflict?); aborting rebase -- resolve manually"
+                git rebase --abort 2>/dev/null || true
+            fi
+            if [[ "$stashed" == "true" ]]; then
+                git stash pop 2>&1 | tee -a "$LOG_FILE" || log "WARN: Failed to pop stash"
+            fi
+        fi
+        return 0   # success: don't let a falsy last command trip `set -e`
+    }
+    integrate_remote || true   # merge-abort returns 1 intentionally; keep going to push retry
 
     # Push changes with retry (handles multi-machine race conditions)
     local max_retries=3
@@ -192,17 +215,12 @@ sync_git_repo() {
             log "INFO: Pushed $repo_name to origin"
             pushed=true
             break
-        else
-            if [[ $attempt -lt $max_retries ]]; then
-                log "WARN: Push failed for $repo_name (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
-                sleep "$retry_delay"
-                git pull --rebase origin "$branch" 2>&1 | tee -a "$LOG_FILE" || {
-                    git rebase --abort 2>/dev/null || true
-                    log "WARN: Rebase failed during retry for $repo_name"
-                    break
-                }
-                retry_delay=$((retry_delay * 2))
-            fi
+        elif [[ $attempt -lt $max_retries ]]; then
+            log "WARN: Push failed for $repo_name (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
+            sleep "$retry_delay"
+            git fetch origin 2>&1 | tee -a "$LOG_FILE" || true
+            integrate_remote || break
+            retry_delay=$((retry_delay * 2))
         fi
     done
 
@@ -220,7 +238,7 @@ sync_auxiliary_repos() {
     for dir in "$SYNC_DIR"/*/; do
         [[ -d "$dir" ]] || continue
         if [[ -d "${dir}.git" ]]; then
-            sync_git_repo "$dir"
+            sync_git_repo "$dir" true   # backup repos: conflict-tolerant (never wedge)
         fi
     done
 }
