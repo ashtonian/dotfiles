@@ -10,6 +10,19 @@
 ZSH_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/zsh"
 
 #=============================================================================
+# REAL-SESSION DETECTION
+#=============================================================================
+# Distinguish a real interactive session from tool/agent shells invoked as
+# `zsh -i -c '...'` (which set ZSH_EXECUTION_STRING). Interactive-only noise
+# (greeting) and command-replacing/safety aliases are gated on this so tool
+# shells get clean, predictable behavior. See 50-aliases.zsh / 70-greeting.zsh.
+if [[ -o interactive && -z "${ZSH_EXECUTION_STRING:-}" ]]; then
+    ZSH_REAL_SESSION=1
+else
+    ZSH_REAL_SESSION=0
+fi
+
+#=============================================================================
 # LOAD MODULES (in order)
 #=============================================================================
 # 00 - Zinit initialization

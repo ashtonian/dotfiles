@@ -5,7 +5,8 @@
 #=============================================================================
 SHOW_COWSAY=true
 
-if [[ "${SHOW_COWSAY}" == "true" ]] && command -v cowsay &>/dev/null && command -v fortune &>/dev/null && command -v lolcat &>/dev/null; then
+if [[ "${SHOW_COWSAY}" == "true" && "${ZSH_REAL_SESSION:-0}" == 1 && -t 1 ]] \
+   && command -v cowsay &>/dev/null && command -v fortune &>/dev/null && command -v lolcat &>/dev/null; then
   # Built from `cowsay -l` on this system
   animals=($(cowsay -l | tail -n +2))
   animal=${animals[$RANDOM % $#animals + 1]}

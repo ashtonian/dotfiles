@@ -2,7 +2,11 @@
 
 #=============================================================================
 # BETTER DEFAULTS (only if command exists)
+# Gated to real interactive sessions so tool/agent shells (zsh -i -c) keep
+# clean builtins -- a tool calling `ls`/`cat`/`grep` gets the real command,
+# not eza/bat/ggrep with different output.
 #=============================================================================
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]]; then
 # Ping
 if command -v gping &>/dev/null; then
     alias ping='gping'
@@ -41,6 +45,7 @@ if command -v ggrep &>/dev/null; then
     alias grep='ggrep --color=auto --exclude-dir={.bzr,CVS,.git,.hg,.svn}'
     alias ogrep='command grep'
 fi
+fi  # end ZSH_REAL_SESSION gate (better defaults)
 
 #=============================================================================
 # DIRECTORY NAVIGATION
@@ -101,8 +106,13 @@ if command -v terraform &>/dev/null; then
 fi
 
 #=============================================================================
-# SAFETY
+# SAFETY (interactive only)
+# In tool/agent shells with no tty, `rm -i`/`mv -i`/`cp -i` read EOF as "no"
+# and SILENTLY skip the operation while exiting 0 -- a dangerous no-op. Gate to
+# real sessions so scripts get the plain, predictable commands.
 #=============================================================================
-alias rm='rm -i'
-alias mv='mv -i'
-alias cp='cp -i'
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]]; then
+    alias rm='rm -i'
+    alias mv='mv -i'
+    alias cp='cp -i'
+fi

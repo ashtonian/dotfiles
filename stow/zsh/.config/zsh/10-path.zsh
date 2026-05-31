@@ -1,51 +1,27 @@
-# 10-path.zsh - PATH and environment configuration
+# 10-path.zsh - Interactive language toolchain paths
+# Core PATH + env (Homebrew, Go, user bins, EDITOR/PAGER/LANG) now lives in
+# ~/.zshenv so NON-interactive shells (zsh -c, scripts, cron, tools) get it too.
+# This file only adds language paths that are interactive niceties.
 
 #=============================================================================
-# PATH CONFIGURATION
+# LANGUAGE PATHS
 #=============================================================================
-# Note: Order matters - later entries take precedence
-
-# Homebrew (must be early for other tools)
-if [[ -d "/opt/homebrew/bin" ]]; then
-    eval "$(/opt/homebrew/bin/brew shellenv)"
-elif [[ -d "/usr/local/bin" ]]; then
-    eval "$(/usr/local/bin/brew shellenv)"
-fi
-
-# Go
-export GOPATH="${GOPATH:-$HOME/go}"
-path=("$GOPATH/bin" $path)
-
-# Ruby (prefer homebrew ruby)
+# Ruby (prefer Homebrew ruby) — static paths only, no `gem environment` fork
 if [[ -d "/opt/homebrew/opt/ruby/bin" ]]; then
     path=("/opt/homebrew/opt/ruby/bin" $path)
-    path=("$(gem environment gemdir 2>/dev/null)/bin" $path)
+    path+=(/opt/homebrew/lib/ruby/gems/*/bin(N))
 elif [[ -d "/usr/local/opt/ruby/bin" ]]; then
     path=("/usr/local/opt/ruby/bin" $path)
-    path=("$(gem environment gemdir 2>/dev/null)/bin" $path)
+    path+=(/usr/local/lib/ruby/gems/*/bin(N))
 fi
 
-# Python
+# Python (Homebrew framework bin)
+[[ -d "/opt/homebrew/opt/python/libexec/bin" ]] && path=("/opt/homebrew/opt/python/libexec/bin" $path)
 [[ -d "/usr/local/opt/python/libexec/bin" ]] && path=("/usr/local/opt/python/libexec/bin" $path)
 
-# Java
+# Java (OpenJDK)
+[[ -d "/opt/homebrew/opt/openjdk/bin" ]] && path=("/opt/homebrew/opt/openjdk/bin" $path)
 [[ -d "/usr/local/opt/openjdk/bin" ]] && path=("/usr/local/opt/openjdk/bin" $path)
 
-# User bins
-path=("$HOME/bin" "$HOME/.local/bin" $path)
-
-# Deduplicate PATH
+# Deduplicate PATH (keep first occurrence)
 typeset -U path
-
-#=============================================================================
-# ENVIRONMENT VARIABLES
-#=============================================================================
-export EDITOR="${EDITOR:-vim}"
-export VISUAL="${VISUAL:-$EDITOR}"
-if command -v bat &>/dev/null; then
-    export PAGER="bat --plain"
-else
-    export PAGER="${PAGER:-less}"
-fi
-export LANG="${LANG:-en_US.UTF-8}"
-export LC_ALL="${LC_ALL:-en_US.UTF-8}"
