@@ -20,7 +20,10 @@ typeset -U path   # dedupe, keep first occurrence
 path=("$HOME/bin" "$HOME/.local/bin" "$GOPATH/bin" $path)
 
 # --- Core environment (safe in every shell) -----------------------------------
-export EDITOR="${EDITOR:-vim}"
+# Prefer nvim if installed, else vim (command -v is a builtin -- no fork).
+if [[ -z "${EDITOR:-}" ]]; then
+    if command -v nvim &>/dev/null; then export EDITOR=nvim; else export EDITOR=vim; fi
+fi
 export VISUAL="${VISUAL:-$EDITOR}"
 export PAGER="${PAGER:-less}"          # plain less; bat-as-PAGER mangles man pages
 export LANG="${LANG:-en_US.UTF-8}"     # set LANG only; never force LC_ALL

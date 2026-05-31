@@ -2,8 +2,9 @@
 # iTerm2 helper functions and integrations
 # Source this file in your .zshrc (via 60-functions.zsh)
 
-# Only run in iTerm2
-[[ "$TERM_PROGRAM" != "iTerm.app" ]] && return
+# Only load in an interactive iTerm2 session attached to a tty -- guards against
+# emitting title/badge escape sequences into piped or captured output.
+[[ "$TERM_PROGRAM" == "iTerm.app" && $- == *i* && -t 1 ]] || return
 
 #=============================================================================
 # TAB/WINDOW TITLE MANAGEMENT

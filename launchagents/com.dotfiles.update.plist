@@ -70,11 +70,10 @@ MANUAL COMMANDS:
         <integer>0</integer>
     </dict>
 
-    <!-- Run missed jobs if computer was asleep/off -->
-    <key>StartInterval</key>
-    <integer>604800</integer>
-
     <!-- Log files -->
+    <!-- (StartInterval removed: it double-triggered alongside StartCalendarInterval
+         at an unaligned 7-day offset. launchd already runs a missed calendar job
+         on wake.) -->
     <key>StandardOutPath</key>
     <string>/tmp/dotfiles-update.out</string>
 

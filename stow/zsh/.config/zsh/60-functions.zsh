@@ -23,9 +23,17 @@ export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
 #=============================================================================
 # COMPLETIONS (external tools)
 #=============================================================================
-# Helm
+# Helm completion (cached -- `helm completion zsh` is a subprocess; regenerate
+# only when the helm binary is newer than the cache, not on every startup).
 if command -v helm &>/dev/null; then
-    source <(helm completion zsh) 2>/dev/null
+    () {
+        local cache="${XDG_CACHE_HOME:-$HOME/.cache}/zsh/helm-completion.zsh"
+        if [[ ! -s "$cache" || "$(command -v helm)" -nt "$cache" ]]; then
+            mkdir -p "${cache:h}"
+            helm completion zsh >| "$cache" 2>/dev/null
+        fi
+        source "$cache"
+    }
 fi
 
 # Git extras

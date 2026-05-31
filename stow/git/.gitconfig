@@ -133,8 +133,8 @@
 	untracked = cyan
 
 [help]
-	# Automatically correct and execute mistyped commands.
-	autocorrect = 10
+	# Suggest the corrected command and ask before running it (never auto-run).
+	autocorrect = prompt
 
 # URL shorthands
 [url "git@github.com:"]

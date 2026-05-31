@@ -6,15 +6,20 @@
 # @author Adam Eivy
 ###
 
-# Colors
-ESC_SEQ="\x1b["
-COL_RESET=$ESC_SEQ"39;49;00m"
-COL_RED=$ESC_SEQ"31;01m"
-COL_GREEN=$ESC_SEQ"32;01m"
-COL_YELLOW=$ESC_SEQ"33;01m"
-COL_BLUE=$ESC_SEQ"34;01m"
-COL_MAGENTA=$ESC_SEQ"35;01m"
-COL_CYAN=$ESC_SEQ"36;01m"
+# Colors -- disabled when stdout is not a terminal (piped/redirected/captured),
+# so these helpers don't corrupt logs or command substitution with ANSI codes.
+if [[ -t 1 ]]; then
+    ESC_SEQ="\x1b["
+    COL_RESET=$ESC_SEQ"39;49;00m"
+    COL_RED=$ESC_SEQ"31;01m"
+    COL_GREEN=$ESC_SEQ"32;01m"
+    COL_YELLOW=$ESC_SEQ"33;01m"
+    COL_BLUE=$ESC_SEQ"34;01m"
+    COL_MAGENTA=$ESC_SEQ"35;01m"
+    COL_CYAN=$ESC_SEQ"36;01m"
+else
+    ESC_SEQ="" COL_RESET="" COL_RED="" COL_GREEN="" COL_YELLOW="" COL_BLUE="" COL_MAGENTA="" COL_CYAN=""
+fi
 
 # TODO: add ask -> to ask user and wrap with default
 # TODO: add always ask -> to always ask user even when with assumed run

@@ -28,6 +28,6 @@ setopt AUTO_CD              # cd by typing directory name
 setopt AUTO_PUSHD           # Push directories onto stack
 setopt PUSHD_IGNORE_DUPS    # Don't push duplicates
 setopt PUSHD_SILENT         # Don't print directory stack
-setopt CORRECT              # Command correction
+# setopt CORRECT            # disabled: disruptive "did you mean" prompts on typos
 setopt INTERACTIVE_COMMENTS # Allow comments in interactive shell
 setopt NO_BEEP              # No beeping
