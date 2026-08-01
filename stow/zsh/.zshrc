@@ -49,14 +49,55 @@ claudemore() {
   local base="${PWD##*/}"
   local host="${HOST%%.*}"
   local prefix="${base}@${host}"
-  local max=0 n
-  for f in ~/.claude/sessions/*.json(N); do
-    n=$(python3 -c "import json;d=json.load(open('$f'));name=d.get('name','');parts=name.rsplit('-',1);print(parts[1] if len(parts)==2 and parts[0]=='$prefix' and parts[1].isdigit() else '')" 2>/dev/null)
-    [[ -n "$n" && "$n" -gt "$max" ]] && max=$n
-  done
-  local name="${prefix}-$((max + 1))"
+  local sessdir="$HOME/.claude/sessions"
+  local resvdir="$sessdir/.claudemore-resv"
+  local lockfile="$sessdir/.claudemore.lock"
+  mkdir -p "$resvdir" 2>/dev/null
+  : >>"$lockfile" 2>/dev/null
+
+  # Allocate a unique "${prefix}-N" session name. Concurrent launches (a fleet of
+  # panes started together) otherwise race: each scans the session files for the
+  # current max suffix before any has written its own, so several land on the same
+  # N. Serialise the scan+pick under an flock, and record the chosen name as a
+  # reservation marker that sibling invocations also count -- that covers the
+  # window between picking the name and claude writing its <pid>.json. Markers are
+  # reaped after an hour (by then the json covers the name) and on session exit.
+  local name="" lockfd max
+  zmodload -i zsh/system 2>/dev/null
+  if zsystem flock -t 10 -f lockfd "$lockfile" 2>/dev/null; then
+    find "$resvdir" -type f -mmin +60 -delete 2>/dev/null
+    max=$(python3 -c '
+import sys, os, json, glob
+prefix, sessdir, resvdir = sys.argv[1:4]
+mx = 0
+names = []
+for f in glob.glob(os.path.join(sessdir, "*.json")):
+    try: names.append(json.load(open(f)).get("name", ""))
+    except Exception: pass
+try: names += os.listdir(resvdir)
+except Exception: pass
+for nm in names:
+    if nm and nm.startswith(prefix + "-"):
+        s = nm[len(prefix) + 1:]
+        if s.isdigit(): mx = max(mx, int(s))
+print(mx)
+' "$prefix" "$sessdir" "$resvdir" 2>/dev/null)
+    max="${max//[^0-9]/}"
+    [[ -n "$max" ]] || max=0
+    name="${prefix}-$((max + 1))"
+    command touch "$resvdir/$name" 2>/dev/null
+    zsystem flock -u $lockfd 2>/dev/null
+  else
+    # Lock unavailable after the timeout; fall back to a collision-proof,
+    # non-numeric suffix so we neither clash nor poison the counter.
+    name="${prefix}-x$$-$RANDOM"
+  fi
+
   echo "Session: ${name}"
-  claude --model 'claude-opus-4-8[1m]' --effort max --allow-dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  claude --model 'claude-opus-5[1m]' --effort max --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  local rc=$?
+  command rm -f "$resvdir/$name" 2>/dev/null
+  return $rc
 }
 
 claudeclean() {
@@ -70,3 +111,14 @@ claudeclean() {
   done
   echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
 }
+
+# Open a fleet of git-mgr workgroups in one iTerm window: one tab per workgroup,
+# one split pane per member, each pane running `claudemore`. Defaults to the
+# standard three; pass names to override (e.g. `claudefleet gox`). Add
+# `--recreate` to tear down and rebuild an existing session.
+claudefleet() {
+  local groups
+  if (( $# )); then groups=("$@"); else groups=(gox karsto estavelle); fi
+  git-mgr wg open "${groups[@]}" --cmd claudemore
+}
+[ -f ~/.corio-bench-secrets ] && source ~/.corio-bench-secrets
