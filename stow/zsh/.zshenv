@@ -27,3 +27,6 @@ fi
 export VISUAL="${VISUAL:-$EDITOR}"
 export PAGER="${PAGER:-less}"          # plain less; bat-as-PAGER mangles man pages
 export LANG="${LANG:-en_US.UTF-8}"     # set LANG only; never force LC_ALL
+
+# Go build cache on the external volume — the 50GB cache filled the root disk (2026-07-16)
+export GOCACHE=/Volumes/Work/go-build-cache
