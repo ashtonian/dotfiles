@@ -23,5 +23,9 @@ fi
 [[ -d "/opt/homebrew/opt/openjdk/bin" ]] && path=("/opt/homebrew/opt/openjdk/bin" $path)
 [[ -d "/usr/local/opt/openjdk/bin" ]] && path=("/usr/local/opt/openjdk/bin" $path)
 
+# Rust (rustup proxies; keg-only Homebrew rustup)
+[[ -d "/opt/homebrew/opt/rustup/bin" ]] && path=("/opt/homebrew/opt/rustup/bin" $path)
+[[ -d "/usr/local/opt/rustup/bin" ]] && path=("/usr/local/opt/rustup/bin" $path)
+
 # Deduplicate PATH (keep first occurrence)
 typeset -U path
