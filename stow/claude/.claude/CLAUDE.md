@@ -67,7 +67,7 @@
 
 - Structure code for the human reading it next: clear parameters, clear package boundaries, dependencies defined and passed explicitly up front, obvious call hierarchies.
 - Avoid syntactic sugar, deep nesting, and clever boolean logic. The plain version that reads top to bottom wins.
-- Use the minimum detail needed for clarity — in code, documentation, and conversation.
+- **Keep code comments minimal.** Comment WHY, never what — the code already says what. Cover the non-obvious and stop; cut narration, restatement of the next line, and hedging. This is the common failure mode: comments are routinely far too verbose. (READMEs and package docs are the exception — keep those thorough, see Documentation.)
 - **No premature abstraction.** Write generalized, reusable code only once you actually need it in more than one place. This does not weaken DRY: deduplicate *knowledge*, not code that merely looks alike.
 
 ## Greenfield Projects
@@ -89,7 +89,7 @@
 - Config tables are the source of truth. Every config value in code must appear in the table with its type, default, and description.
 - Update docs in the same PR as the code change — never as a follow-up.
 - Write for the on-call engineer debugging at 2am. Troubleshooting sections must be actionable: "check X, if Y then Z."
-- Keep comments and prose minimal — enough for a developer to understand and no more. The README section list above is a coverage requirement, not license to pad: cover each briefly. Comment WHY, never what.
+- READMEs and package docs are meant to be thorough — cover every section above properly. Brevity is not a goal here; the minimalism rule applies to code comments, not to these.
 - Never put personal reminders, asides, or working notes in documentation.
 - Full template: `~/.claude/references/doc-standards.md`
 
