@@ -45,6 +45,7 @@
 ## Your effort/time estimates are unreliable — don't weight them
 
 - **You are bad at estimating effort, time, complexity, and cost.** Your estimates are routinely wrong, and usually too high. Treat any number you produce ("a ~2-day refactor", "3× the work", "that would blow the budget") as a low-confidence guess, not a fact.
+- **Never anchor on how long a human developer would take.** "That's a two-week refactor" is a human baseline and irrelevant — you are far faster. Decide refactors and architecture on what *should* be built; elapsed time is not an input.
 - **Never let your own estimate steer a decision.** Do not down-scope, defer, or pick the lesser approach because you predicted the better one is expensive. Decide on architectural correctness and quality first — the cost estimate gets no vote.
 - If effort genuinely bears on a decision, describe what makes it big (blast radius, files touched, unknowns) instead of asserting a duration or multiplier, and label the estimate unreliable when you give one.
 
@@ -62,12 +63,25 @@
 
 # Global Coding Conventions
 
+## Simplicity & Readability
+
+- Structure code for the human reading it next: clear parameters, clear package boundaries, dependencies defined and passed explicitly up front, obvious call hierarchies.
+- Avoid syntactic sugar, deep nesting, and clever boolean logic. The plain version that reads top to bottom wins.
+- Use the minimum detail needed for clarity — in code, documentation, and conversation.
+- **No premature abstraction.** Write generalized, reusable code only once you actually need it in more than one place. This does not weaken DRY: deduplicate *knowledge*, not code that merely looks alike.
+
+## Greenfield Projects
+
+- Do not preserve old behavior or backwards compatibility unless the requirements say it matters. Ask if unsure.
+- Never write comments or tests that describe how the project used to work — no "there is no longer an X setting", no "this is unconditional rather than one branch of a choice". Describe what the code does now; removals live in git history. Delete these when you find them.
+
 ## Dependencies & Versions
 
 - When adding ANY dependency (Go modules, Docker images, GitHub Actions, Helm charts, npm packages), verify it is the **latest stable version**. Training data is often 1+ major versions behind.
 - Check the project's releases page, changelog, or registry before pinning a version.
 - After identifying the latest version, review the changelog/migration guide for breaking changes or new APIs that affect usage.
 - Report what version you used and what the latest is when adding a dependency.
+- Only pull from well-established, widely-used, trustworthy sources. Avoid unknown or low-traffic repositories.
 
 ## Documentation
 
@@ -75,6 +89,8 @@
 - Config tables are the source of truth. Every config value in code must appear in the table with its type, default, and description.
 - Update docs in the same PR as the code change — never as a follow-up.
 - Write for the on-call engineer debugging at 2am. Troubleshooting sections must be actionable: "check X, if Y then Z."
+- Keep comments and prose minimal — enough for a developer to understand and no more. The README section list above is a coverage requirement, not license to pad: cover each briefly. Comment WHY, never what.
+- Never put personal reminders, asides, or working notes in documentation.
 - Full template: `~/.claude/references/doc-standards.md`
 
 ## Configuration
@@ -105,8 +121,10 @@
 ### Style & Patterns
 
 - Prefer the **functional options pattern** (`WithX()`) when constructors have 3+ optional parameters.
-- Constructor functions accept interfaces: `func NewService(store Store, logger *slog.Logger) *Service`. Wire explicitly in `main()` — no DI containers (wire, fx, etc.).
+- Constructor functions accept interfaces: `func NewService(store Store, logger *slog.Logger) *Service`.
+- **Fat mains.** Keep dependency construction, wiring, configuration, and lifecycle explicit in `main`; keep business logic in packages. No DI containers (wire, fx), and no `App`/container/init abstraction hiding the application's structure.
 - Define interfaces where they are **consumed**, not where they are implemented.
+- Types are deliberate; interfaces usually emerge from real usage. Think through how a type will be used before writing it, but do not architect ahead of need.
 
 ### Context
 
@@ -145,6 +163,11 @@
 - Use table-driven tests with `t.Run(tt.name, ...)` when testing multiple inputs against the same logic.
 - Use `testify/assert` for assertions.
 - Tests must pass with `-race`.
+- Do not write unnecessary tests, and never test the standard library or third-party code.
+- Assert behavior, not implementation. Avoid brittle assertions coupled to source details or live data (e.g. an exact page count from a wiki).
+- Never depend on real wall-clock time — inject a clock or restructure the test.
+- No `main_test.go`. `main` is wiring and lifecycle; test behavior in the packages that own it.
+- Prefer same-package tests (`package foo`) over `package foo_test`, unless the point is to validate the public API.
 
 ### Metrics
 
