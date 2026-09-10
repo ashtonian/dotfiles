@@ -45,7 +45,9 @@ done
 # Enable Claude Code agent teams
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
-claudemore() {
+_claude_named_session() {
+  local model="$1"
+  shift
   local base="${PWD##*/}"
   local host="${HOST%%.*}"
   local prefix="${base}@${host}"
@@ -94,13 +96,25 @@ print(mx)
   fi
 
   echo "Session: ${name}"
-  claude --model 'fable[1m]' --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc
 }
 
+claudemore() {
+  _claude_named_session 'opus[1m]' "$@"
+}
+
+claudemax() {
+  _claude_named_session 'fable[1m]' "$@"
+}
+
 gptmore() {
+  codex --remote unix:// --model gpt-5.6-sol -c model_reasoning_effort=max --yolo "$@"
+}
+
+gptmax() {
   codex --remote unix:// --model gpt-6-astra -c model_reasoning_effort=max --yolo "$@"
 }
 

@@ -146,13 +146,17 @@ Interactive launchers from `stow/zsh/.zshrc`:
 
 | Command | Model | Effort | Behavior |
 |---------|-------|--------|----------|
-| `gptmore [args...]` | GPT-6 Astra | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
-| `claudemore [args...]` | Latest Fable via `fable[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |
+| `gptmore [args...]` | GPT-5.6 Sol | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
+| `gptmax [args...]` | GPT-6 Astra | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
+| `claudemore [args...]` | Latest Opus via `opus[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |
+| `claudemax [args...]` | Latest Fable via `fable[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |
 
-Both launchers forward additional arguments. `gptmore` requires the local Codex
-app server to be running on its default Unix socket. Claude's `fable` alias tracks
-the latest Fable model for your provider; the Codex model is pinned to the current
-flagship. Model and effort defaults were verified on September 9, 2026 against the
+The `more` launchers select the strongest second-tier model; the `max` launchers
+select the flagship. All four keep the second-highest listed effort level and
+forward additional arguments. Both GPT launchers require the local Codex app
+server to be running on its default Unix socket. Claude's model aliases track the
+latest model in each family for your provider; the Codex models are pinned to the
+current choices. Model and effort defaults were verified on September 10, 2026 against the
 [Codex model guide](https://learn.chatgpt.com/docs/models) and
 [Claude model configuration](https://code.claude.com/docs/en/model-config).
 
