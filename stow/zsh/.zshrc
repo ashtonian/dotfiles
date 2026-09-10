@@ -94,10 +94,14 @@ print(mx)
   fi
 
   echo "Session: ${name}"
-  claude --model 'claude-opus-5[1m]' --effort max --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  claude --model 'fable[1m]' --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc
+}
+
+gptmore() {
+  codex --remote unix:// --model gpt-6-astra -c model_reasoning_effort=max --yolo "$@"
 }
 
 claudeclean() {

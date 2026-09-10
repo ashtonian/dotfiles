@@ -140,7 +140,21 @@ export WORK_API_KEY="..."
 alias work="cd ~/work/projects"
 ```
 
-## Claude CLI Helpers
+## AI CLI Helpers
+
+Interactive launchers from `stow/zsh/.zshrc`:
+
+| Command | Model | Effort | Behavior |
+|---------|-------|--------|----------|
+| `gptmore [args...]` | GPT-6 Astra | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
+| `claudemore [args...]` | Latest Fable via `fable[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |
+
+Both launchers forward additional arguments. `gptmore` requires the local Codex
+app server to be running on its default Unix socket. Claude's `fable` alias tracks
+the latest Fable model for your provider; the Codex model is pinned to the current
+flagship. Model and effort defaults were verified on September 9, 2026 against the
+[Codex model guide](https://learn.chatgpt.com/docs/models) and
+[Claude model configuration](https://code.claude.com/docs/en/model-config).
 
 AI-assisted development workflows from `lib_sh/claude.sh`:
 
