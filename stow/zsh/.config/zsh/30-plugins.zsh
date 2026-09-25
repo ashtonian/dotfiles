@@ -87,6 +87,28 @@ zinit ice wait"0" lucid
 zinit light dracula/zsh-syntax-highlighting
 
 #=============================================================================
+# SELF-HEAL SOURCE-LESS SNIPPET CACHES
+#=============================================================================
+# An interrupted `zinit update` (or a cache cleanup) can leave a snippet dir
+# holding only its compiled *.zwc bytecode with the plain source file gone.
+# zinit sources the source file, not the .zwc, so it then prints
+# "Snippet not loaded (OMZP::...)" for that snippet on every startup. Detect
+# those dirs (a *.zwc present but no non-.zwc source file beside it) and remove
+# them so the turbo `zinit snippet` calls below re-fetch a clean copy. Mirrors
+# the completion-symlink self-heal above.
+() {
+    setopt localoptions extendedglob nullglob
+    local _sdir="${ZINIT[SNIPPETS_DIR]:-${XDG_DATA_HOME:-$HOME/.local/share}/zinit/snippets}"
+    local _d
+    for _d in "$_sdir"/OMZ(L|P)::*(/); do
+        local -a _zwc=( "$_d"/*.zwc )
+        (( ${#_zwc} )) || continue                 # no bytecode -> not this failure mode
+        local -a _src=( "$_d"/*~*.zwc(.) )         # plain (non-.zwc) source files
+        (( ${#_src} )) || command rm -rf "$_d"     # bytecode but no source -> re-fetch
+    done
+}
+
+#=============================================================================
 # OMZ LIBRARIES (cherry-picked essentials)
 #=============================================================================
 zinit ice wait"0" lucid

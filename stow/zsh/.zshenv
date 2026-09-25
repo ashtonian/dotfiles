@@ -30,3 +30,11 @@ export LANG="${LANG:-en_US.UTF-8}"     # set LANG only; never force LC_ALL
 
 # Go build cache on the external volume — the 50GB cache filled the root disk (2026-07-16)
 export GOCACHE=/Volumes/Work/go-build-cache
+
+# --- zoxide -------------------------------------------------------------------
+# Silence zoxide's init-position "doctor": oh-my-zsh loads the zoxide plugin in the
+# MIDDLE of ~/.zshrc (plugins init before any post-plugin config), so its "init at
+# the very end of the rc file" check always warns even though zoxide works fine --
+# and that warning prints on EVERY non-interactive tool shell. Set here (sourced
+# before ~/.zshrc) so it is exported before the plugin's init runs.
+export _ZO_DOCTOR=0
