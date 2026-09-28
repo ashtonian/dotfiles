@@ -1,0 +1,36 @@
+#!/bin/zsh
+#===============================================================================
+# codex-daemon - run a codex command from a fixed path (the codex LaunchAgent)
+#===============================================================================
+#
+# USAGE:
+#   codex-daemon <codex args...>     e.g. codex-daemon app-server --remote-control --listen unix://
+#
+# ONE-TIME SETUP (macOS privacy settings cannot be scripted):
+#   System Settings > Privacy & Security > Full Disk Access > "+" > Cmd+Shift+G >
+#   ~/.local/libexec/codex-stable/bin/codex   (run this script once first so it exists)
+#
+# macOS keys a command-line tool's privacy grants (Full Disk Access, Removable
+# Volumes) to the executable's path, checked against its code signature. Homebrew
+# installs each codex release under a new versioned path, so a daemon run from
+# there loses its grant on every upgrade, and its first touch of an external volume
+# raises a prompt that, unanswered, stalls other apps' access checks behind it
+# (OrbStack sat nine hours on one). The copy here keeps one path, and every release
+# is signed by the same OpenAI Developer ID, so the one grant keeps matching.
+set -euo pipefail
+
+stable=$HOME/.local/libexec/codex-stable
+src=${${:-/opt/homebrew/bin/codex}:A:h:h} # the versioned Caskroom release
+
+if [[ ! -x $stable/bin/codex ]] || ! cmp -s $src/bin/codex $stable/bin/codex; then
+	tmp=$stable.new.$$
+	rm -rf $tmp
+	cp -Rc $src $tmp # an APFS clone: same volume, no data copied
+	codesign --verify --strict $tmp/bin/codex
+	rm -rf $stable.old
+	[[ -e $stable ]] && mv $stable $stable.old
+	mv $tmp $stable
+	rm -rf $stable.old
+fi
+
+exec $stable/bin/codex "$@"

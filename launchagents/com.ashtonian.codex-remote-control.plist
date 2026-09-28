@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The local Codex app-server with remote control, on its default Unix socket: the
+  server `gptmore` / `gptmax` connect to. It runs through bin/codex-daemon so its
+  macOS privacy grants survive codex upgrades (see that script).
+  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.codex-remote-control</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/codex-daemon</string>
+        <string>app-server</string>
+        <string>--remote-control</string>
+        <string>--listen</string>
+        <string>unix://</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/CodexHomebrew/remote-control.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/CodexHomebrew/remote-control.stderr.log</string>
+</dict>
+</plist>

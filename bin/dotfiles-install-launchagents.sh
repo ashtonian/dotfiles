@@ -7,6 +7,9 @@
 #   Installs LaunchAgents for automated dotfiles management:
 #   - com.dotfiles.sync   : Syncs dotfiles every 4 hours
 #   - com.dotfiles.update : Updates brew/zinit weekly (Fridays 9 AM)
+#   - com.ashtonian.codex-remote-control : the local Codex app-server that
+#     gptmore/gptmax connect to (only when codex is installed; see bin/codex-daemon
+#     for the one-time Full Disk Access step)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -14,6 +17,7 @@
 # OPTIONS:
 #   --sync-only    Install only the sync agent
 #   --update-only  Install only the update agent
+#   --codex-only   Install only the Codex app-server agent
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -25,6 +29,7 @@ set -euo pipefail
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 LAUNCH_AGENTS_SRC="$DOTFILES_DIR/launchagents"
 LAUNCH_AGENTS_DST="$HOME/Library/LaunchAgents"
+CODEX_AGENT="com.ashtonian.codex-remote-control"
 
 # Colors
 RED='\033[0;31m'
@@ -87,12 +92,27 @@ uninstall_agent() {
     fi
 }
 
+# install_codex_agent installs the Codex app-server agent when codex is installed.
+# The agent runs bin/codex-daemon, which keeps codex at a fixed path so one Full
+# Disk Access grant survives upgrades; granting it is a manual, one-time step.
+install_codex_agent() {
+    if [[ ! -x /opt/homebrew/bin/codex ]]; then
+        log_warn "codex is not installed (brew install --cask codex); skipping $CODEX_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/CodexHomebrew" # launchd does not create log directories
+    "$DOTFILES_DIR/bin/codex-daemon" --version >/dev/null # creates ~/.local/libexec/codex-stable
+    install_agent "$CODEX_AGENT"
+    log_info "One-time: grant Full Disk Access to ~/.local/libexec/codex-stable/bin/codex"
+    log_info "  (System Settings > Privacy & Security > Full Disk Access > + > Cmd+Shift+G)"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-25s: " "$agent"
 
@@ -126,7 +146,8 @@ show_status() {
 }
 
 show_help() {
-    head -25 "$0" | tail -20 | sed 's/^# //'
+    # The header comment, from its first line to the first line that is not a comment.
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
 install_all() {
@@ -136,6 +157,7 @@ install_all() {
 
     install_agent "com.dotfiles.sync"
     install_agent "com.dotfiles.update"
+    install_codex_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -159,6 +181,7 @@ uninstall_all() {
 
     uninstall_agent "com.dotfiles.sync"
     uninstall_agent "com.dotfiles.update"
+    uninstall_agent "$CODEX_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -176,6 +199,9 @@ main() {
             ;;
         --update-only)
             install_agent "com.dotfiles.update"
+            ;;
+        --codex-only)
+            install_codex_agent
             ;;
         --uninstall)
             uninstall_all

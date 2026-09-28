@@ -31,10 +31,12 @@ Complete directory layout and explanation of the zinit-based dotfiles setup.
 │   └── claude.sh                      # Claude CLI helper functions
 │
 ├── bin/                               # Executable scripts
+│   ├── codex-daemon                   # Runs codex from a fixed path (the Codex agent)
 │   ├── dotfiles-install-launchagents.sh  # LaunchAgent installer
 │   └── dotfiles-update.sh             # Weekly update script
 │
 ├── launchagents/                      # macOS LaunchAgent definitions
+│   ├── com.ashtonian.codex-remote-control.plist  # Codex app-server (always on)
 │   ├── com.dotfiles.sync.plist        # Dotfiles sync (4 hours)
 │   └── com.dotfiles.update.plist      # System updates (Friday 9 AM)
 │
@@ -126,6 +128,41 @@ Complete directory layout and explanation of the zinit-based dotfiles setup.
 | Run at load | No |
 | Actions | brew update/upgrade, zinit update |
 | Logs | ~/.dotfiles/logs/update.log |
+
+### com.ashtonian.codex-remote-control.plist
+
+**Purpose:** The local Codex app-server with remote control, on its default Unix
+socket — the server `gptmore` / `gptmax` connect to. Installed only when codex is
+(`cask "codex"` in the Brewfile).
+
+| Setting | Value |
+|---------|-------|
+| Frequency | Always on (KeepAlive, restarted by launchd) |
+| Run at load | Yes |
+| Program | `bin/codex-daemon app-server --remote-control --listen unix://` |
+| Logs | ~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log |
+
+**Why the launcher.** A LaunchAgent does not inherit the terminal's Full Disk
+Access, and macOS keys a command-line tool's privacy grants to the executable's
+path. Homebrew installs each codex release under a new versioned path, so a daemon
+run from there lost its grant on every upgrade; its first touch of an external
+volume (E2TB) then raised a "Removable Volumes" prompt, and an unanswered prompt
+stalls other apps' access checks behind it (OrbStack waited nine hours on one).
+`bin/codex-daemon` APFS-clones the current release into
+`~/.local/libexec/codex-stable/` when it changed and execs it from there. Every
+release is signed by the same OpenAI Developer ID, so one grant keeps matching.
+
+**One-time setup, per machine** (privacy settings cannot be scripted): System
+Settings → Privacy & Security → Full Disk Access → **+** → Cmd+Shift+G →
+`~/.local/libexec/codex-stable/bin/codex`, toggled on. The installer creates that
+path first.
+
+**Troubleshooting.** Codex sessions stall on a path under `/Volumes`, or a dialog
+asks for codex to access a removable volume: check that the agent runs the stable
+copy (`ps -axo command | grep codex-stable`) and that its Full Disk Access entry is
+on. A codex upgrade takes effect the next time the daemon starts
+(`launchctl kickstart -k gui/$(id -u)/com.ashtonian.codex-remote-control`), which
+ends the sessions it is serving.
 
 ## Shell Function Libraries
 
