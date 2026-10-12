@@ -149,7 +149,7 @@ Interactive launchers from `stow/zsh/.zshrc`:
 
 | Command | Model | Effort | Behavior |
 |---------|-------|--------|----------|
-| `gptmore [args...]` | GPT-5.6 Sol | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
+| `gptmore [args...]` | GPT-6.1 Sol | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
 | `gptmax [args...]` | GPT-6 Astra | `max` (below `ultra`) | Connects to the local remote-control server and skips Codex approvals and sandboxing |
 | `claudemore [args...]` | Latest Opus via `opus[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |
 | `claudemax [args...]` | Latest Fable via `fable[1m]` | `xhigh` (below `max`) | Names the session automatically and skips Claude permission checks |

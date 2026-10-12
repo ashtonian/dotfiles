@@ -111,7 +111,7 @@ claudemax() {
 }
 
 gptmore() {
-  codex --remote unix:// --model gpt-5.6-sol -c model_reasoning_effort=max --yolo "$@"
+  codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort=max --yolo "$@"
 }
 
 gptmax() {
