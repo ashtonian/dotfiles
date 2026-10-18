@@ -1,347 +1,297 @@
 #!/usr/bin/env bash
-#
-# dotfiles-sync: Auto-sync dotfiles, app configs, and auxiliary repos
-# This script is designed to be run manually or via LaunchAgent
-#
-# Syncs:
-#   1. ~/.dotfiles (this repo)
-#   2. All git repos in ~/.sync/ (mackup, themes, etc.)
-#   3. Brewfile (installs missing shared packages, does NOT overwrite)
-#   4. App configs via mackup (copy mode, isolated per hostname)
-#
-
+# Sync dotfiles and per-host app backups; install missing shared packages.
 set -euo pipefail
+umask 077
 
-DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
+DOTFILES_DIR=$(cd "${DOTFILES_DIR:-$HOME/.dotfiles}" && pwd -P)
 SYNC_DIR="${SYNC_DIR:-$HOME/.sync}"
-LOG_DIR="${DOTFILES_DIR}/logs"
-LOG_FILE="${LOG_DIR}/sync.log"
-MAX_LOG_SIZE=1048576  # 1MB
+LOG_DIR="$DOTFILES_DIR/logs"
+LOG_FILE="$LOG_DIR/sync.log"
+MAX_LOG_SIZE=1048576
 
-# Ensure directories exist
-mkdir -p "$LOG_DIR" "$SYNC_DIR"
+log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"; }
+run_logged() { "$@" 2>&1 | tee -a "$LOG_FILE"; }
+stable_host() { scutil --get LocalHostName 2>/dev/null || hostname -s; }
 
-# Rotate log if too large (timestamped to avoid multi-machine collisions)
-if [[ -f "$LOG_FILE" ]] && [[ $(stat -f%z "$LOG_FILE" 2>/dev/null || stat --printf="%s" "$LOG_FILE" 2>/dev/null) -gt $MAX_LOG_SIZE ]]; then
-    mv "$LOG_FILE" "${LOG_FILE}.$(date +%s).old"
-fi
-# Clean up old rotated logs (keep only 3 most recent)
-for old_log in $(ls -t "${LOG_FILE}".*.old 2>/dev/null | tail -n +4); do
-    rm -f "$old_log"
-done
-
-log() {
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" | tee -a "$LOG_FILE"
-}
-
-# Stable per-machine name. `hostname -s` follows the DHCP/network name on macOS
-# and changes between networks; LocalHostName (the Bonjour name) is stable.
-stable_host() {
-    scutil --get LocalHostName 2>/dev/null || hostname -s
-}
-
-# Check if we're online
-check_connectivity() {
-    if ! curl -sf -m 5 "https://github.com" >/dev/null 2>&1; then
-        log "WARN: No network connectivity, skipping sync"
-        return 1
+acquire_lock() {
+    exec 9>>"$LOG_DIR/sync.flock" || return
+    local status=0
+    /usr/bin/lockf -s -t 0 9 || status=$?
+    if [[ $status -ne 0 ]]; then
+        exec 9>&-
+        if [[ $status -eq 75 ]]; then
+            log "INFO: Another sync is already running"
+        else
+            log "ERROR: Cannot acquire sync lock (exit $status)"
+        fi
     fi
+    return "$status"
+}
+
+rotate_logs() {
+    if [[ -f "$LOG_FILE" ]] && [[ $(stat -f%z "$LOG_FILE") -gt $MAX_LOG_SIZE ]]; then
+        mv "$LOG_FILE" "$LOG_FILE.$(date +%s).old"
+    fi
+    local file index
+    local logs=()
+    for file in "$LOG_FILE".*.old; do
+        [[ -f "$file" ]] && logs+=("$file")
+    done
+    # Epoch timestamps in generated filenames sort from oldest to newest.
+    for ((index=0; index < ${#logs[@]} - 3; index++)); do
+        rm -f -- "${logs[$index]}"
+    done
     return 0
 }
 
-# Prevent concurrent runs
-LOCK_DIR="$LOG_DIR/sync.lock"
-acquire_lock() {
-    if mkdir "$LOCK_DIR" 2>/dev/null; then
-        trap 'rmdir "$LOCK_DIR" 2>/dev/null' EXIT
-        return 0
-    else
-        log "WARN: Another sync is already running"
+check_connectivity() {
+    if ! curl -sf -m 5 https://github.com >/dev/null 2>&1; then
+        log "WARN: No network connectivity, skipping sync"
         return 1
     fi
 }
 
-#=============================================================================
-# BREWFILE SYNC
-#=============================================================================
-# Installs packages from the curated shared Brewfile (and Brewfile.local if present).
-# Does NOT overwrite the Brewfile — edit it manually to add/remove shared packages.
-# Use Brewfile.local (gitignored) for machine-specific packages.
 sync_brewfile() {
-    if command -v brew &>/dev/null; then
-        local brewfile="${DOTFILES_DIR}/Brewfile"
-        local brewfile_local="${DOTFILES_DIR}/Brewfile.local"
-
-        # Install missing packages from shared Brewfile
-        if [[ -f "$brewfile" ]]; then
-            log "INFO: Installing missing packages from shared Brewfile..."
-            brew bundle --file="$brewfile" 2>&1 | tee -a "$LOG_FILE" || {
-                log "WARN: Some shared Brewfile packages failed to install"
-            }
-        fi
-
-        # Install from machine-specific Brewfile.local if it exists
-        if [[ -f "$brewfile_local" ]]; then
-            log "INFO: Installing from Brewfile.local..."
-            brew bundle --file="$brewfile_local" 2>&1 | tee -a "$LOG_FILE" || {
-                log "WARN: Some Brewfile.local packages failed to install"
-            }
-        fi
-    else
-        log "INFO: brew not installed, skipping Brewfile sync"
-    fi
-}
-
-#=============================================================================
-# MACKUP BACKUP (copy mode, per-host isolation)
-#=============================================================================
-# Backs up to ~/.sync/mackup/<LocalHostName>/ to prevent multi-machine overwrites.
-run_mackup_backup() {
-    if command -v mackup &>/dev/null; then
-        local cfg="$HOME/.mackup.cfg"
-        local host_dir="mackup/$(stable_host)"
-
-        # Ensure host-specific backup directory exists
-        mkdir -p "$HOME/.sync/$host_dir"
-
-        # Point mackup at the host-specific directory WITHOUT editing the stowed
-        # config: ~/.mackup.cfg is a stow symlink, and `sed -i` would clobber the
-        # link and rewrite the tracked file. Swap in a temp config, restore on return.
-        if [[ -e "$cfg" ]]; then
-            local tmp_cfg orig
-            tmp_cfg="$(mktemp)"
-            sed "s|^directory = .*|directory = $host_dir|" "$cfg" > "$tmp_cfg"
-            if orig="$(readlink "$cfg" 2>/dev/null)" && [[ -n "$orig" ]]; then
-                ln -sf "$tmp_cfg" "$cfg"
-                trap "ln -sf '$orig' '$cfg'; rm -f '$tmp_cfg'; trap - RETURN" RETURN
-            else
-                cp "$cfg" "${cfg}.syncbak"; cp "$tmp_cfg" "$cfg"
-                trap "mv '${cfg}.syncbak' '$cfg'; rm -f '$tmp_cfg'; trap - RETURN" RETURN
-            fi
-        fi
-
-        log "INFO: Running mackup backup (copy mode -> $host_dir)..."
-        if mackup backup --force 2>&1 | tee -a "$LOG_FILE"; then
-            log "INFO: Mackup backup complete"
-        else
-            log "WARN: Mackup backup failed"
-        fi
-    else
-        log "INFO: mackup not installed, skipping app config backup"
-    fi
-}
-
-#=============================================================================
-# GIT REPO SYNC (generic)
-#=============================================================================
-sync_git_repo() {
-    local repo_dir="$1"
-    # auto_resolve=true: conflict-tolerant merge favoring THIS machine -- for
-    # backup repos (e.g. mackup) that hold binary SQLite DBs and must never
-    # wedge. Default false: rebase + abort-on-conflict, for source-of-truth
-    # repos (dotfiles) where conflicts must be surfaced, not auto-resolved.
-    local auto_resolve="${2:-false}"
-    local repo_name
-    repo_name=$(basename "$repo_dir")
-
-    cd "$repo_dir" || {
-        log "ERROR: Cannot cd to $repo_dir"
+    if ! command -v brew >/dev/null; then
+        log "WARN: Homebrew is not installed"
         return 1
-    }
-
-    # Ensure we're in a git repo
-    if [[ ! -d ".git" ]]; then
-        log "WARN: $repo_dir is not a git repository, skipping"
-        return 0
     fi
-
-    log "INFO: Syncing $repo_name..."
-
-    # Check if remote exists
-    if ! git remote get-url origin &>/dev/null; then
-        log "INFO: $repo_name has no remote, committing locally only"
-        # Just commit local changes
-        if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-            git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
-            git commit -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)" 2>&1 | tee -a "$LOG_FILE" || true
+    local file result=0
+    for file in "$DOTFILES_DIR/Brewfile" "$DOTFILES_DIR/Brewfile.local"; do
+        [[ -f "$file" ]] || continue
+        if HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade --file="$file" >/dev/null 2>&1; then
+            continue
         fi
-        return 0
-    fi
-
-    # Fetch latest changes
-    git fetch origin 2>&1 | tee -a "$LOG_FILE" || log "WARN: Failed to fetch $repo_name"
-
-    # Check for local changes (staged, unstaged, and untracked)
-    if ! git diff-index --quiet HEAD -- 2>/dev/null || [[ -n "$(git ls-files --others --exclude-standard)" ]]; then
-        git add -A -- ':!*.local' ':!.env*' ':!*.secret*'
-        local commit_msg="auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)"
-        git commit -m "$commit_msg" 2>&1 | tee -a "$LOG_FILE" || true
-        log "INFO: Committed local changes in $repo_name"
-    fi
-
-    # Get current branch (fallback to master -- both repos use master)
-    local branch
-    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo "master")
-
-    # Integrate remote changes.
-    integrate_remote() {
-        if [[ "$auto_resolve" == "true" ]]; then
-            # Backup repo: merge favoring THIS machine's just-backed-up files
-            # (-X ours). Unlike a rebase this resolves binary (SQLite) conflicts
-            # in one step and never wedges; other hosts' per-host subdirs don't
-            # conflict so they're preserved.
-            if git merge -X ours --no-edit origin/"$branch" 2>&1 | tee -a "$LOG_FILE"; then
-                log "INFO: Merged remote into $repo_name (local-wins)"
-            else
-                log "WARN: Merge conflict in $repo_name; aborting (will retry next sync)"
-                git merge --abort 2>/dev/null || true
-                return 1
-            fi
-        else
-            # Source-of-truth repo (dotfiles): rebase, but DO NOT silently
-            # resolve -- abort and surface conflicts so nothing is lost.
-            local stashed=false
-            if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-                git stash push -m "auto-stash for sync" 2>&1 | tee -a "$LOG_FILE"
-                stashed=true
-            fi
-            if git pull --rebase origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
-                log "INFO: Pulled latest changes for $repo_name"
-            else
-                log "WARN: Pull failed for $repo_name (conflict?); aborting rebase -- resolve manually"
-                git rebase --abort 2>/dev/null || true
-            fi
-            if [[ "$stashed" == "true" ]]; then
-                git stash pop 2>&1 | tee -a "$LOG_FILE" || log "WARN: Failed to pop stash"
-            fi
-        fi
-        return 0   # success: don't let a falsy last command trip `set -e`
-    }
-    integrate_remote || true   # merge-abort returns 1 intentionally; keep going to push retry
-
-    # Push changes with retry (handles multi-machine race conditions)
-    local max_retries=3
-    local retry_delay=30
-    local pushed=false
-
-    for attempt in $(seq 1 $max_retries); do
-        if git push origin "$branch" 2>&1 | tee -a "$LOG_FILE"; then
-            log "INFO: Pushed $repo_name to origin"
-            pushed=true
-            break
-        elif [[ $attempt -lt $max_retries ]]; then
-            log "WARN: Push failed for $repo_name (attempt $attempt/$max_retries), retrying in ${retry_delay}s..."
-            sleep "$retry_delay"
-            git fetch origin 2>&1 | tee -a "$LOG_FILE" || true
-            integrate_remote || break
-            retry_delay=$((retry_delay * 2))
+        log "INFO: Installing missing packages from ${file##*/}"
+        if ! run_logged env HOMEBREW_NO_AUTO_UPDATE=1 brew bundle install --no-upgrade --file="$file"; then
+            log "ERROR: Package installation failed for ${file##*/}"
+            result=1
         fi
     done
+    return "$result"
+}
 
-    if [[ "$pushed" != "true" ]]; then
-        log "WARN: Push failed for $repo_name after $max_retries attempts, will retry next sync"
+run_mackup_backup() (
+    if ! command -v mackup >/dev/null; then
+        log "WARN: Mackup is not installed"
+        return 1
+    fi
+    local cfg="${MACKUP_CONFIG_FILE:-$HOME/.mackup.cfg}" host_dir tmp_cfg
+    host_dir="mackup/$(stable_host)"
+    [[ -f "$cfg" ]] || { log "ERROR: Missing Mackup configuration"; return 1; }
+    tmp_cfg=$(mktemp) || return
+    trap 'rm -f -- "$tmp_cfg"' EXIT
+    mkdir -p "$SYNC_DIR/$host_dir" || return
+    python3 - "$cfg" "$tmp_cfg" "$SYNC_DIR" "$host_dir" <<'PY' || return
+import configparser, sys
+config = configparser.ConfigParser()
+config.read(sys.argv[1])
+if not config.has_section('storage'):
+    config.add_section('storage')
+config['storage'].update(engine='file_system', path=sys.argv[3], directory=sys.argv[4])
+with open(sys.argv[2], 'w') as output:
+    config.write(output)
+PY
+    log "INFO: Backing up app configs to $SYNC_DIR/$host_dir"
+    run_logged mackup --config-file="$tmp_cfg" backup --force
+)
+
+repo_idle() {
+    local state location conflicts
+    for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer BISECT_LOG; do
+        location=$(git rev-parse --git-path "$state") || return
+        if [[ -e "$location" ]]; then
+            log "ERROR: Git operation in progress ($state); leaving repository unchanged"
+            return 1
+        fi
+    done
+    conflicts=$(git ls-files -u) || return
+    if [[ -n "$conflicts" ]]; then
+        log "ERROR: Unresolved Git conflicts; leaving repository unchanged"
+        return 1
     fi
 }
 
-#=============================================================================
-# SYNC ALL REPOS IN ~/.sync/
-#=============================================================================
-sync_auxiliary_repos() {
-    log "INFO: Scanning $SYNC_DIR for git repos..."
-
-    for dir in "$SYNC_DIR"/*/; do
-        [[ -d "$dir" ]] || continue
-        if [[ -d "${dir}.git" ]]; then
-            sync_git_repo "$dir" true   # backup repos: conflict-tolerant (never wedge)
-        fi
-    done
+signing_ready() {
+    local name email key program enabled
+    name=$(git config --get user.name) || name=''
+    email=$(git config --get user.email) || email=''
+    key=$(git config --get user.signingkey) || key=''
+    program=$(git config --get gpg.program) || program='gpg'
+    enabled=$(git config --get commit.gpgsign) || enabled='unset'
+    if [[ -z "$name" || -z "$email" || -z "$key" ]] || ! command -v "$program" >/dev/null; then
+        log "ERROR: Configure Git user.name, user.email, user.signingkey and a working gpg.program before syncing"
+        return 1
+    fi
+    # Explicit -S is required even when commit.gpgsign is unset or false.
+    [[ -n "$enabled" ]]
 }
 
-#=============================================================================
-# SYNC DOTFILES REPO
-#=============================================================================
-sync_dotfiles() {
-    sync_git_repo "$DOTFILES_DIR"
+scan_dotfiles() {
+    [[ "$PWD" == "$DOTFILES_DIR" ]] || return 0
+    if ! command -v gitleaks >/dev/null; then
+        log "ERROR: Install gitleaks before automatically publishing dotfiles"
+        return 1
+    fi
+    if ! run_logged gitleaks git --no-banner --redact=100 --ignore-gitleaks-allow "$@" .; then
+        log "ERROR: Secret scan failed; no commit or push will be attempted"
+        return 1
+    fi
 }
 
-#=============================================================================
-# STOW SYMLINKS
-#=============================================================================
-run_stow() {
-    if command -v stow &>/dev/null; then
-        log "INFO: Running stow to update symlinks..."
-        cd "$DOTFILES_DIR/stow" || return
+integrate_remote() {
+    local branch="$1" auto_resolve="$2" before after remote
+    remote="refs/remotes/origin/$branch"
+    git rev-parse --verify "$remote" >/dev/null || return
+    before=$(git rev-parse HEAD) || return
+    local options=(--no-edit --gpg-sign)
+    [[ "$auto_resolve" == true ]] && options+=(-X ours)
+    if ! run_logged git merge "${options[@]}" "$remote"; then
+        log "ERROR: Remote integration failed; aborting merge and skipping push"
+        git merge --abort 2>/dev/null || true
+        return 1
+    fi
+    after=$(git rev-parse HEAD) || return
+    if [[ "$after" != "$before" && "$after" != "$(git rev-parse "$remote")" ]]; then
+        run_logged git verify-commit "$after" || return
+    fi
+}
 
-        for package in */; do
-            package="${package%/}"
-            if [[ -d "$package" ]]; then
-                stow -v -R -t "$HOME" "$package" 2>&1 | tee -a "$LOG_FILE" || {
-                    log "WARN: stow failed for package $package"
-                }
-            fi
+github_repo() {
+    local url
+    url=$(git remote get-url --push origin) || return
+    if [[ "$url" =~ ^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)([a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+)$ ]]; then
+        printf '%s\n' "${BASH_REMATCH[2]%.git}"
+    elif [[ "$url" == *github.com* ]]; then
+        log "ERROR: Cannot determine GitHub repository for signature verification" >&2
+        return 1
+    fi
+}
+
+verify_github_commits() {
+    local repo="$1" commits="$2" sha reason attempt
+    [[ -n "$repo" ]] || return 0
+    while IFS= read -r sha; do
+        [[ -n "$sha" ]] || continue
+        reason='verification unavailable'
+        for attempt in 1 2 3; do
+            reason=$(gh api "repos/$repo/commits/$sha" --jq '.commit.verification | if .verified then "verified" else .reason end') || reason='verification unavailable'
+            [[ "$reason" == verified ]] && break
+            [[ $attempt -eq 3 ]] || sleep 2
         done
-    else
-        log "INFO: stow not installed, skipping symlink update"
+        if [[ "$reason" != verified ]]; then
+            log "ERROR: GitHub commit $sha is unverified: $reason"
+            if [[ "$reason" == bad_email ]]; then
+                log "ERROR: Git user.email must match a verified email on the signing key"
+            fi
+            return 1
+        fi
+    done <<< "$commits"
+}
+
+sync_git_repo() (
+    local repo_dir="$1" auto_resolve="${2:-false}" branch changes sha commits repo attempt
+    cd "$repo_dir" || return
+    git rev-parse --git-dir >/dev/null 2>&1 || { log "WARN: Not a Git repository: $repo_dir"; return 1; }
+    repo_idle || return
+    branch=$(git symbolic-ref --quiet --short HEAD) || { log "ERROR: Detached HEAD; skipping sync"; return 1; }
+    signing_ready || return
+    log "INFO: Syncing ${repo_dir##*/}"
+
+    local has_remote=false
+    if git remote get-url origin >/dev/null 2>&1; then
+        has_remote=true
+        if [[ "$(git rev-parse --abbrev-ref --symbolic-full-name '@{upstream}' 2>/dev/null)" != "origin/$branch" ]]; then
+            log "ERROR: Set an origin tracking branch before automatic sync"
+            return 1
+        fi
+        run_logged git fetch origin || return
     fi
-}
+    changes=$(git status --porcelain) || return
+    if [[ -n "$changes" ]]; then
+        git add -A -- ':!*.local' ':!.env*' ':!*.secret*' || return
+        if ! git diff --cached --quiet; then
+            scan_dotfiles --staged || return
+            run_logged git commit -S -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)" || return
+            sha=$(git rev-parse HEAD) || return
+            run_logged git verify-commit "$sha" || return
+        fi
+    fi
+    [[ "$has_remote" == true ]] || return 0
+    if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+        log "ERROR: Excluded local changes remain; skipping merge and push"
+        return 1
+    fi
+    repo=$(github_repo) || return
+    if [[ -n "$repo" ]] && ! command -v gh >/dev/null; then
+        log "ERROR: Install gh to verify GitHub commit signatures before publishing"
+        return 1
+    fi
+    for attempt in 1 2 3; do
+        integrate_remote "$branch" "$auto_resolve" || return
+        commits=$(git rev-list "origin/$branch..HEAD") || return
+        [[ -n "$commits" ]] || return 0
+        while IFS= read -r sha; do run_logged git verify-commit "$sha" || return; done <<< "$commits"
+        scan_dotfiles "--log-opts=origin/$branch..HEAD" || return
+        if run_logged git push origin "HEAD:refs/heads/$branch"; then
+            verify_github_commits "$repo" "$commits" || return
+            log "INFO: Pushed verified commits for ${repo_dir##*/}"
+            return 0
+        fi
+        [[ $attempt -eq 3 ]] && break
+        sleep "$((attempt * 5))"
+        run_logged git fetch origin || return
+    done
+    log "ERROR: Push failed after three attempts"
+    return 1
+)
 
-#=============================================================================
-# MAIN
-#=============================================================================
+sync_auxiliary_repos() {
+    local dir result=0
+    for dir in "$SYNC_DIR"/*/; do
+        [[ -d "${dir}.git" || -f "${dir}.git" ]] || continue
+        sync_git_repo "${dir%/}" true || result=1
+    done
+    return "$result"
+}
+sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
+
+run_stow() (
+    command -v stow >/dev/null || { log "ERROR: Stow is not installed"; return 1; }
+    cd "$DOTFILES_DIR/stow" || return
+    local package result=0
+    for package in */; do
+        run_logged stow -v -R -t "$HOME" "${package%/}" || result=1
+    done
+    return "$result"
+)
+
 main() {
-    acquire_lock || exit 0
-
+    mkdir -p "$LOG_DIR" "$SYNC_DIR"
+    local status=0
+    acquire_lock || status=$?
+    [[ $status -ne 75 ]] || return 0
+    [[ $status -eq 0 ]] || return "$status"
+    rotate_logs
     case "${1:-sync}" in
-        sync)
-            check_connectivity || exit 0
-            log "========== Starting full sync =========="
-            sync_brewfile
-            run_mackup_backup
-            sync_dotfiles
-            sync_auxiliary_repos
-            log "========== Sync complete =========="
+        check) log "INFO: Sync lock is available" ;;
+        sync|all)
+            check_connectivity || return 0
+            sync_brewfile || status=1
+            run_mackup_backup || status=1
+            sync_dotfiles || status=1
+            sync_auxiliary_repos || status=1
+            if [[ ${1:-sync} == all ]]; then run_stow || status=1; fi
+            if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
-        dotfiles)
-            check_connectivity || exit 0
-            sync_dotfiles
-            ;;
-        repos)
-            check_connectivity || exit 0
-            sync_auxiliary_repos
-            ;;
-        stow)
-            run_stow
-            ;;
-        brewfile)
-            sync_brewfile
-            ;;
-        mackup)
-            run_mackup_backup
-            ;;
-        all)
-            check_connectivity || exit 0
-            log "========== Starting full sync + stow =========="
-            sync_brewfile
-            run_mackup_backup
-            sync_dotfiles
-            sync_auxiliary_repos
-            run_stow
-            log "========== Sync complete =========="
-            ;;
-        *)
-            echo "Usage: $0 {sync|dotfiles|repos|stow|brewfile|mackup|all}"
-            echo ""
-            echo "Commands:"
-            echo "  sync      - Full sync: brewfile + mackup + dotfiles + ~/.sync repos"
-            echo "  dotfiles  - Sync only ~/.dotfiles"
-            echo "  repos     - Sync only repos in ~/.sync/"
-            echo "  stow      - Run stow to update symlinks"
-            echo "  brewfile  - Install missing packages from shared Brewfile"
-            echo "  mackup    - Run mackup backup (per-host isolated)"
-            echo "  all       - Full sync + stow"
-            exit 1
-            ;;
+        dotfiles) check_connectivity || return 0; sync_dotfiles || status=$? ;;
+        repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
+        stow) run_stow || status=$? ;;
+        brewfile) sync_brewfile || status=$? ;;
+        mackup) run_mackup_backup || status=$? ;;
+        *) printf 'Usage: %s {sync|dotfiles|repos|stow|brewfile|mackup|all|check}\n' "$0"; return 1 ;;
     esac
+    return "$status"
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

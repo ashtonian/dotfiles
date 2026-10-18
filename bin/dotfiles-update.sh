@@ -41,13 +41,15 @@ mkdir -p "$LOG_DIR"
 # LOGGING
 #===============================================================================
 log() {
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
     echo "[$timestamp] $*" >> "$LOG_FILE"
-    [[ "$QUIET" == "false" ]] && echo "$*"
+    if [[ "$QUIET" == false ]]; then printf '%s\n' "$*"; fi
 }
 
 log_error() {
-    local timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
+    local timestamp
+    timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
     echo "[$timestamp] ERROR: $*" >> "$LOG_FILE"
     echo "ERROR: $*" >&2
 }
@@ -55,6 +57,18 @@ log_error() {
 #===============================================================================
 # UPDATE FUNCTIONS
 #===============================================================================
+
+run_command() {
+    if [[ "$QUIET" == true ]]; then
+        if "$@" >> "$LOG_FILE" 2>&1; then return 0; else
+            local status=$?
+            log_error "Command failed (exit $status); see $LOG_FILE"
+            return "$status"
+        fi
+    else
+        "$@" 2>&1 | tee -a "$LOG_FILE"
+    fi
+}
 
 update_brew() {
     log "=== Updating Homebrew ==="
@@ -65,16 +79,16 @@ update_brew() {
     fi
 
     log "Running brew update..."
-    brew update 2>&1 | tee -a "$LOG_FILE" || true
+    run_command brew update || return
 
     log "Running brew upgrade..."
-    brew upgrade 2>&1 | tee -a "$LOG_FILE" || true
+    run_command brew upgrade || return
 
     log "Running brew cleanup..."
-    brew cleanup --prune=7 2>&1 | tee -a "$LOG_FILE" || true
+    run_command brew cleanup --prune=7 || return
 
     log "Checking brew doctor..."
-    brew doctor 2>&1 | tee -a "$LOG_FILE" || true
+    run_command brew doctor || return
 
     log "Homebrew update complete"
 }
@@ -91,11 +105,11 @@ update_zinit() {
 
     # Update zinit itself
     log "Updating zinit core..."
-    (cd "$zinit_home" && git pull --quiet) 2>&1 | tee -a "$LOG_FILE" || true
+    run_command git -C "$zinit_home" pull --ff-only --quiet || return
 
     # Update all plugins via zsh
     log "Updating zinit plugins..."
-    zsh -ic 'zinit update --all --quiet' 2>&1 | tee -a "$LOG_FILE" || true
+    run_command zsh -ic 'zinit update --all --quiet' || return
 
     log "Zinit update complete"
 }
@@ -108,27 +122,11 @@ sync_dotfiles() {
         return 1
     fi
 
-    # Use the sync script if available
-    if [[ -x "$DOTFILES_DIR/sync.sh" ]]; then
-        "$DOTFILES_DIR/sync.sh" sync 2>&1 | tee -a "$LOG_FILE"
-    else
-        cd "$DOTFILES_DIR"
-
-        log "Fetching remote changes..."
-        git fetch origin 2>&1 | tee -a "$LOG_FILE" || true
-
-        log "Checking for local changes..."
-        if ! git diff-index --quiet HEAD -- 2>/dev/null; then
-            git add -A
-            git commit -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(hostname -s)" 2>&1 | tee -a "$LOG_FILE" || true
-        fi
-
-        log "Pulling remote changes..."
-        git pull --rebase origin "$(git rev-parse --abbrev-ref HEAD)" 2>&1 | tee -a "$LOG_FILE" || true
-
-        log "Pushing changes..."
-        git push origin "$(git rev-parse --abbrev-ref HEAD)" 2>&1 | tee -a "$LOG_FILE" || true
+    if [[ ! -x "$DOTFILES_DIR/sync.sh" ]]; then
+        log_error "Sync script is missing or not executable"
+        return 1
     fi
+    run_command "$DOTFILES_DIR/sync.sh" sync || return
 
     log "Dotfiles sync complete"
 }
@@ -138,11 +136,9 @@ update_all() {
     log "Starting full system update"
     log "======================================"
 
-    update_brew
-    echo ""
-    update_zinit
-    echo ""
-    sync_dotfiles
+    update_brew || return
+    update_zinit || return
+    sync_dotfiles || return
 
     log "======================================"
     log "Full update complete!"
@@ -153,7 +149,7 @@ update_all() {
 # HELP
 #===============================================================================
 show_help() {
-    sed -n '/^#===============================================================================/,/^#===============================================================================/p' "$0" | head -25 | tail -22 | sed 's/^# //'
+    awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
 #===============================================================================
@@ -182,4 +178,4 @@ main() {
     esac
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

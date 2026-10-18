@@ -25,6 +25,16 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
     </dict>
+    <!--
+      launchd's default soft fd limit is 256. One app-server hosts every chat, each
+      with its own node_repl MCP server, pipes and sqlite handles, so ~15 chats idle
+      near 240 fds and every new command fails with EMFILE.
+    -->
+    <key>SoftResourceLimits</key>
+    <dict>
+        <key>NumberOfFiles</key>
+        <integer>65536</integer>
+    </dict>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>

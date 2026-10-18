@@ -14,6 +14,9 @@ export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
 # Claude CLI helpers (session management, code review, docs)
 [[ -f "$DOTFILES/lib_sh/claude.sh" ]] && source "$DOTFILES/lib_sh/claude.sh"
 
+# OpenCode helpers (oc / ocweb: attach to the local OpenCode server)
+[[ -f "$DOTFILES/lib_sh/opencode.sh" ]] && source "$DOTFILES/lib_sh/opencode.sh"
+
 # iTerm2 integrations (title management, badges, Claude helpers)
 [[ -f "$DOTFILES/lib_sh/iterm2.sh" ]] && source "$DOTFILES/lib_sh/iterm2.sh"
 

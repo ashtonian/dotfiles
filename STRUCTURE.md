@@ -16,27 +16,35 @@ Complete directory layout and explanation of the zinit-based dotfiles setup.
 │   │       ├── 30-plugins.zsh         # Zinit plugin definitions (turbo)
 │   │       ├── 40-keybindings.zsh     # Key bindings
 │   │       ├── 50-aliases.zsh         # Aliases
-│   │       └── 60-functions.zsh       # External function sources
+│   │       ├── 60-functions.zsh       # External function sources
+│   │       └── 70-greeting.zsh        # Optional greeting (disabled by default)
 │   ├── git/
 │   │   └── .gitconfig                 # Git settings (includes .local)
 │   ├── ssh/
 │   │   └── .ssh/config                # SSH config template
-│   └── atuin/
-│       └── .config/atuin/config.toml  # Atuin shell history config
+│   ├── atuin/
+│   │   └── .config/atuin/config.toml  # Atuin shell history config
+│   └── opencode/                      # OpenCode coordinator (see its README.md)
+│       └── .config/opencode/          # config, coordinator agent, delegate plugin
 │
 ├── lib_sh/                            # Shell function libraries
 │   ├── echos.sh                       # Colorized output (ok, bot, running, etc.)
 │   ├── funcs.sh                       # Utility functions (server, mkd, etc.)
 │   ├── requirers.sh                   # Package requirement helpers
-│   └── claude.sh                      # Claude CLI helper functions
+│   ├── claude.sh                      # Claude CLI helper functions
+│   └── opencode.sh                    # oc / ocweb: attach to the OpenCode server
 │
 ├── bin/                               # Executable scripts
-│   ├── codex-daemon                   # Runs codex from a fixed path (the Codex agent)
+│   ├── aws-profile                    # Secure AWS profile updates and renames
+│   ├── stable-exec                    # Runs a Homebrew CLI from a fixed path (privacy grants)
+│   ├── codex-daemon                   # stable-exec codex (the Codex agent)
+│   ├── opencode-server                # The OpenCode agent's entry point
 │   ├── dotfiles-install-launchagents.sh  # LaunchAgent installer
 │   └── dotfiles-update.sh             # Weekly update script
 │
 ├── launchagents/                      # macOS LaunchAgent definitions
 │   ├── com.ashtonian.codex-remote-control.plist  # Codex app-server (always on)
+│   ├── com.ashtonian.opencode.plist   # OpenCode server (always on)
 │   ├── com.dotfiles.sync.plist        # Dotfiles sync (4 hours)
 │   └── com.dotfiles.update.plist      # System updates (Friday 9 AM)
 │
@@ -67,7 +75,7 @@ Complete directory layout and explanation of the zinit-based dotfiles setup.
 
 - History file settings (50k entries)
 - History options (dedup, share, ignore space)
-- Atuin integration (if installed)
+- Atuin history options; initialization occurs after keybindings in 40-keybindings.zsh
 
 ### 30-plugins.zsh - Zinit Plugins
 
@@ -88,7 +96,7 @@ Complete directory layout and explanation of the zinit-based dotfiles setup.
 
 - Emacs mode
 - Word navigation (Option+Arrow)
-- History search (Ctrl+R/S)
+- History search (Ctrl+R/S), with Atuin owning Ctrl+R and Up when installed; deferred FZF leaves Ctrl+R unchanged
 - Autosuggestion accept (Ctrl+F)
 
 ### 50-aliases.zsh - Aliases
@@ -140,6 +148,7 @@ socket — the server `gptmore` / `gptmax` connect to. Installed only when codex
 | Frequency | Always on (KeepAlive, restarted by launchd) |
 | Run at load | Yes |
 | Program | `bin/codex-daemon app-server --remote-control --listen unix://` |
+| Open files (soft) | 65536 (`SoftResourceLimits.NumberOfFiles`; launchd default is 256) |
 | Logs | ~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log |
 
 **Why the launcher.** A LaunchAgent does not inherit the terminal's Full Disk
@@ -148,9 +157,10 @@ path. Homebrew installs each codex release under a new versioned path, so a daem
 run from there lost its grant on every upgrade; its first touch of an external
 volume (E2TB) then raised a "Removable Volumes" prompt, and an unanswered prompt
 stalls other apps' access checks behind it (OrbStack waited nine hours on one).
-`bin/codex-daemon` APFS-clones the current release into
-`~/.local/libexec/codex-stable/` when it changed and execs it from there. Every
-release is signed by the same OpenAI Developer ID, so one grant keeps matching.
+`bin/codex-daemon` runs `bin/stable-exec codex`, which APFS-clones the current
+release into `~/.local/libexec/codex-stable/` when it changed and execs it from
+there. Every release is signed by the same OpenAI Developer ID, so one grant keeps
+matching.
 
 **One-time setup, per machine** (privacy settings cannot be scripted): System
 Settings → Privacy & Security → Full Disk Access → **+** → Cmd+Shift+G →
@@ -163,6 +173,51 @@ copy (`ps -axo command | grep codex-stable`) and that its Full Disk Access entry
 on. A codex upgrade takes effect the next time the daemon starts
 (`launchctl kickstart -k gui/$(id -u)/com.ashtonian.codex-remote-control`), which
 ends the sessions it is serving.
+
+Commands fail with `Too many open files (os error 24)` or `dup of fd N failed`, or
+skills fail to load: the daemon hit its fd limit. One app-server hosts every chat,
+and each chat runs its own `node_repl` MCP server, so ~15 chats hold ~240 fds at
+idle. Check the loaded limit with `launchctl print
+gui/$(id -u)/com.ashtonian.codex-remote-control | grep maxfiles` and current usage
+with `lsof -p <pid> | wc -l`. A plist change takes effect only after a reload
+(`dotfiles-install-launchagents.sh --codex-only`); `kickstart -k` alone keeps the
+old limits.
+
+The daemon restarts every ~15 s and gptmore sessions keep dropping: check
+`launchctl list | grep codex` for a stray job besides `codex-remote-control`. A
+job created with `launchctl submit` is KeepAlive, so a one-shot reload helper
+submitted that way reruns forever. Remove it with `launchctl remove <label>`, then
+confirm `com.ashtonian.codex-remote-control` is still loaded.
+
+### com.ashtonian.opencode.plist
+
+**Purpose:** The OpenCode server: web UI and API for the coordinator agent, which
+`oc` and browsers attach to. Installed only when opencode is installed
+(`brew "anomalyco/tap/opencode"`) and its local files exist.
+
+| Setting | Value |
+|---------|-------|
+| Frequency | Always on (KeepAlive, restarted by launchd) |
+| Run at load | Yes |
+| Program | `bin/opencode-server` → `bin/stable-exec opencode serve --hostname 0.0.0.0 --port 4096` |
+| Logs | ~/Library/Logs/opencode/server.{stdout,stderr}.log |
+
+It runs from `~/.local/libexec/opencode-stable/` for the same reason as the Codex
+agent, and needs the same one-time Full Disk Access grant, on
+`~/.local/libexec/opencode-stable/bin/opencode`. Everything else, including
+troubleshooting: [stow/opencode/README.md](stow/opencode/README.md).
+
+## Sync safety
+
+`sync.sh` uses macOS `lockf` on `logs/sync.flock`. A process exit releases the
+kernel lock; the empty file may remain. `sync.sh check` reports availability
+without syncing. Git identity and signing settings come from the repository's
+effective Git configuration. Commits and merges use explicit signing and local
+verification; GitHub publication also checks GitHub verification status.
+
+Mackup reads `MACKUP_CONFIG_FILE` (default `~/.mackup.cfg`) and receives a temporary
+configuration through `--config-file`, leaving the
+stowed `~/.mackup.cfg` link intact. Its backup path honors `SYNC_DIR`.
 
 ## Shell Function Libraries
 
@@ -184,6 +239,11 @@ Utilities:
 - `bootstrap_ssh_key` - Generate SSH keys
 - `whodat <port>` - Process using port
 - `getem <port>` - Kill process on port
+
+### lib_sh/opencode.sh
+
+- `oc` - Terminal UI on the local OpenCode server, in `$PWD`
+- `ocweb` - Open the web UI and copy its password
 
 ### lib_sh/claude.sh
 
@@ -285,7 +345,7 @@ Machine-specific Homebrew packages (gitignored). The shared `Brewfile` is curate
 
 - **Brewfile**: `sync.sh` installs from the shared Brewfile — it never overwrites it. `Brewfile.local` handles per-machine packages.
 - **Mackup**: `sync.sh` backs up to `~/.sync/mackup/<hostname>/` so each machine has isolated app config backups.
-- **Git push**: Uses retry with exponential backoff (3 attempts) to handle simultaneous pushes from multiple machines.
+- **Git push**: Uses signed merges and up to three push attempts. Gitleaks scans outgoing dotfiles, local signatures are verified, and GitHub commit verification is checked with `gh`. Unfinished Git operations and failures stop publication.
 - **Local overrides**: `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` are never tracked in git.
 
 ## Workflow
@@ -310,7 +370,7 @@ exec zsh
 
 - Edit files in `~/.dotfiles/stow/zsh/.config/zsh/`
 - Run `stow -R -t ~ zsh` to update symlinks
-- Changes auto-commit every 4 hours
+- Changes auto-commit every 4 hours with signed commits, a secret scan and Git operation guards
 
 ### Manual operations
 

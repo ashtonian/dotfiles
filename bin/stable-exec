@@ -1,0 +1,39 @@
+#!/bin/zsh
+#===============================================================================
+# stable-exec - run a Homebrew-installed CLI from a fixed path
+#===============================================================================
+#
+# USAGE:
+#   stable-exec <tool> <args...>     e.g. stable-exec opencode serve --port 4096
+#
+# ONE-TIME SETUP per tool (macOS privacy settings cannot be scripted):
+#   System Settings > Privacy & Security > Full Disk Access > "+" > Cmd+Shift+G >
+#   ~/.local/libexec/<tool>-stable/bin/<tool>   (run this script once first so it exists)
+#
+# macOS keys a command-line tool's privacy grants (Full Disk Access, Removable
+# Volumes) to the executable's path, checked against its code signature. Homebrew
+# installs each release under a new versioned path, so a daemon run from there
+# loses its grant on every upgrade, and its first touch of an external volume
+# raises a prompt that, unanswered, stalls other apps' access checks behind it
+# (OrbStack sat nine hours on one). The copy here keeps one path, and releases
+# signed by the same Developer ID keep matching the one grant.
+set -euo pipefail
+
+tool=${1:?usage: stable-exec <tool> <args...>}
+shift
+stable=$HOME/.local/libexec/$tool-stable
+src=${${:-/opt/homebrew/bin/$tool}:A:h:h} # the versioned Cellar or Caskroom release
+
+if [[ ! -x $stable/bin/$tool ]] || ! cmp -s $src/bin/$tool $stable/bin/$tool; then
+	tmp=$stable.new.$$
+	rm -rf $tmp
+	mkdir -p ${stable:h}
+	cp -Rc $src $tmp # an APFS clone: same volume, no data copied
+	codesign --verify --strict $tmp/bin/$tool
+	rm -rf $stable.old
+	[[ -e $stable ]] && mv $stable $stable.old
+	mv $tmp $stable
+	rm -rf $stable.old
+fi
+
+exec $stable/bin/$tool "$@"

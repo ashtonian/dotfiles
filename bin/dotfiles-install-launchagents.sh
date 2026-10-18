@@ -10,6 +10,8 @@
 #   - com.ashtonian.codex-remote-control : the local Codex app-server that
 #     gptmore/gptmax connect to (only when codex is installed; see bin/codex-daemon
 #     for the one-time Full Disk Access step)
+#   - com.ashtonian.opencode : the OpenCode server (web UI + API) that `oc` attaches
+#     to (only when opencode is installed; see stow/opencode/README.md)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -18,6 +20,7 @@
 #   --sync-only    Install only the sync agent
 #   --update-only  Install only the update agent
 #   --codex-only   Install only the Codex app-server agent
+#   --opencode-only  Install only the OpenCode server agent
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -30,6 +33,7 @@ DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 LAUNCH_AGENTS_SRC="$DOTFILES_DIR/launchagents"
 LAUNCH_AGENTS_DST="$HOME/Library/LaunchAgents"
 CODEX_AGENT="com.ashtonian.codex-remote-control"
+OPENCODE_AGENT="com.ashtonian.opencode"
 
 # Colors
 RED='\033[0;31m'
@@ -45,6 +49,14 @@ log_error() { echo -e "${RED}[ERROR]${NC} $*" >&2; }
 # FUNCTIONS
 #===============================================================================
 
+# agent_info prints launchd's record for a loaded agent and fails when it is not
+# loaded. Asking for the label directly avoids piping the full `launchctl list`
+# into `grep -q`, which under pipefail fails with SIGPIPE whenever the label is
+# not near the end of the list.
+agent_info() {
+    launchctl list "$1" 2>/dev/null
+}
+
 install_agent() {
     local name="$1"
     local src="$LAUNCH_AGENTS_SRC/${name}.plist"
@@ -59,7 +71,7 @@ install_agent() {
     mkdir -p "$LAUNCH_AGENTS_DST"
 
     # Unload existing agent if running
-    if launchctl list 2>/dev/null | grep -q "$name"; then
+    if agent_info "$name" >/dev/null; then
         log_info "Unloading existing $name..."
         launchctl unload "$dst" 2>/dev/null || true
     fi
@@ -107,20 +119,43 @@ install_codex_agent() {
     log_info "  (System Settings > Privacy & Security > Full Disk Access > + > Cmd+Shift+G)"
 }
 
+# install_opencode_agent installs the OpenCode server agent when opencode is
+# installed. Like codex it runs from a fixed path (bin/stable-exec), so one Full
+# Disk Access grant survives upgrades; the server's password and LLM gateway
+# credentials are local files that must exist first (stow/opencode/README.md).
+install_opencode_agent() {
+    if [[ ! -x /opt/homebrew/bin/opencode ]]; then
+        log_warn "opencode is not installed (brew install anomalyco/tap/opencode); skipping $OPENCODE_AGENT"
+        return 0
+    fi
+    if [[ ! -s "$HOME/.local/share/opencode/homelab/server-password" ]]; then
+        log_warn "$HOME/.local/share/opencode/homelab is not set up (see stow/opencode/README.md); skipping $OPENCODE_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/opencode" # launchd does not create log directories
+    "$DOTFILES_DIR/bin/stable-exec" opencode --version >/dev/null # creates ~/.local/libexec/opencode-stable
+    install_agent "$OPENCODE_AGENT"
+    log_info "One-time: grant Full Disk Access to ~/.local/libexec/opencode-stable/bin/opencode"
+    log_info "  (System Settings > Privacy & Security > Full Disk Access > + > Cmd+Shift+G)"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
-        printf "%-25s: " "$agent"
+        printf "%-36s: " "$agent"
 
         if [[ -f "$dst" ]]; then
-            if launchctl list 2>/dev/null | grep -q "$agent"; then
+            local info
+            if ! info=$(agent_info "$agent"); then
+                echo -e "${YELLOW}Installed (not loaded)${NC}"
+            elif [[ $info == *'"PID" = '* ]]; then
                 echo -e "${GREEN}Running${NC}"
             else
-                echo -e "${YELLOW}Installed (not running)${NC}"
+                echo -e "${GREEN}Loaded (idle until scheduled)${NC}"
             fi
         else
             echo -e "${RED}Not installed${NC}"
@@ -158,6 +193,7 @@ install_all() {
     install_agent "com.dotfiles.sync"
     install_agent "com.dotfiles.update"
     install_codex_agent
+    install_opencode_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -182,6 +218,7 @@ uninstall_all() {
     uninstall_agent "com.dotfiles.sync"
     uninstall_agent "com.dotfiles.update"
     uninstall_agent "$CODEX_AGENT"
+    uninstall_agent "$OPENCODE_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -202,6 +239,9 @@ main() {
             ;;
         --codex-only)
             install_codex_agent
+            ;;
+        --opencode-only)
+            install_opencode_agent
             ;;
         --uninstall)
             uninstall_all

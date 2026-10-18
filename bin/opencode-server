@@ -1,0 +1,26 @@
+#!/bin/zsh
+#===============================================================================
+# opencode-server - the OpenCode server behind the web UI and `oc`
+#===============================================================================
+#
+# USAGE:
+#   opencode-server                  (run by the com.ashtonian.opencode LaunchAgent)
+#
+# Serves the OpenCode API and web UI on $OPENCODE_HOSTNAME:$OPENCODE_PORT
+# (default 0.0.0.0:4096) behind HTTP basic auth: user `opencode`, password from
+# ~/.local/share/opencode/homelab/server-password. That directory sits outside
+# this public repo and also holds the LLM gateway URL and key opencode.jsonc reads.
+#
+# ONE-TIME SETUP: see stow/opencode/README.md.
+set -euo pipefail
+
+password_file=$HOME/.local/share/opencode/homelab/server-password
+if [[ ! -s $password_file ]]; then
+	print -u2 "opencode-server: $password_file is missing; see stow/opencode/README.md"
+	exit 78 # EX_CONFIG
+fi
+export OPENCODE_SERVER_PASSWORD=$(<$password_file)
+
+exec ${0:A:h}/stable-exec opencode serve \
+	--hostname ${OPENCODE_HOSTNAME:-0.0.0.0} \
+	--port ${OPENCODE_PORT:-4096}

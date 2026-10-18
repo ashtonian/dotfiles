@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The OpenCode server: web UI and API for the coordinator agent, which `oc` and
+  browsers attach to. Runs through bin/opencode-server (see stow/opencode/README.md).
+  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.opencode</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/opencode-server</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- claude lives in ~/.local/bin; the delegate plugin resolves workers on PATH. -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/opencode/server.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/opencode/server.stderr.log</string>
+</dict>
+</plist>

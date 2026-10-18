@@ -60,3 +60,9 @@ if [[ "$TERM_PROGRAM" == "iTerm.app" ]]; then
     # Option+Enter to insert newline without executing
     bindkey "^[^M" self-insert-unmeta
 fi
+
+# Atuin owns history keys; deferred FZF initialization must leave Ctrl+R intact.
+if command -v atuin &>/dev/null; then
+    FZF_CTRL_R_COMMAND=''
+    eval "$(atuin init zsh)"
+fi

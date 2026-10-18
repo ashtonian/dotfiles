@@ -8,6 +8,8 @@
 
 # Colors -- disabled when stdout is not a terminal (piped/redirected/captured),
 # so these helpers don't corrupt logs or command substitution with ANSI codes.
+# Color globals are also consumed by scripts sourcing this library.
+# shellcheck disable=SC2034
 if [[ -t 1 ]]; then
     ESC_SEQ="\x1b["
     COL_RESET=$ESC_SEQ"39;49;00m"
@@ -39,48 +41,42 @@ fi
 # done
 
 function ok() {
-    echo -e "$COL_GREEN[ok]$COL_RESET "$1
+    printf '%b[ok]%b %s\n' "$COL_GREEN" "$COL_RESET" "${1:-}"
 }
 
 function bot() {
-    echo -e "\n$COL_GREEN\[._.]/$COL_RESET - "$1
+    printf '\n%b[._.]/%b - %s\n' "$COL_GREEN" "$COL_RESET" "${1:-}"
 }
 
 function running() {
-    echo -en "$COL_YELLOW ⇒ $COL_RESET"$1": "
+    printf '%b ⇒ %b%s: ' "$COL_YELLOW" "$COL_RESET" "${1:-}"
 }
 
 function action() {
-    echo -e "\n$COL_YELLOW[action]:$COL_RESET\n ⇒ $1..."
+    printf '\n%b[action]:%b\n ⇒ %s...\n' "$COL_YELLOW" "$COL_RESET" "${1:-}"
 }
 
 function warn() {
-    echo -e "$COL_YELLOW[warning]$COL_RESET "$1
+    printf '%b[warning]%b %s\n' "$COL_YELLOW" "$COL_RESET" "${1:-}"
 }
 
 function error() {
-    echo -e "$COL_RED[error]$COL_RESET "$1
+    printf '%b[error]%b %s\n' "$COL_RED" "$COL_RESET" "${1:-}"
 }
 
-#    printf " [✖] %s\n" "$1"
 function print_error() {
-    echo -e "$COL_RED [x] $COL_RESET "$1
+    printf '%b [✖] %b %s\n' "$COL_RED" "$COL_RESET" "${1:-}"
 }
-# printf " [✔] %s\n" "$1"
+
 function print_success() {
-    echo -e "$COL_GREEN [✔] $COL_RESET "$1
+    printf '%b [✔] %b %s\n' "$COL_GREEN" "$COL_RESET" "${1:-}"
 }
 
 function print_result() {
-
-    if [ "$1" -eq 0 ]; then
-        print_success "$2"
+    if [[ "${1:-1}" == 0 ]]; then
+        print_success "${2:-}"
     else
-        print_error "$2"
+        print_error "${2:-}"
     fi
-
-    return "$1"
-
+    return "${1:-1}"
 }
-
-

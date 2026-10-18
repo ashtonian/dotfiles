@@ -19,7 +19,8 @@ logs/
 # (see sync.sh / launchagents). Anything tracked becomes world-readable, so keep
 # credential material and machine-local overrides OUT by default.
 *.local
-!*.local.example          # keep committed *.local.example templates
+# Keep committed local-override templates.
+!*.local.example
 .envrc
 *.pem
 *.key
@@ -48,3 +49,13 @@ secrets.*
 # gh CLI writes its oauth_token into hosts.yml on `gh auth login` -- it must
 # never land in this PUBLIC repo. Untracked; keep it local only.
 stow/gh/.config/gh/hosts.yml
+
+# OpenCode installs plugin dependencies next to its config, which stow links
+# into this repo; they are machine-local build output.
+stow/opencode/.config/opencode/node_modules/
+stow/opencode/.config/opencode/package.json
+stow/opencode/.config/opencode/package-lock.json
+stow/opencode/.config/opencode/bun.lock
+
+__pycache__/
+*.py[cod]

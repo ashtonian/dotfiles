@@ -163,10 +163,6 @@ setup_sync_dir() {
         info "Initializing mackup backup repo..."
         mkdir -p "$SYNC_DIR/mackup"
         git -C "$SYNC_DIR/mackup" init
-        # Inline identity so this doesn't abort on a fresh machine with no
-        # global git user configured yet.
-        git -C "$SYNC_DIR/mackup" -c user.name="${USER}" -c user.email="${USER}@$(hostname -s)" \
-            commit --allow-empty -m "Initial commit"
     fi
 
     success "Sync directory ready"
@@ -286,4 +282,4 @@ main() {
     echo ""
 }
 
-main "$@"
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi

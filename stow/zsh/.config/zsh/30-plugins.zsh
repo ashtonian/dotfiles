@@ -18,6 +18,7 @@ ZSH_AUTOSUGGEST_USE_ASYNC=true
 zinit light zsh-users/zsh-autosuggestions
 
 # Completions
+zinit ice atpull"zinit creinstall -q ."
 zinit light zsh-users/zsh-completions
 
 #=============================================================================
@@ -222,9 +223,3 @@ zinit snippet OMZP::web-search
 # For full shell integration, install via: iTerm2 > Install Shell Integration
 zinit ice wait"1" lucid
 zinit snippet OMZP::iterm2
-
-#=============================================================================
-# COMPLETIONS (loaded last, after compinit)
-#=============================================================================
-zinit ice wait"2" lucid blockf atpull"zinit creinstall -q ."
-zinit light zsh-users/zsh-completions

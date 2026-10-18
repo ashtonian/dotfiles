@@ -896,7 +896,7 @@ running "Show the full URL in the address bar (note: this still hides the scheme
 defaults write com.apple.Safari ShowFullURLInSmartSearchField -bool true
 ok
 
-running "Set Safari’s home page to `about:blank` for faster loading."
+running "Set Safari’s home page to about:blank for faster loading."
 defaults write com.apple.Safari HomePage -string "about:blank"
 ok
 
@@ -943,7 +943,7 @@ defaults write NSGlobalDomain WebKitDeveloperExtras -bool true
 ok
 
 running "Enable continuous spellchecking."
-defaults write com.apple.SafariWebContinuousSpellCheckingEnabled -bool true
+defaults write com.apple.Safari WebContinuousSpellCheckingEnabled -bool true
 ok
 
 running "Automatically grammar check web forms"
@@ -1544,7 +1544,6 @@ for app in "Activity Monitor" \
 	"Photos" \
 	"Safari" \
 	"SystemUIServer" \
-	"Terminal" \
 	"iCal"; do
 	killall "${app}" &> /dev/null
 done
@@ -1552,7 +1551,7 @@ done
 bot "Done. Note that some of these changes require a logout/restart to take effect."
 
 bot "Do you want me to restart?"
-read -r -p "[y/N]? " response </dev/tty || response="n"
+read -r 'response?[y/N]? ' </dev/tty || response="n"
 # Anchored, case-insensitive. The old unanchored (yes|y|Y) matched ANY reply
 # containing y (e.g. "nay"), triggering an unintended reboot.
 if [[ "${response:l}" == (y|yes) ]]; then

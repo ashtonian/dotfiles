@@ -95,8 +95,15 @@ print(mx)
     name="${prefix}-x$$-$RANDOM"
   fi
 
+  # Fleet agents (gitten / relaunch-fleet tmux sessions, all named wg-*) run with
+  # permissions bypassed; keep claude.ai connector content (mail, Drive) out of them.
+  local -a fleet_env=()
+  if [[ -n $TMUX && "$(tmux display-message -p '#S' 2>/dev/null)" == wg-* ]]; then
+    fleet_env=(ENABLE_CLAUDEAI_MCP_SERVERS=false)
+  fi
+
   echo "Session: ${name}"
-  claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" "$@"
+  env "${fleet_env[@]}" claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" --remote-control "${name}" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc
@@ -110,12 +117,13 @@ claudemax() {
   _claude_named_session 'fable[1m]' "$@"
 }
 
+# A --remote session runs in the app-server's directory (~) unless -C names one.
 gptmore() {
-  codex --remote unix:// --model gpt-6.1-sol -c model_reasoning_effort=max --yolo "$@"
+  codex --remote unix:// -C "$PWD" --model gpt-6.1-sol -c model_reasoning_effort=xhigh --yolo "$@"
 }
 
 gptmax() {
-  codex --remote unix:// --model gpt-6-astra -c model_reasoning_effort=max --yolo "$@"
+  codex --remote unix:// -C "$PWD" --model gpt-6-astra -c model_reasoning_effort=max --yolo "$@"
 }
 
 claudeclean() {
@@ -130,13 +138,13 @@ claudeclean() {
   echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
 }
 
-# Open a fleet of git-mgr workgroups in one iTerm window: one tab per workgroup,
-# one split pane per member, each pane running `claudemore`. Defaults to the
-# standard three; pass names to override (e.g. `claudefleet gox`). Add
-# `--recreate` to tear down and rebuild an existing session.
+# Open the gitten fleet `fleet` (gox, estavelle, karsto): one tab per workspace,
+# one split per agent, claudemore in each, as tmux -CC panes inside iTerm.
+# gitten flags pass through: `claudefleet --agent astra`, `--launcher iterm`,
+# `--launcher muxy`, `--fresh`. One workspace: `gitten ws open gox`.
 claudefleet() {
-  local groups
-  if (( $# )); then groups=("$@"); else groups=(gox karsto estavelle); fi
-  git-mgr wg open "${groups[@]}" --cmd claudemore
+  gitten fleet open fleet "$@"
 }
 [ -f ~/.corio-bench-secrets ] && source ~/.corio-bench-secrets
+
+(( $+functions[dotfiles_greeting] )) && dotfiles_greeting

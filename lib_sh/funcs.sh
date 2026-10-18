@@ -1,6 +1,19 @@
 #!/usr/bin/env zsh
 
-function gitnr() { mkdir $1; cd $1; git init; touch README; git add README; git commit -mFirst-commit;}
+function gitnr() {
+    if (( $# != 1 )); then
+        print -u2 'Usage: gitnr DIRECTORY'
+        return 1
+    fi
+    mkdir -- "$1" && builtin cd -- "$1" || return
+    git init || return
+    local setting
+    for setting in user.name user.email user.signingkey gpg.program commit.gpgsign; do
+        git config --get "$setting" >/dev/null || true
+    done
+    touch README && git add -- README || return
+    git commit -S -m 'First commit' && git verify-commit HEAD
+}
 
 # Do a Matrix movie effect of falling characters
 function matrix1() {
@@ -18,15 +31,15 @@ function mkd() {
 
 # Determine size of a file or total size of a directory
 function fs() {
-	if du -b /dev/null > /dev/null 2>&1; then
+	if command du -b /dev/null > /dev/null 2>&1; then
 		local arg=-sbh;
 	else
 		local arg=-sh;
 	fi
 	if [[ -n "$@" ]]; then
-		du $arg -- "$@";
+		command du $arg -- "$@";
 	else
-		du $arg .[^.]* ./*;
+		command du $arg .[^.]* ./*;
 	fi;
 }
 
@@ -179,116 +192,42 @@ bootstrap_ssh_key() {
 }
 
 function vscode_extensions_list() {
-    # Default output file
-    local output_file="vscode_extensions_list.md"
-
-    # Argument parsing
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -o|--output)
-                output_file="$2"
-                shift
-                ;;
-            -h|--help)
-                echo "Usage: vscode_extensions_list [-o output_file] [-h]"
-                echo "Generate a markdown list of installed VSCode extensions."
-                echo ""
-                echo "Options:"
-                echo "  -o, --output FILE   Set the output markdown file. Default: vscode_extensions_list.md"
-                echo "  -h, --help          Show this help message."
-                return 0
-                ;;
-            *)
-                echo "Unknown argument: $1"
-                echo "Use -h or --help for usage information."
-                return 1
-                ;;
-        esac
-        shift
-    done
-
-    # Get the list of installed extensions
-    local extensions=$(code --list-extensions)
-
-    # Create a markdown file
-
-
-    echo "Markdown list created in $output_file"
-}
-
-function vscode_list_md() {
-    # Default output file
-    local output_file="vscode.md"
-    local output_stream=true
-
-    # Parse arguments
-    while [[ $# -gt 0 ]]; do
-        case $1 in
-            -o|--output)
-              if [[ -n "$2" && $2 != -* ]]; then
-                output_stream=false
-                output_file="$2"
-                shift 2
-              else
-                shift
-              fi
-              ;;
-            -h|--help)
-            echo "Usage: vscode_extensions_list [-o output_file] [-h]"
-            echo "Generate a markdown list of installed VSCode extensions."
-            echo ""
-            echo "Options:"
-            echo "  -o, --output FILE   Set the output markdown file. Default: vscode.md"
-            echo "  -h, --help          Show this help message."
-            return 0
-            ;;
-            *)
-            echo "Unknown argument: $1"
-            echo "Use -h or --help for usage information."
-            return 1
-            ;;
-        esac
-    done
-
-    if ! $output_stream; then
-      exec 3>&1
-      exec 1> "$output_file"
+    if (( $# == 0 )); then
+        vscode_list_md -o vscode_extensions_list.md
+    else
+        vscode_list_md "$@"
     fi
-
-    # Get the list of installed extensions
-    local extensions=$(code --list-extensions)
-
-    # Create a markdown file
-    echo "## VSCode Extensions List" > $output_file
-
-   # Loop through the extensions and generate the markdown list
-    for extension in ${(f)extensions}; do
-        # Separate publisher and extension name
-        local publisher_name=$(echo $extension | cut -d. -f1)
-        local extension_name=$(echo $extension | cut -d. -f2)
-
-        # Construct the API URL
-        local api_url="https://marketplace.visualstudio.com/_apis/public/gallery/publishers/$publisher_name/extensions/$extension_name/latest"
-
-        # Get extension details from the Visual Studio Code Marketplace API#api-version=3.0-preview.1")
-        local details_json=$(curl -s "$api_url" -H "Accept: application/json;")
-
-        # Extract name, publisher, link, and description
-        local name=$(jq -r '.displayName' <<< "$details_json")
-        local publisher=$(jq -r '.publisher.displayName' <<< "$details_json")
-        local link="https://marketplace.visualstudio.com/items?itemName=$extension"
-        local description=$(jq -r '.shortDescription' <<< "$details_json")
-
-        # Create a markdown list entry
-        local entry="- [$name by $publisher]($link): $description"
-
-        # Append the entry to the output file
-        echo $entry >> $output_file
-    done
-
-    echo "Markdown list created in $output_file"
 }
 
+function vscode_list_md() (
+    local output_file='' extensions extension publisher name details display description
+    while (( $# )); do
+        case "$1" in
+            -o|--output)
+                if (( $# < 2 )) || [[ -z "$2" || "$2" == -* ]]; then
+                    print -u2 'An output filename is required.'
+                    return 1
+                fi
+                output_file="$2"; shift 2 ;;
+            -h|--help) print 'Usage: vscode_list_md [-o FILE]'; return 0 ;;
+            *) print -u2 "Unknown argument: $1"; return 1 ;;
+        esac
+    done
+    extensions=$(code --list-extensions) || return
+    [[ -z "$output_file" ]] || exec > "$output_file"
+    print '## VSCode Extensions List'
+    print
+    for extension in ${(f)extensions}; do
+        [[ -n "$extension" ]] || continue
+        publisher="${extension%%.*}"; name="${extension#*.}"
+        display="$extension"; description=''
+        if details=$(curl -fsS --max-time 10 "https://marketplace.visualstudio.com/_apis/public/gallery/publishers/$publisher/extensions/$name/latest" -H 'Accept: application/json' 2>/dev/null); then
+            display=$(print -r -- "$details" | jq -r --arg fallback "$extension" '.displayName // $fallback' 2>/dev/null) || display="$extension"
+            description=$(print -r -- "$details" | jq -r '.shortDescription // ""' 2>/dev/null) || description=''
+        fi
+        printf -- '- [%s](https://marketplace.visualstudio.com/items?itemName=%s)%s\n' "$display" "$extension" "${description:+: $description}"
+    done
+)
 
 function open_chrome_extensions() {
   local usage="Usage: open_chrome_extensions [extension_id1] [extension_id2] ..."
@@ -311,7 +250,7 @@ function open_chrome_extensions() {
 }
 
 
-function chrome_list_ext_md() {
+function chrome_list_ext_md() (
   local usage="Usage: chrome_list_ext_md [-o output_file] [--ids-only] [--browser browser_name]
 
 Description: This function exports a list of installed Chrome, Brave, or Vivaldi extensions, with the option to output just the extension IDs.
@@ -333,6 +272,7 @@ Options:
       -o)
         if [[ -n "$2" && $2 != -* ]]; then
           output_file="$2"
+          output_stream=false
           shift 2
         else
           shift
@@ -396,7 +336,6 @@ Options:
   fi
 
   if ! $output_stream; then
-    exec 3>&1
     exec 1> "$output_file"
   fi
 
@@ -411,7 +350,7 @@ Options:
       if $ids_only; then
         echo "$extension_id"
       else
-        local manifest_content="$(cat "$manifest_path")"
+        local manifest_content="$(command cat "$manifest_path")"
         local name=$(jq -r '.name' <<< "$manifest_content")
         if [[ "$name" == "null" || "${name:0:2}" == "__" ]]; then
           name=$(jq -r '.short_name' <<< "$manifest_content")
@@ -435,10 +374,10 @@ Options:
       fi
     fi
   done
-}
+)
 
 
-function brew_list_md() {
+function brew_list_md() (
   local output_stream=true
   local output_file="brew.md"
   local show_dependencies=false
@@ -462,6 +401,7 @@ function brew_list_md() {
       -o)
         if [[ -n "$2" && $2 != -* ]]; then
           output_file="$2"
+          output_stream=false
           shift 2
         else
           shift
@@ -485,7 +425,6 @@ function brew_list_md() {
   done
 
   if ! $output_stream; then
-    exec 3>&1
     exec 1> "$output_file"
   fi
 
@@ -572,9 +511,9 @@ function brew_list_md() {
       fi
     done
   fi
-}
+)
 
-function mas_list_md() {
+function mas_list_md() (
   output_stream=true
   output_file="mas.md"
 
@@ -583,6 +522,7 @@ function mas_list_md() {
       -o)
         if [[ -n "$2" && $2 != -* ]]; then
           output_file="$2"
+          output_stream=false
           shift 2
         else
           shift
@@ -603,7 +543,6 @@ function mas_list_md() {
   done
 
   if ! $output_stream; then
-    exec 3>&1
     exec 1> "$output_file"
   fi
 
@@ -619,7 +558,7 @@ function mas_list_md() {
 
     echo "- $app_name - [$app_id]($app_store_url)"
   done
-}
+)
 
 function flush_dns(){
   sudo dscacheutil -flushcache
@@ -639,64 +578,22 @@ function tf_destroy_apply(){
 }
 
 function rename_aws_profile() {
-    if [[ "$1" == "-h" || "$1" == "--help" || $# -ne 2 ]]; then
-        echo "Usage: rename_aws_profile <old_profile_name> <new_profile_name>"
-        echo "Renames an AWS profile in both the credentials and config files."
-        return
+    if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
+        print 'Usage: rename_aws_profile OLD_PROFILE NEW_PROFILE'
+        return 0
     fi
-
-    local old_profile_name="$1"
-    local new_profile_name="$2"
-    local credentials_file="$HOME/.aws/credentials"
-    local config_file="$HOME/.aws/config"
-    local profile_prefix="profile "
-
-    # Function to check if a file contains a profile
-    profile_exists() {
-        grep -q "^\[$profile_prefix$1\]" "$2" || [[ "$1" == "default" ]] && grep -q "^\[$1\]" "$2"
-    }
-
-    # Function to rename a profile in a file
-    rename_in_file() {
-        local file_path=$1
-        local old_name=$2
-        local new_name=$3
-        local prefix=$4
-
-        if profile_exists "$old_name" "$file_path"; then
-            # BSD sed version (as used in macOS)
-            # sed -i '' "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path"
-
-            # GNU sed version (uncomment the line below if using Linux)
-            # sed -i "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path"
-
-            # Automatic detection of sed version for macOS or Linux
-            sed -i.bak "s/^\[$prefix$old_name\]/\[$prefix$new_name\]/" "$file_path" && rm -- "$file_path.bak"
-
-            echo "Renamed profile from $old_name to $new_name in $file_path"
-        else
-            echo "Profile $old_name not found in $file_path."
-            return 1
-        fi
-    }
-
-    # Rename in credentials file
-    rename_in_file "$credentials_file" "$old_profile_name" "$new_profile_name" ""
-
-    # Rename in config file, handle non-default profiles
-    if [[ "$old_profile_name" != "default" ]]; then
-        old_profile_name="$profile_prefix$old_profile_name"
-        new_profile_name="$profile_prefix$new_profile_name"
+    if (( $# != 2 )); then
+        print -u2 'Usage: rename_aws_profile OLD_PROFILE NEW_PROFILE'
+        return 1
     fi
-
-    rename_in_file "$config_file" "$old_profile_name" "$new_profile_name" "$profile_prefix"
+    python3 "${DOTFILES:-$HOME/.dotfiles}/bin/aws-profile" rename "$1" "$2"
 }
 
 # AWS profile completion for rename_aws_profile. Deferred: the credentials file
 # is read at completion time (compctl -K calls the function), NOT on every shell
 # startup, and a missing file is harmless.
 _aws_profile_names() {
-    reply=(${(f)"$(awk -F'[][]' '/^\[/{print $2}' "$HOME/.aws/credentials" 2>/dev/null)"})
+    reply=(${(f)"$(awk -F'[][]' '/^\[/{print $2}' "${AWS_SHARED_CREDENTIALS_FILE:-$HOME/.aws/credentials}" 2>/dev/null)"})
 }
 compctl -K _aws_profile_names rename_aws_profile
 
@@ -707,10 +604,10 @@ function tfmt(){
 
 # duplicated from ./funcs.sh not sure h
 function action() {
-    echo -e "\n$COL_YELLOW[action]:$COL_RESET\n ⇒ $1..."
+    echo -e "\n${COL_YELLOW}[action]:$COL_RESET\n ⇒ $1..."
 }
 function ok() {
-    echo -e "$COL_GREEN[ok]$COL_RESET "$1
+    echo -e "${COL_GREEN}[ok]$COL_RESET "$1
 }
 function bot() {
     echo -e "\n$COL_GREEN\[._.]/$COL_RESET - "$1
@@ -957,7 +854,12 @@ EOF
     tmp_pub_key="$chosen_key_file"
   fi
 
-  gh auth refresh --scopes "admin:public_key,admin:ssh_signing_key"
+  local exit_code=0
+  gh auth refresh --scopes "admin:public_key,admin:ssh_signing_key" || exit_code=$?
+  if (( exit_code )); then
+    $is_private && command rm -f -- "$tmp_pub_key"
+    return "$exit_code"
+  fi
   # Map user type "access" -> gh --type "authentication"
   #                "codesigning" -> gh --type "signing"
   local gh_type="authentication"
@@ -968,11 +870,9 @@ EOF
   # Use gh CLI to upload
   echo "Uploading key '$chosen_key_file' as '$key_name' ($gh_type) to GitHub..."
   gh ssh-key add "$tmp_pub_key" --title "$key_name" --type "$gh_type"
-  local exit_code=$?
-
-  # Clean up if we generated a temp pubkey
-  if [[ -f "$tmp_pub_key" ]]; then
-    rm -f "$tmp_pub_key"
+  exit_code=$?
+  if $is_private; then
+    command rm -f -- "$tmp_pub_key"
   fi
 
   if [[ $exit_code -eq 0 ]]; then
@@ -986,68 +886,58 @@ EOF
 
 
 
-function install_brewfiles() {
-    if [[ "$1" == "--help" ]]; then
-        echo "Usage: install_brewfiles [options]"
-        echo "Options:"
-        echo "  --help          Show this help message"
-        echo "  all             Install all Brewfiles"
-        echo "  none            Do nothing"
-        echo "  1 2 3...        Install Brewfiles by their listed numbers"
-        echo "  1-3,5           Install a range of Brewfiles and/or specific ones"
-        return 0
-    fi
-
+function install_brewfiles() (
     setopt localoptions nullglob nocaseglob
-
-    local brewfiles=("${(@f)$(ls Brewfile-*(.))}")
-    if [[ ${#brewfiles[@]} -eq 0 ]]; then
-        echo "No Brewfiles found."
+    local -a brewfiles=(Brewfile-*(.)) selection parts
+    local input part first last index file
+    if [[ "${1:-}" == --help ]]; then
+        print 'Usage: install_brewfiles [all|none|1,2|1-3]'
         return 0
     fi
-
-    echo "Available Brewfiles:"
-    for i in {1..${#brewfiles[@]}}; do
-        echo "$i. ${brewfiles[$i]#Brewfile-}"
+    if (( ! ${#brewfiles} )); then
+        print 'No Brewfiles found.'
+        return 0
+    fi
+    if (( $# )); then
+        input="$*"
+    else
+        for (( index=1; index <= ${#brewfiles}; index++ )); do
+            printf '%d. %s\n' "$index" "${brewfiles[$index]}"
+        done
+        read -r 'input?Select Brewfiles (1,2; 1-3; all; none): ' || return 1
+    fi
+    case "$input" in
+        all) selection=("${brewfiles[@]}") ;;
+        none) return 0 ;;
+        *)
+            parts=(${=input//,/ })
+            for part in "${parts[@]}"; do
+                if [[ "$part" == <-> ]]; then
+                    first=$((10#$part)); last=$first
+                elif [[ "$part" == <->-<-> ]]; then
+                    first=$((10#${part%-*})); last=$((10#${part#*-}))
+                else
+                    print -u2 "Invalid selection: $part"; return 1
+                fi
+                if (( first < 1 || last < first || last > ${#brewfiles} )); then
+                    print -u2 "Selection is out of range: $part"; return 1
+                fi
+                for (( index=first; index <= last; index++ )); do
+                    selection+=("${brewfiles[$index]}")
+                done
+            done ;;
+    esac
+    (( ${#selection} )) || return 1
+    typeset -U selection
+    local combined
+    combined=$(mktemp "${TMPDIR:-/tmp}/dotfiles-brewfile.XXXXXX") || return
+    trap 'command rm -f -- "$combined"' EXIT
+    for file in "${selection[@]}"; do
+        command cat -- "$file" >> "$combined" || return
+        print >> "$combined"
     done
-
-    echo "Select Brewfiles to install (e.g., 1 2, 3-4, all): "
-    read input
-
-    # Initialize selection array properly
-    typeset -a selection
-
-    if [[ "$input" == "all" ]]; then
-        selection=("${brewfiles[@]}")
-    elif [[ "$input" == "none" ]]; then
-        echo "No Brewfiles selected for installation."
-        return 0
-    else
-        IFS=', ' read -r -a parts <<< "$input"
-        for part in "${parts[@]}"; do
-            if [[ $part == *-* ]]; then
-                IFS='-' read -r start end <<< "$part"
-                selection+=("${brewfiles[@]:$((start - 1)):$((end - start + 1))}")
-            else
-                selection+=("${brewfiles[$((part - 1))]}")
-            fi
-        done
-    fi
-
-    if (( ${#selection[@]} > 0 )); then
-        echo "Combining selected Brewfiles for installation..."
-        : >| brewfile-installed
-        for file in "${selection[@]}"; do
-            cat "$file" >> brewfile-installed
-        done
-
-        echo "Installing combined Brewfile..."
-        brew bundle --file=brewfile-installed
-    else
-        echo "No valid selection made."
-    fi
-}
-
+    brew bundle install --no-upgrade --file="$combined"
+)
 
 function whodat() {
     if [[ $1 == "help" ]]; then
@@ -1107,71 +997,20 @@ function getem() {
 }
 
 function assume_role() {
-    # Help option
-    if [[ "$1" == "--help" ]]; then
-        echo "Usage: assume_role [ROLE_ARN] [SESSION_NAME] [PROFILE_NAME] [OPTIONAL_REGION]"
-        echo "Assume an AWS IAM role and upsert temporary credentials into the AWS credentials file under a specified profile name."
+    if [[ "${1:-}" == --help ]]; then
+        print 'Usage: assume_role ROLE_ARN SESSION_NAME PROFILE_NAME [REGION]'
         return 0
     fi
-
-    # Check for proper number of arguments
-    if [[ $# -lt 3 ]]; then
-        echo "Error: Missing arguments."
-        echo "Usage: assume_role [ROLE_ARN] [SESSION_NAME] [PROFILE_NAME] [OPTIONAL_REGION]"
+    if (( $# < 3 || $# > 4 )); then
+        print -u2 'Usage: assume_role ROLE_ARN SESSION_NAME PROFILE_NAME [REGION]'
         return 1
     fi
-
-    # Assign arguments
-    local ROLE_ARN="$1"
-    local SESSION_NAME="$2"
-    local PROFILE_NAME="$3"
-    local REGION="${4:-us-east-1}" # Default to us-east-1 if no region is specified
-    local CREDENTIALS_FILE="$HOME/.aws/credentials"
-
-    # Assume role and capture output
-    local OUTPUT=$(aws sts assume-role --role-arn "$ROLE_ARN" --role-session-name "$SESSION_NAME")
-    if [[ $? -ne 0 ]]; then
-        echo "Error assuming role."
+    local output
+    if ! output=$(aws sts assume-role --role-arn "$1" --role-session-name "$2" --output json); then
+        print -u2 'Error assuming role; credentials were not changed.'
         return 1
     fi
-
-    print $OUTPUT
-
-    # Extract credentials using jq
-    local AWS_ACCESS_KEY_ID=$(echo "$OUTPUT" | jq -r '.Credentials.AccessKeyId')
-    local AWS_SECRET_ACCESS_KEY=$(echo "$OUTPUT" | jq -r '.Credentials.SecretAccessKey')
-    local AWS_SESSION_TOKEN=$(echo "$OUTPUT" | jq -r '.Credentials.SessionToken')
-    local TOKEN_EXPIRATION=$(echo "$OUTPUT" | jq -r '.Credentials.Expiration') # Extract token expiration
-
-    # Validate that credentials are not empty
-    if [[ -z "$AWS_ACCESS_KEY_ID" || -z "$AWS_SECRET_ACCESS_KEY" || -z "$AWS_SESSION_TOKEN" ]]; then
-        echo "Error: Credentials received are incomplete."
-        return 1
-    fi
-
-    # Prepare the new profile contents
-    local NEW_PROFILE="[${PROFILE_NAME}]\naws_access_key_id = ${AWS_ACCESS_KEY_ID}\naws_secret_access_key = ${AWS_SECRET_ACCESS_KEY}\naws_session_token = ${AWS_SESSION_TOKEN}\nregion = ${REGION}\nx_security_token_expires = ${TOKEN_EXPIRATION}\n"
-
-    # Check if profile exists
-    if grep -q "\[${PROFILE_NAME}\]" "$CREDENTIALS_FILE"; then
-        # Profile exists, update it
-        awk -v profile="[$PROFILE_NAME]" -v replacement="$NEW_PROFILE" '
-        BEGIN {replaced=0; print_entry=1}
-        /^\[.*\]/ {if ($0 == profile) {print_entry=0; replaced=1; print replacement} else if (!print_entry) {print_entry=1}}
-        print_entry {print}
-        END {if (!replaced) {print replacement}}
-        ' "$CREDENTIALS_FILE" > tmp$$ && mv tmp$$ "$CREDENTIALS_FILE"
-    else
-        # Profile does not exist, append it
-        echo -e "\n$NEW_PROFILE" >> "$CREDENTIALS_FILE"
-    fi
-
-    if [[ $? -eq 0 ]]; then
-        echo "Profile $PROFILE_NAME updated successfully."
-    else
-        echo "Error updating the profile."
-        return 1
-    fi
+    print -r -- "$output" | python3 "${DOTFILES:-$HOME/.dotfiles}/bin/aws-profile" assume "$3" "${4:-us-east-1}"
 }
 
 function run_on_servers() {

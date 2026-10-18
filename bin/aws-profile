@@ -1,0 +1,138 @@
+#!/usr/bin/env python3
+"""Update AWS profile files without exposing credentials or weakening permissions."""
+import configparser
+import contextlib
+import fcntl
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+
+
+class ProfileError(Exception):
+    pass
+
+
+def profile_name(value):
+    if not value or value != value.strip() or any(c in value for c in '[]\r\n\0'):
+        raise ProfileError('Invalid AWS profile name')
+    return value
+
+
+def read_config(path):
+    text = path.read_text() if path.exists() else ''
+    parser = configparser.ConfigParser(interpolation=None)
+    parser.read_string(text)
+    return text, parser
+
+
+def atomic_write(path, text):
+    fd, temporary = tempfile.mkstemp(prefix='.' + path.name + '.', dir=path.parent)
+    try:
+        with os.fdopen(fd, 'w') as output:
+            os.fchmod(output.fileno(), 0o600)
+            output.write(text)
+            output.flush()
+            os.fsync(output.fileno())
+        os.replace(temporary, path)
+    finally:
+        if os.path.exists(temporary):
+            os.unlink(temporary)
+
+
+@contextlib.contextmanager
+def locked(paths):
+    with contextlib.ExitStack() as stack:
+        for path in sorted(set(paths)):
+            path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            fd = os.open(path.with_name('.' + path.name + '.lock'), os.O_CREAT | os.O_RDWR, 0o600)
+            lock = stack.enter_context(os.fdopen(fd, 'a+'))
+            os.fchmod(fd, 0o600)
+            fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def replace_section(text, name, replacement):
+    pattern = r'(?ms)^[ \t]*\[' + re.escape(name) + r'\][^\r\n]*(?:\r?\n|\Z).*?(?=^[ \t]*\[|\Z)'
+    updated, count = re.subn(pattern, lambda _: replacement, text)
+    if count:
+        return updated
+    return text.rstrip() + ('\n\n' if text.strip() else '') + replacement
+
+
+def assume(path, name, region):
+    name = profile_name(name)
+    if not region or any(c in region for c in '\r\n\0'):
+        raise ProfileError('Invalid AWS region')
+    credentials = json.load(sys.stdin).get('Credentials', {})
+    keys = {'aws_access_key_id': 'AccessKeyId', 'aws_secret_access_key': 'SecretAccessKey',
+            'aws_session_token': 'SessionToken', 'x_security_token_expires': 'Expiration'}
+    values = {key: credentials.get(field) for key, field in keys.items()}
+    if any(not isinstance(v, str) or not v or v == 'null' or any(c in v for c in '\r\n\0')
+           for v in values.values()):
+        raise ProfileError('AWS returned incomplete credentials; profile was not changed')
+    values['region'] = region
+    section = '[' + name + ']\n' + ''.join(key + ' = ' + value + '\n' for key, value in values.items())
+    with locked([path]):
+        text, _ = read_config(path)
+        atomic_write(path, replace_section(text, name, section))
+    print('Profile ' + name + ' updated successfully.')
+
+
+def rename(credentials, config, old, new):
+    old, new = profile_name(old), profile_name(new)
+    if old == new:
+        raise ProfileError('Old and new profile names must differ')
+    paths = [credentials, config]
+    with locked(paths):
+        updates = []
+        for path in paths:
+            text, parser = read_config(path)
+            source = old if path == credentials or old == 'default' else 'profile ' + old
+            target = new if path == credentials or new == 'default' else 'profile ' + new
+            if parser.has_section(target):
+                raise ProfileError('Destination profile already exists; no files were changed')
+            if parser.has_section(source):
+                pattern = r'(?m)^([ \t]*)\[' + re.escape(source) + r'\]'
+                updated = re.sub(pattern, lambda match: match.group(1) + '[' + target + ']', text)
+                updates.append((path, text, updated))
+        if not updates:
+            raise ProfileError('Source profile was not found; no files were changed')
+        written = []
+        try:
+            for path, original, updated in updates:
+                atomic_write(path, updated)
+                written.append((path, original))
+        except OSError:
+            for path, original in written:
+                atomic_write(path, original)
+            raise
+    print('Renamed profile ' + old + ' to ' + new + '.')
+
+
+def main():
+    credentials = Path(os.environ.get('AWS_SHARED_CREDENTIALS_FILE', '~/.aws/credentials')).expanduser().resolve()
+    config = Path(os.environ.get('AWS_CONFIG_FILE', '~/.aws/config')).expanduser().resolve()
+    args = sys.argv[1:]
+    if len(args) == 3 and args[0] == 'assume':
+        assume(credentials, args[1], args[2])
+    elif len(args) == 3 and args[0] == 'rename':
+        if credentials == config:
+            raise ProfileError('AWS config and credentials must be separate files')
+        rename(credentials, config, args[1], args[2])
+    else:
+        raise ProfileError('Usage: aws-profile {assume PROFILE REGION|rename OLD NEW}')
+
+
+if __name__ == '__main__':
+    try:
+        main()
+    except ProfileError as error:
+        print('aws-profile: ' + str(error), file=sys.stderr)
+        sys.exit(1)
+    except (OSError, ValueError, configparser.Error, TypeError, AttributeError):
+        # Parser and IO exceptions can contain credential data or entire input lines.
+        print('aws-profile: operation failed; check the profile names, AWS response and file access.', file=sys.stderr)
+        sys.exit(1)
