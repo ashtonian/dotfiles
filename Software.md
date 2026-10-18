@@ -1,6 +1,9 @@
 # Software
 
-This is a list of software I use.
+Historical software, extension, and terminal notes. These entries are not a
+current installation guide or a list of maintained recommendations; old links
+and package names may no longer resolve. Use the [Brewfile](Brewfile) for the
+shared package selection and the [README](README.md) for supported setup.
 
 ## OSX
 
@@ -32,7 +35,6 @@ see Brewfile
 * [wayou.vscode-todo-highlight](https://marketplace.visualstudio.com/items?itemName=wayou.vscode-todo-highlight)
 * [yzhang.markdown-all-in-one](https://marketplace.visualstudio.com/items?itemName=yzhang.markdown-all-in-one)
 * [zxh404.vscode-proto3](https://marketplace.visualstudio.com/items?itemName=zxh404.vscode-proto3)
-
 
 ## Web Extensions
 
@@ -94,9 +96,9 @@ see Brewfile
 
 * [adguard for safari](https://apps.apple.com/us/app/adguard-for-safari/id1440147259?mt=12)
 * [vimari](https://github.com/televator-apps/vimari)
-* [1password extension ()]()
+* 1Password extension (historical entry; no link recorded)
 
-## Alfred Workflows:
+## Alfred Workflows
 
 Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 
@@ -132,13 +134,7 @@ Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 * add <kbd>⌘</kbd><kbd>z</kbd> | Action: Send Hex Codes > `0x1f`
 * add <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Z</kbd> Action: Send Hex Codes > `0x18 0x1f`
   * Typically not bound in bash, zsh or readline, so we can set it to a unused hexcode which we can then fix in zsh. [Stack overflow](http://stackoverflow.com/questions/6205157/iterm2-how-to-get-jump-to-beginning-end-of-line-in-bash-shell#answer-29403520):
-  * ```sh
-    # adds redo
-    $ echo 'bindkey "^X^_" redo' >> ~/.zshrc
-
-    # reload your .zshrc for changes to take effect
-    $ source ~/.zshrc
-    ```
+  * The maintained bindings live in the [Zsh keybinding module](stow/zsh/.config/zsh/40-keybindings.zsh); use the [shell structure](STRUCTURE.md#shell-loading) for the current load order.
 
 #### Text
 

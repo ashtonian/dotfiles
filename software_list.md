@@ -1,5 +1,11 @@
 # Brew and MAS installed software list
 
+Historical machine inventory, including transitive dependencies. This snapshot
+is not kept in sync with package changes and is not an installation manifest.
+The [Brewfile](Brewfile) defines the shared package selection. See
+[inventory exporters](STRUCTURE.md#shell-libraries) to produce a fresh local
+snapshot; review it before publishing.
+
 ## Homebrew
 
 - [ack](https://beyondgrep.com/) - [ack](https://formulae.brew.sh/formula/ack): Search tool like grep, but optimized for programmers
@@ -225,21 +231,21 @@
 
 ## Mac App Store
 
--   Xcode                   (14.3) - [497799835](https://apps.apple.com/app/id497799835)
--  Horo                    (2.2.8) - [1437226581](https://apps.apple.com/app/id1437226581)
--  1Password for Safari    (2.9.0) - [1569813296](https://apps.apple.com/app/id1569813296)
--   Monosnap                (5.1.9) - [540348655](https://apps.apple.com/app/id540348655)
--  Day One                 (2023.6) - [1055511498](https://apps.apple.com/app/id1055511498)
--  StopTheMadness          (36.2) - [1376402589](https://apps.apple.com/app/id1376402589)
--  OhMyStar                (2.2.8) - [1218642292](https://apps.apple.com/app/id1218642292)
--  Raivo OTP               (1.0.6) - [1498497896](https://apps.apple.com/app/id1498497896)
--  Dark Reader for Safari  (1.4.6) - [1438243180](https://apps.apple.com/app/id1438243180)
--  Vimari                  (2.1.1) - [1480933944](https://apps.apple.com/app/id1480933944)
--  1440                    (1.4) - [1483764819](https://apps.apple.com/app/id1483764819)
--   Disk Speed Test         (3.4.2) - [425264550](https://apps.apple.com/app/id425264550)
--   Todoist                 (8.1.2) - [585829637](https://apps.apple.com/app/id585829637)
--  Bear                    (1.9.6) - [1091189122](https://apps.apple.com/app/id1091189122)
--  WireGuard               (1.0.16) - [1451685025](https://apps.apple.com/app/id1451685025)
--   Yoink                   (3.6.84) - [457622435](https://apps.apple.com/app/id457622435)
--  Notion Web Clipper      (1.0.3) - [1559269364](https://apps.apple.com/app/id1559269364)
--  Toggl Track             (8.9.0) - [1291898086](https://apps.apple.com/app/id1291898086)
+- Xcode                   (14.3) - [497799835](https://apps.apple.com/app/id497799835)
+- Horo                    (2.2.8) - [1437226581](https://apps.apple.com/app/id1437226581)
+- 1Password for Safari    (2.9.0) - [1569813296](https://apps.apple.com/app/id1569813296)
+- Monosnap                (5.1.9) - [540348655](https://apps.apple.com/app/id540348655)
+- Day One                 (2023.6) - [1055511498](https://apps.apple.com/app/id1055511498)
+- StopTheMadness          (36.2) - [1376402589](https://apps.apple.com/app/id1376402589)
+- OhMyStar                (2.2.8) - [1218642292](https://apps.apple.com/app/id1218642292)
+- Raivo OTP               (1.0.6) - [1498497896](https://apps.apple.com/app/id1498497896)
+- Dark Reader for Safari  (1.4.6) - [1438243180](https://apps.apple.com/app/id1438243180)
+- Vimari                  (2.1.1) - [1480933944](https://apps.apple.com/app/id1480933944)
+- 1440                    (1.4) - [1483764819](https://apps.apple.com/app/id1483764819)
+- Disk Speed Test         (3.4.2) - [425264550](https://apps.apple.com/app/id425264550)
+- Todoist                 (8.1.2) - [585829637](https://apps.apple.com/app/id585829637)
+- Bear                    (1.9.6) - [1091189122](https://apps.apple.com/app/id1091189122)
+- WireGuard               (1.0.16) - [1451685025](https://apps.apple.com/app/id1451685025)
+- Yoink                   (3.6.84) - [457622435](https://apps.apple.com/app/id457622435)
+- Notion Web Clipper      (1.0.3) - [1559269364](https://apps.apple.com/app/id1559269364)
+- Toggl Track             (8.9.0) - [1291898086](https://apps.apple.com/app/id1291898086)

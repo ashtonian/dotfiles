@@ -11,9 +11,9 @@ DESCRIPTION:
 
 WHAT IT DOES:
     1. Checks for network connectivity
-    2. Commits any local changes with timestamp
-    3. Pulls remote changes (with rebase)
-    4. Pushes local commits to origin
+    2. Installs missing packages and backs up host app settings
+    3. Signs local commits and merges; scans outgoing dotfiles for secrets
+    4. Verifies outgoing signatures, pushes, and checks GitHub verification
 
 FREQUENCY:
     Every 4 hours (14400 seconds)

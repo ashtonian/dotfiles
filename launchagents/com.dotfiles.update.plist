@@ -10,9 +10,9 @@ DESCRIPTION:
     Runs every Friday at 9:00 AM.
 
 WHAT IT DOES:
-    1. Updates Homebrew (brew update && brew upgrade && brew cleanup)
-    2. Updates all Zinit plugins (zinit update --all)
-    3. Syncs dotfiles (git pull/push)
+    1. Updates Homebrew, upgrades packages, cleans up, and runs brew doctor
+    2. Fast-forwards Zinit core and updates all plugins
+    3. Runs sync.sh sync (packages, app backups, signed repository sync)
 
 LOGS:
     - stdout: /tmp/dotfiles-update.out

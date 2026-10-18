@@ -12,12 +12,13 @@ turns a request into briefs and runs them as background jobs on stronger models
 through their real CLIs and subscriptions:
 
 | Worker | CLI | Models | Typical use |
-|--------|-----|--------|-------------|
+| -------- | ----- | -------- | ------------- |
 | `claude` | `claude -p` | `opus` (default, `opus[1m]`), `fable` (`fable[1m]`), `sonnet`, `haiku` | Implementation, debugging, infrastructure work, fixing findings |
 | `codex` | `codex exec` | `astra` (default, `gpt-6-astra`), `sol` (`gpt-6.1-sol`) | Independent review, audits, verification, second opinions |
 
 Defaults mirror the interactive launchers (`claudemore`, `claudemax`, `gptmax`):
-Claude at effort `xhigh`, Astra at `max`.
+Claude at effort `xhigh`, Codex at `max`. The plugin keeps `max` for a delegated
+`sol` job too; the interactive `gptmore` helper separately defaults to `xhigh`.
 
 Jobs are asynchronous. The coordinator starts a job, reports what is running,
 and ends its turn. When the worker exits, the `delegate` plugin posts a
@@ -25,17 +26,10 @@ and ends its turn. When the worker exits, the `delegate` plugin posts a
 result and report or start the next step (for example, Claude implements, Astra
 reviews, Claude fixes the confirmed findings in its original session).
 
-### Why this model
-
-The coordinator only routes work, writes briefs and reports results, so the
-criteria are reliable tool calling over many turns, instruction following, and
-speed, not raw coding strength. Qwen3.6-35B-A3B is the strongest documented
-tool-calling model that fits the 32 GB card (MCP-Atlas 62.8, TAU3 67.2,
-Apache 2.0). It decodes at ~110 tok/s there and is already the gateway's
-resident default. The GPU holds one model at a time, so any other model forces
-a ~20 GB reload for every app that shares it. Open models comparable to Opus or
-Astra (GLM-5.3, Kimi K3, DeepSeek V4.1, Qwen3.8-Max) need hundreds of GB of fast
-memory. That is why the heavy work goes to the real Claude and Astra.
+The checked-in model and small-model aliases are identical so title/summary
+requests use the same backend as the coordinator. Gateway capacity, model
+availability, and performance depend on the local deployment; this repository
+does not provision the gateway or establish benchmark results.
 
 ## Config
 
@@ -47,21 +41,32 @@ plugin and the server wrapper.
 ### opencode.jsonc
 
 | Key | Value | Why |
-|-----|-------|-----|
-| `enabled_providers` | `["homelab"]` | Only the local gateway. OpenCode's hosted providers stay unloaded, so no session can send code to a third party by picking one of their models. |
-| `share` | `disabled` | Sessions are never uploaded to opencode.ai. |
+| ----- | ------- | ----- |
+| `enabled_providers` | `["homelab"]` | Enable only the local provider in this config. Delegated worker CLIs contact their own configured providers. |
+| `share` | `disabled` | Disable OpenCode's session-sharing feature. |
 | `autoupdate` | `false` | Homebrew owns upgrades. |
 | `default_agent` | `coordinator` | |
-| `model`, `small_model` | `homelab/qwen3.6-35b` | Same model for titles and summaries; a different one would force a GPU swap. |
+| `model`, `small_model` | `homelab/qwen3.6-35b` | Keep coordinator, title, and summary requests on the same alias. |
 | `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |
 | `provider.homelab.options.apiKey` | `{file:~/.local/share/opencode/homelab/litellm.key}` | Scoped virtual key. |
-| `provider.homelab.models.*.limit` | 64K context (32K for `qwen3.8-27b`) | Matches each model's server-side `-c`. |
+| `provider.homelab.models.*` | Four configured aliases from the worker-independent local provider | Gateway must expose matching aliases; see the model table below. |
+
+| Local alias | Context / output tokens | Capabilities configured |
+| ------------- | ------------------------- | ------------------------- |
+| `qwen3.6-35b` | 65,536 / 16,384 | Tool calls; coordinator and small-model default |
+| `qwen3.6-35b-thinking` | 65,536 / 16,384 | Tool calls and reasoning |
+| `qwen3-coder-30b` | 65,536 / 16,384 | Tool calls |
+| `qwen3.8-27b` | 32,768 / 8,192 | Tool calls, text/image input, text output |
+
+These are client-side limits, not evidence of the gateway's deployed limits.
+Keep them compatible with the server configuration.
 
 ### Coordinator agent (`agents/coordinator.md`)
 
-| Permission | Setting | Why |
-|------------|---------|-----|
-| `edit` | deny | The coordinator delegates; it never edits. |
+| Field / permission | Setting | Why |
+| ------------ | --------- | ----- |
+| `mode`, `temperature` | primary, 0.2 | Agent mode and generation temperature. |
+| `edit` | deny | The coordinator delegates changes. |
 | `bash` | deny, except `git status/log/diff/show/branch` and `ls` | Enough to inspect a repo before writing a brief. |
 | `task` | deny | OpenCode subagents would run on the local model; real work goes to workers. |
 | `webfetch` | ask | |
@@ -70,29 +75,37 @@ plugin and the server wrapper.
 ### Local files (`~/.local/share/opencode/homelab/`, mode 0700)
 
 | File | Contents |
-|------|----------|
+| ------ | ---------- |
 | `base-url` | Gateway base URL ending in `/v1` |
-| `litellm.key` | LiteLLM virtual key `opencode-mac-studio`, scoped to `qwen3.6-35b`, `qwen3.6-35b-thinking`, `qwen3-coder-30b`, `qwen3.8-27b` |
+| `litellm.key` | LiteLLM virtual key; scope it on the gateway to the four configured local aliases |
 | `server-password` | HTTP basic-auth password for the server (user `opencode`) |
 
 ### Environment
 
-| Variable | Default | Read by | Description |
-|----------|---------|---------|-------------|
-| `OPENCODE_HOSTNAME` | `0.0.0.0` | `bin/opencode-server` | Server bind address |
-| `OPENCODE_PORT` | `4096` | `bin/opencode-server`, `oc`, `ocweb` | Server port |
-| `DELEGATE_STATE_DIR` | `$XDG_STATE_HOME/opencode-delegate` (`~/.local/state/opencode-delegate`) | plugin | Job store |
-| `DELEGATE_CLAUDE_BIN` | `claude` (on `PATH`) | plugin | Claude Code executable |
-| `DELEGATE_CODEX_BIN` | `codex` (on `PATH`) | plugin | Codex executable |
-| `DELEGATE_MAX_RUNNING` | `4` | plugin | Concurrent running jobs; `delegate_start` refuses beyond it |
-| `DELEGATE_POLL_MS` | `5000` | plugin | How often finished jobs are detected |
-| `DELEGATE_RESULT_CHARS` | `12000` | plugin | Final-message characters returned to the coordinator; the full text stays on disk |
-| `DELEGATE_RETENTION_DAYS` | `14` | plugin | Finished jobs older than this are deleted at server start |
+| Variable | Type | Default | Read by / effect |
+| ---------- | ------ | --------- | ------------------ |
+| `OPENCODE_HOSTNAME` | Address string | 0.0.0.0 | Server wrapper bind address |
+| `OPENCODE_PORT` | Port number | 4096 | Server wrapper, `oc`, `ocweb` |
+| `OPENCODE_SERVER_PASSWORD` | Secret string | Loaded from server-password | Server wrapper replaces any inherited value from the local file |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | Plugin state parent when `DELEGATE_STATE_DIR` is unset |
+| `DELEGATE_STATE_DIR` | Directory path | `$XDG_STATE_HOME/opencode-delegate` | Plugin job store |
+| `DELEGATE_CLAUDE_BIN` | Executable path/name | claude on PATH | Claude worker executable |
+| `DELEGATE_CODEX_BIN` | Executable path/name | codex on PATH | Codex worker executable |
+| `DELEGATE_MAX_RUNNING` | Positive integer | 4 | Concurrent-job cap |
+| `DELEGATE_POLL_MS` | Positive integer, milliseconds | 5000 | Completion polling interval |
+| `DELEGATE_RESULT_CHARS` | Positive integer, characters | 12000 | Returned final-message limit; full output stays on disk |
+| `DELEGATE_RETENTION_DAYS` | Positive integer, days | 14 | Finished jobs pruned at server start |
+
+Settings parse as base-10 integers; nonnumeric or nonpositive results fall back
+to their defaults. Set service overrides in the installed LaunchAgent's `EnvironmentVariables`, then reload it;
+the daemon does not read `~/.zshrc.local`. Reinstallation replaces local plist
+edits. A shell-only `OPENCODE_PORT` override changes where `oc`/`ocweb` connect, not
+where an already running server listens.
 
 ### Worker invocation
 
 | Access | Claude | Codex |
-|--------|--------|-------|
+| -------- | -------- | ------- |
 | `read` | `--restricted --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --permission-mode dontAsk --strict-mcp-config --mcp-config '{"mcpServers":{}}'` | `sandbox_mode="read-only"` |
 | `write` | `--dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools Agent` (as `claudemore`) | `sandbox_mode="workspace-write"`, network on |
 
@@ -109,30 +122,31 @@ content (mail, Drive).
 ## External Dependencies
 
 | Dependency | Why | Failure effect |
-|------------|-----|----------------|
-| OpenCode 1.19.x (`brew "anomalyco/tap/opencode"`) | The server, TUI and web UI | Nothing runs |
+| ------------ | ----- | ---------------- |
+| OpenCode (validated with 1.19.x; `brew "anomalyco/tap/opencode"`) | The server, TUI and web UI | Nothing runs |
 | LLM gateway (LiteLLM, LAN, internal domain) and its llama.cpp backend | The coordinator's model | The coordinator cannot answer; running jobs are unaffected |
 | Claude Code (`~/.local/bin/claude`), signed in to claude.ai | `claude` worker | `claude` jobs fail at start; the error is in the job's `stderr.log` |
 | Codex CLI (`cask "codex"`), signed in | `codex` worker | `codex` jobs fail at start |
-| `@opencode-ai/plugin` (installed by OpenCode next to its config, pinned to the OpenCode version) | Plugin and tool API | The plugin does not load; no `delegate_*` tools |
-| `bin/stable-exec` | Fixed binary path for privacy grants | Full Disk Access is lost on every upgrade |
+| `@opencode-ai/plugin` (installed by OpenCode next to its config) | Plugin and tool API | The plugin does not load; no `delegate_*` tools |
+| `bin/stable-exec` | Fixed binary path for privacy grants | The service wrapper cannot start without it |
 
 ## API / Interfaces
 
 ### Shell
 
 | Command | Description |
-|---------|-------------|
+| --------- | ------------- |
 | `oc [attach options]` | Terminal UI on the running server, in `$PWD` |
 | `ocweb` | Opens the web UI and copies the password to the clipboard |
 
 The web UI is also reachable from other devices on the LAN or over the VPN at
-`http://<this Mac>:4096` (user `opencode`).
+`http://<this Mac>:4096` (user `opencode`). Remote access requires suitable
+network protection; see Security. The service does not configure TLS or a VPN.
 
 ### Tools (registered by `plugins/delegate.ts`)
 
 | Tool | Arguments | Behavior |
-|------|-----------|----------|
+| ------ | ----------- | ---------- |
 | `delegate_start` | `worker`, `title`, `task`, `cwd?`, `access?` (read), `model?`, `effort?` | Starts a detached worker and returns its job id immediately. Write access asks for `delegate_write` approval. |
 | `delegate_status` | `job?` | Lists the 15 most recent jobs, or one job's state, worker session and last 8 actions |
 | `delegate_result` | `job` | Outcome, exit code, duration, turns and cost (Claude), worker session id, and the final message |
@@ -147,7 +161,7 @@ without recording an exit code, e.g. a reboot).
 When a job ends (except by cancellation), the plugin sends this to the session
 that started it, as the agent that started it:
 
-```
+```text
 [delegate] Job claude-20261014-225524-65fa finished: done. claude/opus, write access, "add retries".
 This is an automated notice, not a message from the user.
 Call delegate_result with job "claude-20261014-225524-65fa" to read the outcome before reporting it or planning the next step.
@@ -159,8 +173,10 @@ Call delegate_result with job "claude-20261014-225524-65fa" to read the outcome 
 interactively and steered from claude.ai with Remote Control:
 
 ```sh
-cd <cwd> && claude --resume <session-id> --remote-control
-cd <cwd> && codex resume <thread-id>
+cd /path/to/project
+claude --resume SESSION_ID --remote-control
+# Or continue a Codex session:
+codex resume THREAD_ID
 ```
 
 ### HTTP
@@ -177,32 +193,44 @@ brew install anomalyco/tap/opencode          # or brew bundle
 cd ~/.dotfiles/stow && stow -t ~ opencode    # ~/.config/opencode -> this package
 
 # Local files: base URL, a scoped LiteLLM virtual key, a server password.
+umask 077
 install -d -m 700 ~/.local/share/opencode/homelab
 printf '%s' 'https://<gateway host>/v1' > ~/.local/share/opencode/homelab/base-url
-# create a virtual key in the LiteLLM admin UI (or POST /key/generate), save it:
+# Create a key scoped to the configured model aliases in the gateway admin UI.
+# Copy only that key, then save it without placing it in a shell argument:
 (umask 077; pbpaste > ~/.local/share/opencode/homelab/litellm.key)
 (umask 077; openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_' > ~/.local/share/opencode/homelab/server-password)
 
+chmod 600 ~/.local/share/opencode/homelab/{base-url,litellm.key,server-password}
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
 ```
 
 Then grant **Full Disk Access** to `~/.local/libexec/opencode-stable/bin/opencode`
 (System Settings → Privacy & Security → Full Disk Access → **+** → Cmd+Shift+G).
-The workers it starts inherit its privacy grants, and projects live on an
-external volume; without the grant, the first job there raises a "removable
-volume" prompt that stalls until answered.
+Grant access when the server or its workers need protected directories or
+external volumes. If a worker stalls at a privacy prompt, check the server's
+stable executable and Full Disk Access entry.
 
 Checks:
 
 ```sh
-opencode models homelab        # lists exactly the four homelab models
+opencode models homelab        # verify the configured local model aliases
 oc                             # TUI; ask: "call delegate_status"
 ```
 
 End-to-end: ask the coordinator to start a read-only `claude` job with model
 `haiku`, effort `low`, and a `codex` job with effort `low`, each listing the
-files in a scratch directory. Both `[delegate]` notices should arrive within a
-minute and the coordinator should report both results.
+files in a scratch directory. Completion checks run at the configured polling
+interval; notices also depend on successful delivery. Worker latency is
+provider-dependent. These checks use live model accounts and can incur usage.
+For the local mock-based regression suite, run from the dotfiles repository root:
+
+```sh
+python3 -B -m unittest discover -s tests -v
+```
+
+The delegated-worker test requires Bun and the plugin dependencies installed by
+OpenCode. It uses a fake worker without calling a model provider.
 
 The plugin is TypeScript run by OpenCode's Bun runtime; there is no build step.
 After editing it or the config, restart the server (below).
@@ -210,21 +238,48 @@ After editing it or the config, restart the server (below).
 ## Operations
 
 | What | How |
-|------|-----|
-| Health | `launchctl list com.ashtonian.opencode` (PID present); `curl -s -o /dev/null -w '%{http_code}' localhost:4096/` returns `401` |
+| ------ | ----- |
+| Process / auth boundary | `launchctl list com.ashtonian.opencode` should have a PID. An unauthenticated request returning `401` checks reachability/auth only; use the health request below to check the server. |
 | Server logs | `~/Library/Logs/opencode/server.{stdout,stderr}.log` (startup); `~/.local/share/opencode/log/opencode.log` (runtime, including the plugin's job start, cancel and notice-delivery messages: grep for the job id) |
 | Restart (after editing config or plugin, or upgrading) | `launchctl kickstart -k gui/$(id -u)/com.ashtonian.opencode`. Running jobs keep going and are picked up again. |
 | Job files | `~/.local/state/opencode-delegate/jobs/<id>/`: `prompt.md`, `events.jsonl`, `stderr.log`, `result.md`, `exit` |
 | Live worker output | `tail -f ~/.local/state/opencode-delegate/jobs/<id>/events.jsonl` |
-| Gateway usage | LiteLLM admin UI → keys → `opencode-mac-studio` |
+| Usage / metrics | Gateway admin UI for the scoped key; job results expose Claude cost/turns when present. This plugin adds no metrics endpoint. |
+
+Authenticated health check (reads the password into memory; does not put it in
+command arguments or print it):
+
+```sh
+python3 - <<'PY'
+import base64
+import json
+import os
+from pathlib import Path
+from urllib.request import Request, urlopen
+
+password = (Path.home() / '.local/share/opencode/homelab/server-password').read_text().strip()
+token = base64.b64encode(('opencode:' + password).encode()).decode()
+port = os.environ.get('OPENCODE_PORT', '4096')
+request = Request(f'http://127.0.0.1:{port}/global/health',
+                  headers={'Authorization': 'Basic ' + token})
+with urlopen(request, timeout=5) as response:
+    print(json.dumps(json.load(response)))
+PY
+```
+
+Expect `healthy: true` and the running version. This does not check the gateway
+or worker authentication. Restarting interrupts active coordinator responses
+and attached sessions; detached workers survive and are recovered by the plugin.
+Service logs have no rotation configured by these scripts.
 
 ### Failure modes and troubleshooting
 
 - **The coordinator does not answer or errors on every message.** Check the
-  gateway: `curl -s -H "Authorization: Bearer $(<~/.local/share/opencode/homelab/litellm.key)" "$(<~/.local/share/opencode/homelab/base-url)/models"`.
-  A 401 means the key was revoked: mint a new one. A timeout means the gateway
-  or its GPU backend is down. A first reply that is slow by 10 to 30 s is the
-  backend loading the model after another app swapped it out.
+  server log and the gateway's health/model list in its admin UI. Confirm the
+  base URL ends in /v1 and the configured model aliases exist. A 401 means the
+  gateway key is rejected; rotate or correct it. A timeout requires checking
+  gateway/backend availability. Avoid pasting the key into command arguments or
+  logs when testing.
 - **A job fails at once.** Read `stderr.log` in its job directory. `command not
   found` means `DELEGATE_*_BIN` or the LaunchAgent's `PATH` is wrong. An auth
   error means the CLI's login expired: run `claude` or `codex` interactively once.
@@ -241,10 +296,9 @@ After editing it or the config, restart the server (below).
   the session means the owning session was deleted (logged as dropped).
 - **`delegate_start` refuses with "jobs are already running".** The cap
   (`DELEGATE_MAX_RUNNING`) is reached. Wait or cancel one.
-- **Astra jobs end with a safety-filter termination.** OpenAI's filter stops
-  some code-review sessions. Rephrase the brief without words like
-  "adversarial" or "attack", and have the worker write findings to a notes file
-  as it goes.
+- **The provider rejects a job.** Preserve the reported error and follow the
+  provider's guidance. Retrying does not establish that a task succeeded; inspect
+  the job's exit status and final result.
 
 ## Security
 
@@ -254,22 +308,28 @@ After editing it or the config, restart the server (below).
   password crosses the LAN unencrypted. Keep it off any public network, and set
   `OPENCODE_HOSTNAME=127.0.0.1` in the LaunchAgent if remote access is not needed.
 - **Write access is approved per directory.** The `delegate_write` permission
-  asks before any job that may change files; read jobs cannot edit (Claude's edit
-  tools are blocked; Codex runs in a read-only sandbox).
-- **Workers do not get the server's credentials.** `OPENCODE_SERVER_PASSWORD` is
-  removed from their environment.
+  asks before write-access jobs. Claude read jobs expose only Read/Glob/Grep,
+  with inherited settings and MCP tools restricted; Codex read jobs use its
+  read-only filesystem sandbox. Read access still permits reading accessible
+  private files and is not a confidentiality boundary.
+- **Worker environment is inherited with specific removals.** The plugin removes
+  `OPENCODE_SERVER_PASSWORD`, `OPENCODE_SERVER_USERNAME`, and CLAUDECODE. Other
+  environment variables and the user's CLI authentication remain available.
+  CLI sandbox/tool controls do not establish isolation from every inherited
+  setting or external integration.
 - **Secrets stay out of this repo.** It is public and auto-pushed. The gateway
   URL, key and password live in `~/.local/share/opencode/homelab/` (0700). Job
   directories are 0700 and their files 0600, because briefs and worker output can
   contain sensitive material.
-- **The gateway key is scoped.** It can reach four models and nothing else, and
-  it is revocable on its own in the LiteLLM admin UI.
+- **Scope the gateway key on the gateway.** Restrict it to the configured model
+  aliases and revoke it independently when needed. The public config does not
+  enforce server-side key policy.
 - **Job ids are validated** before they are used as paths.
 
 ## Code Map
 
 | Path | Purpose |
-|------|---------|
+| ------ | --------- |
 | `.config/opencode/opencode.jsonc` | Providers, models, default agent |
 | `.config/opencode/agents/coordinator.md` | Coordinator prompt and permissions |
 | `.config/opencode/plugins/delegate.ts` | Job store, worker commands, completion notices, the five `delegate_*` tools |
