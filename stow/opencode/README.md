@@ -49,14 +49,11 @@ plugin and the server wrapper.
 | `model`, `small_model` | `homelab/qwen3.6-35b` | Keep coordinator, title, and summary requests on the same alias. |
 | `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |
 | `provider.homelab.options.apiKey` | `{file:~/.local/share/opencode/homelab/litellm.key}` | Scoped virtual key. |
-| `provider.homelab.models.*` | Four configured aliases from the worker-independent local provider | Gateway must expose matching aliases; see the model table below. |
+| `provider.homelab.models.*` | The one alias the gateway serves | The gateway keeps a single model resident and does not swap; see the model table below. |
 
 | Local alias | Context / output tokens | Capabilities configured |
 | ------------- | ------------------------- | ------------------------- |
 | `qwen3.6-35b` | 65,536 / 16,384 | Tool calls; coordinator and small-model default |
-| `qwen3.6-35b-thinking` | 65,536 / 16,384 | Tool calls and reasoning |
-| `qwen3-coder-30b` | 65,536 / 16,384 | Tool calls |
-| `qwen3.8-27b` | 32,768 / 8,192 | Tool calls, text/image input, text output |
 
 These are client-side limits, not evidence of the gateway's deployed limits.
 Keep them compatible with the server configuration.
@@ -77,7 +74,7 @@ Keep them compatible with the server configuration.
 | File | Contents |
 | ------ | ---------- |
 | `base-url` | Gateway base URL ending in `/v1` |
-| `litellm.key` | LiteLLM virtual key; scope it on the gateway to the four configured local aliases |
+| `litellm.key` | LiteLLM virtual key; scope it on the gateway to the configured local alias |
 | `server-password` | HTTP basic-auth password for the server (user `opencode`) |
 
 ### Environment

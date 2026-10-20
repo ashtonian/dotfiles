@@ -9,8 +9,8 @@
   "autoupdate": false,
 
   "default_agent": "coordinator",
-  // The GPU holds one model at a time and swaps on demand, so the title/summary
-  // model is the same one the coordinator runs on: anything else forces a reload.
+  // The gateway serves a single resident model; title and summary requests use it
+  // too, since any other model would force a reload on the GPU.
   "model": "homelab/qwen3.6-35b",
   "small_model": "homelab/qwen3.6-35b",
 
@@ -29,24 +29,6 @@
           "name": "Qwen3.6 35B-A3B",
           "tool_call": true,
           "limit": { "context": 65536, "output": 16384 }
-        },
-        "qwen3.6-35b-thinking": {
-          "name": "Qwen3.6 35B-A3B (thinking)",
-          "tool_call": true,
-          "reasoning": true,
-          "limit": { "context": 65536, "output": 16384 }
-        },
-        "qwen3-coder-30b": {
-          "name": "Qwen3 Coder 30B-A3B",
-          "tool_call": true,
-          "limit": { "context": 65536, "output": 16384 }
-        },
-        "qwen3.8-27b": {
-          "name": "Qwen3.8 27B (vision)",
-          "tool_call": true,
-          "attachment": true,
-          "modalities": { "input": ["text", "image"], "output": ["text"] },
-          "limit": { "context": 32768, "output": 8192 }
         }
       }
     }
