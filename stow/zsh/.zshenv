@@ -35,3 +35,17 @@ export LANG="${LANG:-en_US.UTF-8}"     # set LANG only; never force LC_ALL
 # and that warning prints on EVERY non-interactive tool shell. Set here (sourced
 # before ~/.zshrc) so it is exported before the plugin's init runs.
 export _ZO_DOCTOR=0
+
+# --- Agent shells -------------------------------------------------------------
+# Codex runs its model-written commands through this zsh: it takes the shell from
+# the passwd entry, and ~/.codex/config.toml exports AGENT_SHELL to every command.
+# Those commands are written for bash, so give that one shell bash's semantics
+# for the zsh behaviours that otherwise turn them into errors: an unmatched glob
+# aborting the command (NOMATCH, BAD_PATTERN), `=word` path expansion (EQUALS)
+# and unquoted parameters not splitting (SH_WORD_SPLIT). The marker is unset at
+# once so zsh scripts that command runs keep normal zsh semantics. Interactive
+# shells never see it; Claude Code's Bash tool runs bash (CLAUDE_CODE_SHELL).
+if [[ -n "${AGENT_SHELL:-}" && ! -o interactive ]]; then
+    setopt NO_NOMATCH NO_BAD_PATTERN NO_EQUALS SH_WORD_SPLIT
+    unset AGENT_SHELL
+fi

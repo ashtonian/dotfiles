@@ -465,6 +465,27 @@ process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
         self.assertNotIn('--dangerously-skip-permissions', args)
 
 
+class AgentShell(Fixture):
+    def run_zsh(self, code, marker):
+        env = dict(self.env)
+        env.pop('AGENT_SHELL', None)
+        if marker:
+            env['AGENT_SHELL'] = 'codex'
+        return subprocess.run(['/bin/zsh', '-f', '-c', f'source {ROOT}/stow/zsh/.zshenv; {code}'],
+                              cwd=self.path, env=env, capture_output=True, text=True, timeout=20)
+
+    def test_marked_shell_runs_bash_style_commands(self):
+        p = self.run_zsh('print -r -- ==== ; print -r -- /nonexistent-*-glob; s="a b"; set -- $s; print $#;'
+                         ' print -r -- "child:$(zsh -fc \'print -r -- ${AGENT_SHELL:-unset}\')"', True)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.split(), ['====', '/nonexistent-*-glob', '2', 'child:unset'])
+
+    def test_unmarked_shell_keeps_zsh_semantics(self):
+        p = self.run_zsh('print -r -- /nonexistent-*-glob', False)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertIn('no matches found', p.stderr)
+
+
 class AgentMonitorFixture(Fixture):
     NODE_VERSION = '24.22.0'
 

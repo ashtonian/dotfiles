@@ -62,7 +62,7 @@ before moving or adopting files.
 
 | Stage | Behavior |
 | ------- | ---------- |
-| `.zshenv` | Every Zsh: guarded Homebrew environment, core variables, user paths |
+| `.zshenv` | Every Zsh: guarded Homebrew environment, core variables, user paths; bash-like globbing and word splitting for Codex command shells (`AGENT_SHELL`) |
 | `.zprofile` | Login shells: pipx path and optional OrbStack integration |
 | `.zshrc` | Interactive shells: classify real terminal vs zsh `-ic`; source sorted modules, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
 | `00-init.zsh` | Bootstrap Zinit and annexes, set shell options |
