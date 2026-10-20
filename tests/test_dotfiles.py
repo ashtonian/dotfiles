@@ -425,7 +425,7 @@ sleep() { :; }
 
 
 class Delegate(Fixture):
-    def test_read_worker_exposes_only_read_tools(self):
+    def worker_args(self, access):
         if not shutil.which('bun'):
             self.skipTest('Bun required')
         dependencies = ROOT / 'stow/opencode/.config/opencode/node_modules'
@@ -441,29 +441,40 @@ print(json.dumps({'type':'result','session_id':'fixture-session','result':'fixtu
 ''')
         worker.chmod(0o755)
         self.env['DELEGATE_CLAUDE_BIN'] = str(worker)
+        # Read jobs must never ask for write approval; write jobs are approved.
+        ask = 'async()=>{throw Error("unexpected write approval")}' if access == 'read' else 'async()=>({})'
         harness = self.path / 'delegate.ts'
         harness.write_text('''
 const {DelegatePlugin} = await import(process.env.DOTFILES + '/stow/opencode/.config/opencode/plugins/delegate.ts');
 const {existsSync, readFileSync} = await import('node:fs');
 const {join} = await import('node:path');
 const hooks = await DelegatePlugin({client:{app:{log:async()=>({})},session:{promptAsync:async()=>({})}}});
-const context = {sessionID:'fixture-owner',agent:'coordinator',directory:process.cwd(),ask:async()=>{throw Error('unexpected write approval')}};
-const result = await hooks.tool.delegate_start.execute({worker:'claude',title:'fixture',task:'Read fixture',access:'read',cwd:process.cwd()},context);
+const context = {sessionID:'fixture-owner',agent:'coordinator',directory:process.cwd(),ask:ASK};
+const result = await hooks.tool.delegate_start.execute({worker:'claude',title:'fixture',task:'Fixture task',access:'ACCESS',cwd:process.cwd()},context);
 const job = result.metadata.job;
 const dir = join(process.env.DELEGATE_STATE_DIR,'jobs',job);
 for (let i=0;i<100 && !existsSync(join(dir,'exit'));i++) await Bun.sleep(20);
 if (!existsSync(join(dir,'exit'))) throw Error('worker did not exit');
 process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
-''')
+'''.replace('ASK', ask).replace('ACCESS', access))
         p = subprocess.run(['bun', str(harness)], cwd=self.path, env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        args = json.loads(p.stdout)
+        return json.loads(p.stdout)
+
+    def test_read_worker_exposes_only_read_tools(self):
+        args = self.worker_args('read')
         self.assertIn('--restricted', args)
         self.assertEqual(args[args.index('--tools') + 1], 'Read,Glob,Grep')
         self.assertIn('--strict-mcp-config', args)
         self.assertEqual(json.loads(args[args.index('--mcp-config') + 1]), {'mcpServers': {}})
         self.assertNotIn('--dangerously-skip-permissions', args)
 
+    def test_write_worker_runs_like_claudemore_with_subagents(self):
+        args = self.worker_args('write')
+        self.assertIn('--dangerously-skip-permissions', args)
+        self.assertEqual(args[args.index('--permission-mode') + 1], 'bypassPermissions')
+        self.assertNotIn('--disallowedTools', args)
+        self.assertNotIn('--restricted', args)
 
 class SharedEnvironment(Fixture):
     BREW_BIN = '/opt/homebrew/bin'

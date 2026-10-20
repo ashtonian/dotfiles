@@ -103,7 +103,7 @@ print(mx)
   fi
 
   echo "Session: ${name}"
-  env "${fleet_env[@]}" claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools "Agent" --name "${name}" --remote-control "${name}" "$@"
+  env "${fleet_env[@]}" claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --name "${name}" --remote-control "${name}" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc

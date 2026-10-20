@@ -301,7 +301,7 @@ function command(job: Job): string[] {
     const args = [config.claudeBin, "-p", "--output-format", "stream-json", "--verbose"]
     args.push("--model", job.model, "--effort", job.effort, "--name", `delegate ${job.id}`)
     if (job.access === "write") {
-      args.push("--dangerously-skip-permissions", "--permission-mode", "bypassPermissions", "--disallowedTools", "Agent")
+      args.push("--dangerously-skip-permissions", "--permission-mode", "bypassPermissions")
     } else {
       // Restrict available tools and settings so inherited Bash/MCP permissions cannot grant writes.
       args.push(

@@ -104,7 +104,7 @@ where an already running server listens.
 | Access | Claude | Codex |
 | -------- | -------- | ------- |
 | `read` | `--restricted --tools Read,Glob,Grep --allowedTools Read,Glob,Grep --permission-mode dontAsk --strict-mcp-config --mcp-config '{"mcpServers":{}}'` | `sandbox_mode="read-only"` |
-| `write` | `--dangerously-skip-permissions --permission-mode bypassPermissions --disallowedTools Agent` (as `claudemore`) | `sandbox_mode="workspace-write"`, network on |
+| `write` | `--dangerously-skip-permissions --permission-mode bypassPermissions` (as `claudemore`; subagents allowed) | `sandbox_mode="workspace-write"`, network on |
 
 Claude read jobs expose only file reading and search tools. Restricted mode
 ignores user, project and local settings, and the empty strict MCP configuration
