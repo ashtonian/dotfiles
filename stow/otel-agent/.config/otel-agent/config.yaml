@@ -1,0 +1,93 @@
+# Local OpenTelemetry Collector for this Mac's coding agents (bin/otel-agent,
+# docs/AGENT-TELEMETRY.md). Claude Code, Codex and OpenCode export OTLP to
+# 127.0.0.1; this collector deletes identities and tool content, then forwards
+# metrics and log events to the cluster gateway with the bearer token.
+#
+# Nothing site-specific lives here: bin/otel-agent serve reads the gateway URL
+# and token from ~/.local/share/otel-agent and passes them as environment
+# variables. The redaction patterns must match the gateway's
+# (home-ops k8s/monitoring/otel-gateway/configmap.yaml), which repeats them in
+# case a client skips this collector.
+extensions:
+  health_check:
+    endpoint: 127.0.0.1:13134
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+      grpc:
+        endpoint: 127.0.0.1:4317
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 200
+    spike_limit_mib: 50
+
+  # Identity: Claude Code always attaches user.email and the account and
+  # organization IDs; Codex attaches user.email and user.account_id to every log
+  # event. Content: prompts, responses, tool arguments and output (Codex logs a
+  # preview of every tool's output), full error text and raw API bodies can carry
+  # source code or secrets. Names, sizes, durations, outcomes and token counts
+  # stay. `[.]` matches a literal dot without backslash escaping.
+  resource/redact:
+    attributes:
+      - pattern: &identity_keys '^(user[.](email|id|account_id|account_uuid|groups)|organization[.]id)$'
+        action: delete
+  attributes/redact:
+    actions:
+      - pattern: *identity_keys
+        action: delete
+      - pattern: '^(prompt|prompt_text|response|tool_input|tool_parameters|arguments|output|error|error[.]message|auth[.]error|body|body_ref|diff|hook_definitions|redacted_settings)$'
+        action: delete
+
+  # Which machine the telemetry came from, since the gateway cannot tell sources
+  # apart by token once data is inside the pipeline.
+  resource/host:
+    attributes:
+      - key: host.name
+        value: ${env:OTEL_AGENT_HOST}
+        action: upsert
+
+  batch:
+    timeout: 5s
+
+exporters:
+  otlp_http/gateway:
+    endpoint: ${env:OTEL_AGENT_GATEWAY}
+    headers:
+      Authorization: Bearer ${env:OTEL_AGENT_TOKEN}
+    compression: gzip
+    # The queue is in memory (the core distribution has no file storage): it
+    # covers gateway outages and LAN stalls while this process runs.
+    retry_on_failure:
+      enabled: true
+      max_elapsed_time: 1h
+    sending_queue:
+      enabled: true
+      queue_size: 2000
+
+service:
+  extensions: [health_check]
+  telemetry:
+    logs:
+      level: info
+    metrics:
+      level: normal
+      readers:
+        - pull:
+            exporter:
+              prometheus:
+                host: 127.0.0.1
+                port: 8889
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/redact, attributes/redact, resource/host, batch]
+      exporters: [otlp_http/gateway]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, resource/redact, attributes/redact, resource/host, batch]
+      exporters: [otlp_http/gateway]

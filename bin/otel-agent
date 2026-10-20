@@ -1,0 +1,148 @@
+#!/bin/zsh
+#===============================================================================
+# otel-agent - forward this Mac's coding-agent telemetry to the cluster gateway
+#===============================================================================
+#
+# USAGE:
+#   otel-agent install                 install or update the pinned collector, and
+#                                      its LaunchAgent once a gateway is configured
+#   otel-agent configure URL < token   store the gateway URL and ingest token, then
+#                                      (re)start the LaunchAgent
+#   otel-agent serve                   run the collector (the LaunchAgent's entry point)
+#   otel-agent status                  service, health and export counters
+#   otel-agent ping                    send one test event through the pipeline
+#
+# Claude Code, Codex and OpenCode export OTLP to 127.0.0.1:4318 (HTTP) or :4317
+# (gRPC). The collector deletes identities and tool content and forwards metrics
+# and log events to the gateway. See docs/AGENT-TELEMETRY.md.
+set -euo pipefail
+
+# One pinned release of the core distribution and the SHA-256 published with it.
+readonly OTELCOL_VERSION=0.163.1
+readonly OTELCOL_SHA256=664047e6ffd98ffaaf90d282bb481ffad46b1e8456f0b2f65e42d627d665d8d3
+readonly OTELCOL_URL=https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$OTELCOL_VERSION/otelcol_${OTELCOL_VERSION}_darwin_arm64.tar.gz
+
+bin_dir=${0:A:h} # captured here: inside a function $0 is the function name
+state=${OTEL_AGENT_HOME:-$HOME/.local/share/otel-agent}
+libexec=${OTEL_AGENT_LIBEXEC:-$HOME/.local/libexec/otelcol}
+config=${OTEL_AGENT_CONFIG:-$HOME/.config/otel-agent/config.yaml}
+otelcol=$libexec/$OTELCOL_VERSION/otelcol
+agent=com.ashtonian.otel-agent
+receiver=http://127.0.0.1:4318
+health_url=http://127.0.0.1:13134/
+metrics_url=http://127.0.0.1:8889/metrics
+
+die() { # die <exit status> <message>
+	print -u2 "otel-agent: $2"
+	exit $1
+}
+
+# install_release downloads the pinned collector into a versioned directory and
+# removes other versions. A fixed path per version keeps macOS's Local Network
+# grant tied to one binary.
+install_release() {
+	if [[ ! -x $otelcol ]]; then
+		[[ $(uname -m) == arm64 ]] || die 69 "only the darwin_arm64 release is pinned"
+		local tmp
+		tmp=$(mktemp -d)
+		trap "rm -rf '$tmp'" EXIT
+		curl -fsSL --retry 3 -o $tmp/otelcol.tar.gz $OTELCOL_URL
+		local sum
+		sum=$(shasum -a 256 $tmp/otelcol.tar.gz)
+		sum=${sum%% *}
+		[[ $sum == $OTELCOL_SHA256 ]] || die 65 "checksum mismatch for $OTELCOL_URL (got $sum)"
+		tar -xzf $tmp/otelcol.tar.gz -C $tmp otelcol
+		mkdir -p ${otelcol:h}
+		mv $tmp/otelcol $otelcol
+	fi
+	local dir
+	for dir in $libexec/*(N/); do
+		[[ ${dir:t} == $OTELCOL_VERSION ]] || rm -rf $dir
+	done
+}
+
+cmd_install() {
+	install_release
+	print "otel-agent: collector $OTELCOL_VERSION at $otelcol"
+	if [[ -s $state/endpoint && -s $state/token ]]; then
+		$bin_dir/dotfiles-install-launchagents.sh --otel-agent-only
+	else
+		print "otel-agent: next, run: otel-agent configure https://<gateway> < token-file"
+	fi
+}
+
+cmd_configure() {
+	local url=${1:-}
+	url=${url%/}
+	[[ $url == https://?* ]] || die 64 "usage: otel-agent configure https://<gateway> < token-file"
+	local token=
+	IFS= read -r token || true
+	(( ${#token} >= 32 )) || die 65 "the token on stdin is shorter than 32 characters"
+	mkdir -p $state
+	chmod 700 $state
+	(
+		umask 077
+		print -r -- $url >$state/endpoint
+		print -r -- $token >$state/token
+	)
+	chmod 600 $state/endpoint $state/token
+	if [[ -x $otelcol ]]; then
+		$bin_dir/dotfiles-install-launchagents.sh --otel-agent-only
+	else
+		print "otel-agent: gateway stored; run otel-agent install"
+	fi
+}
+
+cmd_serve() {
+	[[ -x $otelcol ]] || die 78 "collector not installed; run otel-agent install"
+	[[ -s $state/endpoint && -s $state/token ]] || die 78 "gateway not configured; run otel-agent configure"
+	[[ -r $config ]] || die 78 "missing $config; stow the otel-agent package"
+	export OTEL_AGENT_GATEWAY=$(<$state/endpoint)
+	export OTEL_AGENT_TOKEN=$(<$state/token)
+	export OTEL_AGENT_HOST=${OTEL_AGENT_HOST:-$(scutil --get LocalHostName 2>/dev/null || hostname -s)}
+	exec $otelcol --config=$config
+}
+
+cmd_status() {
+	local info
+	if info=$(launchctl list $agent 2>/dev/null); then
+		if [[ $info == *'"PID" = '* ]]; then print "service:   running"; else print "service:   loaded, not running"; fi
+	else
+		print "service:   not loaded"
+	fi
+	if [[ -x $otelcol ]]; then print "collector: $OTELCOL_VERSION"; else print "collector: not installed"; fi
+	if [[ -s $state/endpoint ]]; then print "gateway:   $(<$state/endpoint)"; else print "gateway:   not configured"; fi
+	if curl -fsS -m 2 $health_url >/dev/null 2>&1; then print "health:    ok"; else print "health:    unreachable"; fi
+	local metrics
+	metrics=$(curl -fsS -m 2 $metrics_url 2>/dev/null) || return 0
+	# Totals since the collector started, summed over signals and exporters.
+	print -r -- $metrics | awk '
+		/^otelcol_(receiver_accepted|receiver_refused|exporter_sent|exporter_send_failed|exporter_enqueue_failed)_/ ||
+		/^otelcol_exporter_queue_size/ {
+			name = $1; sub(/\{.*/, "", name); total[name] += $NF
+		}
+		END { for (name in total) printf "  %-48s %d\n", name, total[name] }' | sort
+}
+
+# cmd_ping posts one log event that the gateway stores like any other, so a
+# delivery problem shows up in `status` (exporter_sent vs send_failed) and the
+# event in Loki as {service_name="otel-agent"}.
+cmd_ping() {
+	local now
+	now=$(date +%s)000000000
+	local code
+	code=$(curl -s -o /dev/null -w '%{http_code}' -m 5 -X POST $receiver/v1/logs \
+		-H 'Content-Type: application/json' \
+		--data "{\"resourceLogs\":[{\"resource\":{\"attributes\":[{\"key\":\"service.name\",\"value\":{\"stringValue\":\"otel-agent\"}}]},\"scopeLogs\":[{\"logRecords\":[{\"timeUnixNano\":\"$now\",\"body\":{\"stringValue\":\"otel-agent ping\"},\"attributes\":[{\"key\":\"event.name\",\"value\":{\"stringValue\":\"otel_agent.ping\"}}]}]}]}]}") || true
+	[[ $code == 200 ]] || die 69 "the local receiver answered '$code'; is the service running? (otel-agent status)"
+	print "otel-agent: accepted locally; check exporter_sent in a few seconds with otel-agent status"
+}
+
+case ${1:-} in
+	install) cmd_install ;;
+	configure) shift; cmd_configure "$@" ;;
+	serve) cmd_serve ;;
+	status) cmd_status ;;
+	ping) cmd_ping ;;
+	*) die 64 "usage: otel-agent install | configure URL < token | serve | status | ping" ;;
+esac

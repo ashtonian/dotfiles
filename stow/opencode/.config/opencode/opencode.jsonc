@@ -11,6 +11,20 @@
   // Claude Code's Bash tool; the service sets BASH_ENV to the shared environment.
   "shell": "/opt/homebrew/bin/bash",
 
+  // Telemetry to the local collector (bin/otel-agent, docs/AGENT-TELEMETRY.md),
+  // which forwards to the cluster. The 1.x line is the one built for OpenCode V1.
+  // Traces are off because the cluster has no trace backend; prompts stay out of
+  // the logs by default.
+  "plugin": [
+    ["@devtheops/opencode-plugin-otel@1.5.1", {
+      "enabled": true,
+      "endpoint": "http://127.0.0.1:4318",
+      "protocol": "http/protobuf",
+      "metricsTemporality": "cumulative",
+      "disabledTraces": ["session", "llm", "tool"]
+    }]
+  ],
+
   "default_agent": "coordinator",
   // The gateway serves a single resident model; title and summary requests use it
   // too, since any other model would force a reload on the GPU.

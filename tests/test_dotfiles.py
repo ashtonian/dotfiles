@@ -753,5 +753,103 @@ class AgentMonitorGate(AgentMonitorFixture):
         self.assertIn('fewer than 32 characters', p.stderr)
 
 
+class OtelAgent(Fixture):
+    VERSION = '0.163.1'
+    TOKEN = 'a' * 48
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.home.mkdir()
+        self.state = self.home / '.local/share/otel-agent'
+        self.libexec = self.home / '.local/libexec/otelcol'
+        self.config = self.home / '.config/otel-agent/config.yaml'
+        self.env.update(HOME=str(self.home), OTEL_AGENT_HOST='test-host')
+        for name in ('OTEL_AGENT_HOME', 'OTEL_AGENT_LIBEXEC', 'OTEL_AGENT_CONFIG'):
+            self.env.pop(name, None)
+
+    def run_agent(self, *args, input=None):
+        return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/otel-agent'), *args],
+                              cwd=self.path, env=self.env, input=input,
+                              capture_output=True, text=True, timeout=20)
+
+    def install_collector(self, version=VERSION):
+        collector = self.libexec / version / 'otelcol'
+        collector.parent.mkdir(parents=True)
+        collector.write_text('#!/bin/sh\nprintf "%s\\n" "args=$*" "gateway=$OTEL_AGENT_GATEWAY" '
+                             '"token=$OTEL_AGENT_TOKEN" "host=$OTEL_AGENT_HOST"\n')
+        collector.chmod(0o755)
+        return collector
+
+    def configure(self):
+        self.state.mkdir(parents=True)
+        (self.state / 'endpoint').write_text('https://gateway.example\n')
+        (self.state / 'token').write_text(self.TOKEN + '\n')
+
+    def test_serve_runs_pinned_collector_with_gateway_from_state(self):
+        self.install_collector()
+        self.configure()
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('')
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = dict(line.split('=', 1) for line in p.stdout.splitlines())
+        self.assertEqual(lines['args'], f'--config={self.config}')
+        self.assertEqual(lines['gateway'], 'https://gateway.example')
+        self.assertEqual(lines['token'], self.TOKEN)
+        self.assertEqual(lines['host'], 'test-host')
+
+    def test_serve_without_gateway_is_a_config_error(self):
+        self.install_collector()
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('otel-agent configure', p.stderr)
+
+    def test_configure_stores_gateway_privately(self):
+        p = self.run_agent('configure', 'https://gateway.example/', input=self.TOKEN + '\n')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((self.state / 'endpoint').read_text(), 'https://gateway.example\n')
+        self.assertEqual((self.state / 'token').read_text(), self.TOKEN + '\n')
+        self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o700)
+        for name in ('endpoint', 'token'):
+            self.assertEqual(stat.S_IMODE((self.state / name).stat().st_mode), 0o600)
+        self.assertIn('run otel-agent install', p.stdout)
+
+    def test_configure_rejects_plain_http_and_short_tokens(self):
+        p = self.run_agent('configure', 'http://gateway.example', input=self.TOKEN + '\n')
+        self.assertEqual(p.returncode, 64)
+        p = self.run_agent('configure', 'https://gateway.example', input='short\n')
+        self.assertEqual(p.returncode, 65)
+        self.assertFalse((self.state / 'token').exists())
+
+    def test_install_keeps_only_the_pinned_version(self):
+        self.install_collector()
+        self.install_collector('0.150.0')
+        p = self.run_agent('install')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(sorted(d.name for d in self.libexec.iterdir()), [self.VERSION])
+        self.assertIn('otel-agent configure', p.stdout)
+
+    def test_unknown_command_is_a_usage_error(self):
+        self.assertEqual(self.run_agent('bogus').returncode, 64)
+
+    def test_collector_config_deletes_identity_and_content_keys(self):
+        import re
+        text = (ROOT / 'stow/otel-agent/.config/otel-agent/config.yaml').read_text()
+        # Every delete pattern, with `*alias` resolved to its `&anchor` value.
+        anchors = dict(re.findall(r"&(\w+) '([^']+)'", text))
+        patterns = [re.compile(literal or anchors[ref])
+                    for ref, literal in re.findall(r"pattern: (?:[&*](\w+) ?)?(?:'([^']+)')?", text)]
+        deleted = lambda key: any(p.search(key) for p in patterns)
+        for key in ('user.email', 'user.id', 'user.account_id', 'user.account_uuid',
+                    'organization.id', 'prompt', 'prompt_text', 'response', 'tool_input',
+                    'tool_parameters', 'arguments', 'output', 'error', 'error.message',
+                    'auth.error', 'body', 'diff'):
+            self.assertTrue(deleted(key), key)
+        for key in ('tool_name', 'tool_result_size_bytes', 'duration_ms', 'event.name',
+                    'session.id', 'mcp_server', 'model', 'service.name', 'error_type'):
+            self.assertFalse(deleted(key), key)
+
+
 if __name__ == '__main__':
     unittest.main()

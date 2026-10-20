@@ -16,6 +16,9 @@
 #     (only after `agent-monitor install`; see docs/AGENT-MONITOR.md)
 #   - com.ashtonian.agent-monitor-gate : its token-checked LAN gate (only after
 #     `agent-monitor lan enable`)
+#   - com.ashtonian.otel-agent : the local collector that forwards coding-agent
+#     telemetry to the cluster (only after `otel-agent install` and `configure`;
+#     see docs/AGENT-TELEMETRY.md)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -27,6 +30,7 @@
 #   --opencode-only  Install only the OpenCode server agent
 #   --agent-monitor-only  Install only the agent dashboard (and its LAN gate when enabled)
 #   --agent-monitor-gate-only  Install only the agent dashboard's LAN gate
+#   --otel-agent-only  Install only the agent telemetry collector
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -42,6 +46,7 @@ CODEX_AGENT="com.ashtonian.codex-remote-control"
 OPENCODE_AGENT="com.ashtonian.opencode"
 AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
 AGENT_MONITOR_GATE_AGENT="com.ashtonian.agent-monitor-gate"
+OTEL_AGENT="com.ashtonian.otel-agent"
 
 # Colors
 RED='\033[0;31m'
@@ -172,12 +177,29 @@ install_agent_monitor_gate_agent() {
     log_info "One-time: allow node to accept incoming connections when the macOS firewall asks"
 }
 
+# install_otel_agent installs the telemetry collector once bin/otel-agent has
+# installed its release and stored a gateway. The collector reaches the gateway
+# on the LAN, so its first connection raises macOS's Local Network prompt.
+install_otel_agent() {
+    if [[ ! -s "$HOME/.local/share/otel-agent/endpoint" || ! -s "$HOME/.local/share/otel-agent/token" ]]; then
+        log_warn "otel-agent is not configured (run $DOTFILES_DIR/bin/otel-agent configure); skipping $OTEL_AGENT"
+        return 0
+    fi
+    if ! compgen -G "$HOME/.local/libexec/otelcol/*/otelcol" >/dev/null; then
+        log_warn "otel-agent is not installed (run $DOTFILES_DIR/bin/otel-agent install); skipping $OTEL_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/otel-agent" # launchd does not create log directories
+    install_agent "$OTEL_AGENT"
+    log_info "One-time: allow otelcol to find devices on the local network when macOS asks"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -228,6 +250,7 @@ install_all() {
     install_codex_agent
     install_opencode_agent
     install_agent_monitor_agent
+    install_otel_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -255,6 +278,7 @@ uninstall_all() {
     uninstall_agent "$OPENCODE_AGENT"
     uninstall_agent "$AGENT_MONITOR_AGENT"
     uninstall_agent "$AGENT_MONITOR_GATE_AGENT"
+    uninstall_agent "$OTEL_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -284,6 +308,9 @@ main() {
             ;;
         --agent-monitor-gate-only)
             install_agent_monitor_gate_agent
+            ;;
+        --otel-agent-only)
+            install_otel_agent
             ;;
         --uninstall)
             uninstall_all
