@@ -1,0 +1,190 @@
+#!/bin/zsh
+#===============================================================================
+# agent-monitor - run Claude Code Agent Monitor (CCAM) for this Mac's agents
+#===============================================================================
+#
+# USAGE:
+#   agent-monitor install [--data-dir DIR]   install or update the pinned release,
+#                                            Claude Code + Codex hooks and the LaunchAgent
+#   agent-monitor serve                      run the dashboard (the LaunchAgent's entry point)
+#   agent-monitor status                     service, health and hook state
+#   agent-monitor uninstall-hooks            remove the dashboard's Claude Code and Codex hooks
+#
+# The dashboard listens on 127.0.0.1:$AGENT_MONITOR_PORT and reads ~/.claude and
+# ~/.codex directly, so it must run on the machine that runs the agents.
+# See docs/AGENT-MONITOR.md.
+set -euo pipefail
+
+# One pinned upstream release: the tag and the commit it must resolve to.
+readonly CCAM_VERSION=2.3.0
+readonly CCAM_COMMIT=a06db038a93b4d7316492dc55758f597e104894c
+readonly CCAM_REPO=https://github.com/hoangsonww/Claude-Code-Agent-Monitor.git
+# Node 24 LTS, the runtime upstream builds and tests against. A fixed version
+# keeps better-sqlite3's native ABI stable and the binary's privacy grant valid.
+readonly NODE_VERSION=24.22.0
+
+bin_dir=${0:A:h} # captured here: inside a function $0 is the function name
+home=${AGENT_MONITOR_HOME:-$HOME/.local/share/agent-monitor}
+port=${AGENT_MONITOR_PORT:-4820}
+fnm_dir=${FNM_DIR:-$HOME/Library/Application Support/fnm}
+app=$home/app
+data=$home/data # symlink to the data volume; the LaunchAgent waits for it to resolve
+config=$home/config
+node_bin=$fnm_dir/node-versions/v$NODE_VERSION/installation/bin/node
+agent=com.ashtonian.agent-monitor
+
+die() { # die <exit status> <message>
+	print -u2 "agent-monitor: $2"
+	exit $1
+}
+
+with_node() {
+	PATH=${node_bin:h}:$PATH "$@"
+}
+
+ensure_node() {
+	[[ -x $node_bin ]] && return
+	command -v fnm >/dev/null || die 69 "fnm is required to install Node $NODE_VERSION (brew install fnm)"
+	FNM_DIR=$fnm_dir fnm install $NODE_VERSION
+	[[ -x $node_bin ]] || die 70 "fnm did not install $node_bin"
+}
+
+# link_data points $data at the data directory, keeping an existing link unless
+# --data-dir names a different one. The database and transcript snapshots grow
+# with history (several GB), so the default target is the external volume.
+link_data() {
+	local target=${1:-}
+	if [[ -L $data && -z $target ]]; then
+		return
+	fi
+	target=${target:-/Volumes/E2TB/agent-monitor}
+	[[ -e $data && ! -L $data ]] && die 73 "$data exists and is not a symlink; move it aside first"
+	mkdir -p $target
+	chmod 700 $target # full transcript copies live here
+	ln -sfn $target $data
+}
+
+checkout_release() {
+	if [[ ! -d $app/.git ]]; then
+		git clone --quiet --depth 1 --branch v$CCAM_VERSION $CCAM_REPO $app
+	else
+		[[ -z $(git -C $app status --porcelain) ]] || die 73 "$app has local changes; refusing to update"
+		git -C $app fetch --quiet --depth 1 origin tag v$CCAM_VERSION
+		git -C $app checkout --quiet --detach v$CCAM_VERSION
+	fi
+	local head=$(git -C $app rev-parse HEAD)
+	[[ $head == $CCAM_COMMIT ]] || die 65 "v$CCAM_VERSION resolved to $head, expected $CCAM_COMMIT; the upstream tag moved"
+}
+
+build_release() {
+	# Lifecycle scripts stay off for the server's dependencies: one of them is an
+	# install-time analytics ping. better-sqlite3 is the only one that needs its
+	# script (it fetches the prebuilt native driver), so it is rebuilt alone.
+	with_node npm --prefix $app ci --omit=dev --ignore-scripts --no-audit --no-fund
+	with_node npm --prefix $app rebuild better-sqlite3
+	with_node npm --prefix $app/client ci --no-audit --no-fund
+	with_node npm --prefix $app/client run build
+	$node_bin -e 'require(process.argv[1])' $app/node_modules/better-sqlite3 \
+		|| die 70 "better-sqlite3 does not load under Node $NODE_VERSION"
+}
+
+cmd_install() {
+	local data_dir=""
+	while (( $# )); do
+		case $1 in
+			--data-dir) data_dir=${2:?--data-dir needs a directory}; shift 2 ;;
+			*) die 64 "unknown install option: $1" ;;
+		esac
+	done
+	command -v git >/dev/null || die 69 "git is required"
+	ensure_node
+	mkdir -p $home $config
+	link_data $data_dir
+	checkout_release
+	build_release
+	# Writes `node <app>/scripts/{hook,codex-hook}-handler.js <event>` entries into
+	# ~/.claude/settings.json and ~/.codex/hooks.json, leaving other hooks alone.
+	with_node $node_bin $app/scripts/install-hooks.js --both
+	$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-only
+	print "agent-monitor $CCAM_VERSION installed: http://127.0.0.1:$port"
+}
+
+cmd_serve() {
+	[[ -x $node_bin ]] || die 78 "Node $NODE_VERSION is missing; run agent-monitor install"
+	[[ -f $app/server/index.js ]] || die 78 "$app is not installed; run agent-monitor install"
+	# Loopback only: the API serves every transcript and can launch agents. The
+	# data path is not touched here so the external-volume privacy grant belongs to
+	# node alone, not to this shell.
+	export NODE_ENV=production
+	export DASHBOARD_HOST=127.0.0.1
+	export DASHBOARD_PORT=$port
+	export DASHBOARD_DATA_DIR=$data
+	export DASHBOARD_ENV_PATH=$config/.env
+	# Upstream's notifier runs `git fetch` every 5 minutes and compares against its
+	# default branch; this checkout is a pinned tag updated through `install`.
+	export DASHBOARD_UPDATE_CHECK=0
+	cd $app
+	exec $node_bin server/index.js
+}
+
+# hook_state <settings file> <handler name>: how many dashboard hook entries it holds.
+hook_state() {
+	[[ -f $1 ]] || { print "no file"; return }
+	$node_bin -e '
+		const hooks = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")).hooks || {};
+		const ours = Object.entries(hooks).filter(([, list]) => Array.isArray(list) &&
+			list.some((e) => JSON.stringify(e).includes(process.argv[2])));
+		console.log(ours.length ? `${ours.length} events: ${ours.map(([k]) => k).join(", ")}` : "none");
+	' $1 $2
+}
+
+cmd_status() {
+	[[ -x $node_bin ]] || die 78 "Node $NODE_VERSION is missing; run agent-monitor install"
+	local version="not installed"
+	[[ -d $app/.git ]] && version=$(git -C $app describe --tags --always 2>/dev/null || print unknown)
+	print "release:      $version (pinned v$CCAM_VERSION)"
+	print "data:         $data -> $(readlink $data 2>/dev/null || print missing)"
+	if launchctl print gui/$UID/$agent >/dev/null 2>&1; then
+		print "LaunchAgent:  $(launchctl print gui/$UID/$agent | awk -F' = ' '/^\tstate = /{print $2; exit}')"
+	else
+		print "LaunchAgent:  not loaded"
+	fi
+	print "health:       $(curl -fsS -m 5 http://127.0.0.1:$port/api/health 2>/dev/null || print unreachable)"
+	print "claude hooks: $(hook_state $HOME/.claude/settings.json $app/scripts/hook-handler.js)"
+	print "codex hooks:  $(hook_state ${CODEX_HOME:-$HOME/.codex}/hooks.json $app/scripts/codex-hook-handler.js)"
+}
+
+# Upstream installs hooks but has no uninstaller. This removes exactly the
+# entries that run its handlers and drops events left empty.
+cmd_uninstall_hooks() {
+	[[ -x $node_bin ]] || die 78 "Node $NODE_VERSION is missing"
+	local file handler
+	for file handler in \
+		$HOME/.claude/settings.json $app/scripts/hook-handler.js \
+		${CODEX_HOME:-$HOME/.codex}/hooks.json $app/scripts/codex-hook-handler.js; do
+		[[ -f $file ]] || continue
+		$node_bin -e '
+			const fs = require("fs");
+			const [file, handler] = process.argv.slice(1);
+			const config = JSON.parse(fs.readFileSync(file, "utf8"));
+			for (const [event, list] of Object.entries(config.hooks || {})) {
+				if (!Array.isArray(list)) continue;
+				const kept = list.filter((e) => !JSON.stringify(e).includes(handler));
+				if (kept.length) config.hooks[event] = kept;
+				else delete config.hooks[event];
+			}
+			fs.writeFileSync(`${file}.tmp`, JSON.stringify(config, null, 2) + "\n");
+			fs.renameSync(`${file}.tmp`, file);
+		' $file $handler
+		print "removed dashboard hooks from $file"
+	done
+}
+
+case ${1:-} in
+	install) shift; cmd_install "$@" ;;
+	serve) cmd_serve ;;
+	status) cmd_status ;;
+	uninstall-hooks) cmd_uninstall_hooks ;;
+	-h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' $0 ;;
+	*) die 64 "usage: agent-monitor install|serve|status|uninstall-hooks" ;;
+esac

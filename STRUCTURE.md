@@ -18,6 +18,7 @@ This file maps the checked-in implementation.
 ├── stow/                    # Packages whose contents map into ~
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
+├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -128,6 +129,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
+| [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback |
 
 ## Automation and data boundaries
 
@@ -137,6 +139,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.dotfiles.update | Friday 09:00 local time | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
 | com.ashtonian.codex-remote-control | Always on; default Unix socket; soft file limit 65,536 | `~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log` |
 | com.ashtonian.opencode | Always on; HTTP server; default `0.0.0.0:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
+| com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
 
 Templates are copied, not linked. Reinstall the affected agent to apply a
 template change; restarting a loaded job keeps its loaded plist settings.

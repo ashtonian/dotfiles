@@ -12,6 +12,8 @@
 #     for the one-time Full Disk Access step)
 #   - com.ashtonian.opencode : the OpenCode server (web UI + API) that `oc` attaches
 #     to (only when opencode is installed; see stow/opencode/README.md)
+#   - com.ashtonian.agent-monitor : the loopback Claude Code / Codex agent dashboard
+#     (only after `agent-monitor install`; see docs/AGENT-MONITOR.md)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -21,6 +23,7 @@
 #   --update-only  Install only the update agent
 #   --codex-only   Install only the Codex app-server agent
 #   --opencode-only  Install only the OpenCode server agent
+#   --agent-monitor-only  Install only the agent dashboard agent
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -34,6 +37,7 @@ LAUNCH_AGENTS_SRC="$DOTFILES_DIR/launchagents"
 LAUNCH_AGENTS_DST="$HOME/Library/LaunchAgents"
 CODEX_AGENT="com.ashtonian.codex-remote-control"
 OPENCODE_AGENT="com.ashtonian.opencode"
+AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
 
 # Colors
 RED='\033[0;31m'
@@ -139,12 +143,25 @@ install_opencode_agent() {
     log_info "  (System Settings > Privacy & Security > Full Disk Access > + > Cmd+Shift+G)"
 }
 
+# install_agent_monitor_agent installs the agent dashboard once bin/agent-monitor
+# has installed its release. The service's node reads the data volume, so the
+# first start raises a one-time Removable Volumes prompt for that binary.
+install_agent_monitor_agent() {
+    if [[ ! -f "$HOME/.local/share/agent-monitor/app/server/index.js" ]]; then
+        log_warn "agent-monitor is not installed (run $DOTFILES_DIR/bin/agent-monitor install); skipping $AGENT_MONITOR_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/agent-monitor" # launchd does not create log directories
+    install_agent "$AGENT_MONITOR_AGENT"
+    log_info "One-time: allow node access to the data volume when macOS asks (Privacy & Security > Files and Folders)"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -194,6 +211,7 @@ install_all() {
     install_agent "com.dotfiles.update"
     install_codex_agent
     install_opencode_agent
+    install_agent_monitor_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -219,6 +237,7 @@ uninstall_all() {
     uninstall_agent "com.dotfiles.update"
     uninstall_agent "$CODEX_AGENT"
     uninstall_agent "$OPENCODE_AGENT"
+    uninstall_agent "$AGENT_MONITOR_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -242,6 +261,9 @@ main() {
             ;;
         --opencode-only)
             install_opencode_agent
+            ;;
+        --agent-monitor-only)
+            install_agent_monitor_agent
             ;;
         --uninstall)
             uninstall_all

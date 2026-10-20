@@ -465,5 +465,83 @@ process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
         self.assertNotIn('--dangerously-skip-permissions', args)
 
 
+class AgentMonitor(Fixture):
+    NODE_VERSION = '24.22.0'
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.home.mkdir()
+        self.monitor = self.home / '.local/share/agent-monitor'
+        self.env.update(HOME=str(self.home), FNM_DIR=str(self.path / 'fnm'))
+        self.env.pop('AGENT_MONITOR_HOME', None)
+        self.env.pop('AGENT_MONITOR_PORT', None)
+        self.env.pop('CODEX_HOME', None)
+
+    def node_path(self):
+        return self.path / f'fnm/node-versions/v{self.NODE_VERSION}/installation/bin/node'
+
+    def install_node(self, script=None):
+        node = self.node_path()
+        node.parent.mkdir(parents=True)
+        if script is None:
+            real = shutil.which('node')
+            if not real:
+                self.skipTest('Node.js required')
+            node.symlink_to(real)
+        else:
+            node.write_text(script)
+            node.chmod(0o755)
+
+    def run_monitor(self, *args):
+        return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), *args],
+                              cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
+
+    def test_serve_runs_pinned_node_on_loopback(self):
+        self.install_node('#!/bin/sh\nprintf "%s\\n" "cwd=$PWD" "args=$*" "host=$DASHBOARD_HOST" '
+                          '"port=$DASHBOARD_PORT" "data=$DASHBOARD_DATA_DIR" "env=$DASHBOARD_ENV_PATH" '
+                          '"update=$DASHBOARD_UPDATE_CHECK"\n')
+        (self.monitor / 'app/server').mkdir(parents=True)
+        (self.monitor / 'app/server/index.js').write_text('')
+        p = self.run_monitor('serve')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = dict(line.split('=', 1) for line in p.stdout.splitlines())
+        self.assertEqual(Path(lines['cwd']).resolve(), (self.monitor / 'app').resolve())
+        self.assertEqual(lines['args'], 'server/index.js')
+        self.assertEqual(lines['host'], '127.0.0.1')
+        self.assertEqual(lines['port'], '4820')
+        self.assertEqual(lines['data'], str(self.monitor / 'data'))
+        self.assertEqual(lines['env'], str(self.monitor / 'config/.env'))
+        self.assertEqual(lines['update'], '0')
+
+    def test_serve_without_install_is_a_config_error(self):
+        p = self.run_monitor('serve')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('run agent-monitor install', p.stderr)
+
+    def test_unknown_command_is_a_usage_error(self):
+        p = self.run_monitor('bogus')
+        self.assertEqual(p.returncode, 64)
+        self.assertIn('usage:', p.stderr)
+
+    def test_uninstall_hooks_removes_only_dashboard_entries(self):
+        self.install_node()
+        handler = self.monitor / 'app/scripts/hook-handler.js'
+        other = {'hooks': [{'type': 'command', 'command': 'prettier --write'}]}
+        ours = {'hooks': [{'type': 'command', 'command': f'node "{handler}" Stop'}]}
+        claude = self.home / '.claude/settings.json'
+        claude.parent.mkdir()
+        claude.write_text(json.dumps({'model': 'opus', 'hooks': {'PostToolUse': [other, ours], 'Stop': [ours]}}))
+        codex = self.home / '.codex/hooks.json'
+        codex.parent.mkdir()
+        codex_ours = {'hooks': [{'type': 'command',
+                                 'command': f'node "{self.monitor}/app/scripts/codex-hook-handler.js" Stop'}]}
+        codex.write_text(json.dumps({'hooks': {'Stop': [codex_ours]}}))
+        p = self.run_monitor('uninstall-hooks')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(claude.read_text()), {'model': 'opus', 'hooks': {'PostToolUse': [other]}})
+        self.assertEqual(json.loads(codex.read_text()), {'hooks': {}})
+
+
 if __name__ == '__main__':
     unittest.main()

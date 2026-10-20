@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Claude Code Agent Monitor: the loopback dashboard for this Mac's Claude Code and
+  Codex sessions. Runs through bin/agent-monitor serve (see docs/AGENT-MONITOR.md).
+  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.agent-monitor</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/agent-monitor</string>
+        <string>serve</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <!-- The Run page launches claude (~/.local/bin) and codex (Homebrew). -->
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
+    </dict>
+    <key>RunAtLoad</key>
+    <true/>
+    <!--
+      Run only while the data link resolves, so an unmounted data volume stops
+      the service instead of restart-looping it. Matches bin/agent-monitor's
+      default AGENT_MONITOR_HOME.
+    -->
+    <key>KeepAlive</key>
+    <dict>
+        <key>PathState</key>
+        <dict>
+            <key>$HOME/.local/share/agent-monitor/data</key>
+            <true/>
+        </dict>
+    </dict>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/agent-monitor/server.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/agent-monitor/server.stderr.log</string>
+</dict>
+</plist>

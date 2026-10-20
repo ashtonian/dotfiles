@@ -62,7 +62,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Stow packages** | All 12 packages in stow/; see [package inventory](STRUCTURE.md#stow-packages) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | App config backup (copy mode, not symlinks) |
-| **LaunchAgents** | Sync every 4 hours, Friday updates, eligible Codex/OpenCode services |
+| **LaunchAgents** | Sync every 4 hours, Friday updates, eligible Codex/OpenCode/agent dashboard services |
 
 ## Architecture
 
@@ -161,6 +161,9 @@ launchctl start com.dotfiles.sync
 # OpenCode server only (local setup first, see stow/opencode/README.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
 
+# Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
+
 # Uninstall
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
 ```
@@ -235,6 +238,15 @@ each finishes. Drive it from the terminal and a browser at once:
 
 Setup, configuration, the `delegate_*` tools, operations and security:
 [stow/opencode/README.md](stow/opencode/README.md).
+
+### Agent dashboard
+
+A loopback web dashboard at <http://127.0.0.1:4820> for every Claude Code and
+Codex session on this Mac: live cards, Kanban, tool timelines, transcripts, token
+and cost analytics, and a Run page that starts sessions with the CLIs' own logins.
+`~/.dotfiles/bin/agent-monitor install` sets it up, and `agent-monitor status`
+checks it. Setup, configuration, operations and security:
+[docs/AGENT-MONITOR.md](docs/AGENT-MONITOR.md).
 
 AI-assisted development workflows from `lib_sh/claude.sh`:
 
