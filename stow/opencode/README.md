@@ -66,10 +66,8 @@ Keep them compatible with the server configuration.
 | ------------ | --------- | ----- |
 | `mode`, `temperature` | primary, 0.2 | Agent mode and generation temperature. |
 | `edit` | deny | The coordinator delegates changes. |
-| `bash` | deny, except `git status/log/diff/show/branch` and `ls` | Enough to inspect a repo before writing a brief. |
 | `task` | deny | OpenCode subagents would run on the local model; real work goes to workers. |
-| `webfetch` | ask | |
-| `delegate_write` | ask | Write-access jobs need approval once per directory (`always`) or per job (`once`). |
+| everything else (`bash`, `webfetch`, `delegate_write`, …) | allow, from the global `permission` | No prompts: write-access jobs start without approval, like the fleet's bypassed sessions. |
 
 ### Local files (`~/.local/share/opencode/homelab/`, mode 0700)
 
@@ -307,8 +305,10 @@ Service logs have no rotation configured by these scripts.
   on the LAN and VPN can reach the web UI. It uses plain HTTP, so the basic-auth
   password crosses the LAN unencrypted. Keep it off any public network, and set
   `OPENCODE_HOSTNAME=127.0.0.1` in the LaunchAgent if remote access is not needed.
-- **Write access is approved per directory.** The `delegate_write` permission
-  asks before write-access jobs. Claude read jobs expose only Read/Glob/Grep,
+- **Write access is not approved per job.** The global `permission` block
+  allows `delegate_write`, so write-access jobs start without asking; set it to
+  `ask` in `coordinator.md` to restore approval per directory (`always`) or per
+  job (`once`). Claude read jobs expose only Read/Glob/Grep,
   with inherited settings and MCP tools restricted; Codex read jobs use its
   read-only filesystem sandbox. Read access still permits reading accessible
   private files and is not a confidentiality boundary.

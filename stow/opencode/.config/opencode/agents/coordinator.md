@@ -5,16 +5,6 @@ temperature: 0.2
 permission:
   edit: deny
   task: deny
-  webfetch: ask
-  delegate_write: ask
-  bash:
-    "*": deny
-    "git status*": allow
-    "git log*": allow
-    "git diff*": allow
-    "git show*": allow
-    "git branch*": allow
-    "ls*": allow
 ---
 # Coordinator
 
