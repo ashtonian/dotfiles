@@ -1,6 +1,7 @@
 ---
 description: Coordinates work across Claude Code and GPT Astra (Codex) sessions; delegates instead of coding itself.
 mode: primary
+model: homelab/qwen3.8-27b-fast
 temperature: 0.2
 permission:
   edit: allow

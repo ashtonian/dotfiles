@@ -6,8 +6,9 @@
 from a terminal (`oc`) and a browser at the same time: both attach to the same
 server and see the same sessions live.
 
-Its default agent, **coordinator**, runs on a self-hosted model (Qwen3.6-35B-A3B
-behind an OpenAI-compatible gateway on the LAN). It does no coding itself. It
+Its default agent, **coordinator**, runs on a self-hosted model (Qwen3.8-27B
+behind an OpenAI-compatible gateway on the LAN, with its GPU dedicated to these
+sessions). It does no coding itself. It
 turns a request into briefs and runs them as background jobs on stronger models
 through their real CLIs and subscriptions:
 
@@ -26,8 +27,10 @@ and ends its turn. When the worker exits, the `delegate` plugin posts a
 result and report or start the next step (for example, Claude implements, Astra
 reviews, Claude fixes the confirmed findings in its original session).
 
-The checked-in model and small-model aliases are identical so title/summary
-requests use the same backend as the coordinator. Gateway capacity, model
+The two checked-in aliases name the same resident model: `qwen3.8-27b` thinks and
+is the default for the build and plan agents; `qwen3.8-27b-fast` turns thinking
+off for the coordinator and for titles and summaries. Switching between them never
+reloads the GPU. Gateway capacity, model
 availability, and performance depend on the local deployment; this repository
 does not provision the gateway or establish benchmark results.
 
@@ -48,14 +51,20 @@ plugin and the server wrapper.
 | `shell` | `/opt/homebrew/bin/bash` | The shell tool runs `bash -c`, matching Claude Code's Bash tool; bash semantics for model-written commands. |
 | `plugin` | `@devtheops/opencode-plugin-otel@1.5.1` with endpoint `http://127.0.0.1:4318`, `http/protobuf`, cumulative metrics, traces off | Token, cost, session and tool telemetry to the local collector (`bin/otel-agent`, [docs/AGENT-TELEMETRY.md](../../docs/AGENT-TELEMETRY.md)). The 1.x line targets OpenCode V1; OpenCode installs it on server start. |
 | `default_agent` | `coordinator` | |
-| `model`, `small_model` | `homelab/qwen3.6-35b` | Keep coordinator, title, and summary requests on the same alias. |
+| `model` | `homelab/qwen3.8-27b` | Thinking on: the agents that write code. |
+| `small_model` | `homelab/qwen3.8-27b-fast` | Titles and summaries without a reasoning trace. |
 | `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |
 | `provider.homelab.options.apiKey` | `{file:~/.local/share/opencode/homelab/litellm.key}` | Scoped virtual key. |
+| `provider.homelab.options.headerTimeout` | `1800000` (30 min) | The server sends headers only after prefill; a cold full-window prompt takes ~11 min on the local card, and OpenCode's default is 5. |
 | `provider.homelab.models.*` | The one alias the gateway serves | The gateway keeps a single model resident and does not swap; see the model table below. |
 
 | Local alias | Context / output tokens | Capabilities configured |
 | ------------- | ------------------------- | ------------------------- |
-| `qwen3.6-35b` | 65,536 / 16,384 | Tool calls; coordinator and small-model default |
+| `qwen3.8-27b` | 262,144 / 32,768 | Tool calls, images, reasoning (`interleaved: reasoning_content`); `chat_template_kwargs.enable_thinking: true` |
+| `qwen3.8-27b-fast` (`id` `qwen3.8-27b`) | 262,144 / 32,768 | Tool calls, images; `enable_thinking: false`, temperature 0.7, top_p 0.8 |
+
+Per-model `options` are sent as top-level request fields (verified against a stub
+server), which is how `chat_template_kwargs` reaches the chat template.
 
 These are client-side limits, not evidence of the gateway's deployed limits.
 Keep them compatible with the server configuration.
@@ -64,7 +73,7 @@ Keep them compatible with the server configuration.
 
 | Field / permission | Setting | Why |
 | ------------ | --------- | ----- |
-| `mode`, `temperature` | primary, 0.2 | Agent mode and generation temperature. |
+| `mode`, `model`, `temperature` | primary, `homelab/qwen3.8-27b-fast`, 0.2 | No reasoning trace: the coordinator writes briefs, not code. |
 | `edit` | deny | The coordinator delegates changes. |
 | `task` | deny | OpenCode subagents would run on the local model; real work goes to workers. |
 | everything else (`bash`, `webfetch`, `delegate_write`, …) | allow, from the global `permission` | No prompts: write-access jobs start without approval, like the fleet's bypassed sessions. |
