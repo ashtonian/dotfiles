@@ -465,6 +465,47 @@ process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
         self.assertNotIn('--dangerously-skip-permissions', args)
 
 
+class SharedEnvironment(Fixture):
+    BREW_BIN = '/opt/homebrew/bin'
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        for d in ('bin', '.local/bin', '.config/shell'):
+            (self.home / d).mkdir(parents=True)
+        (self.home / '.config/shell/env.sh').symlink_to(ROOT / 'stow/shell/.config/shell/env.sh')
+        for name in ('.zshenv', '.zprofile'):
+            (self.home / name).symlink_to(ROOT / 'stow/zsh' / name)
+        (self.home / '.bashrc').symlink_to(ROOT / 'stow/shell/.bashrc')
+
+    def path_of(self, *argv):
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
+        p = subprocess.run([*argv], cwd=self.path, env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.strip().split(':')
+
+    def assert_order(self, path):
+        self.assertEqual(path[:2], [str(self.home / 'bin'), str(self.home / '.local/bin')])
+        self.assertIn('/usr/bin', path)
+        self.assertEqual(len(path), len(set(path)), 'duplicate PATH entries')
+        if Path(self.BREW_BIN).is_dir():
+            self.assertLess(path.index(self.BREW_BIN), path.index('/usr/bin'))
+
+    def test_builds_path_from_an_empty_environment(self):
+        self.assert_order(self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; printf %s "$PATH"'))
+
+    def test_is_idempotent(self):
+        once = self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; printf %s "$PATH"')
+        twice = self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; . "$HOME/.config/shell/env.sh"; printf %s "$PATH"')
+        self.assertEqual(once, twice)
+
+    def test_login_zsh_keeps_the_order_after_path_helper(self):
+        self.assert_order(self.path_of('/bin/zsh', '-l', '-c', 'print -rn -- $PATH'))
+
+    def test_bashrc_reads_the_shared_environment(self):
+        self.assert_order(self.path_of('/bin/bash', '-c', '. "$HOME/.bashrc"; printf %s "$PATH"'))
+
+
 class AgentShell(Fixture):
     def run_zsh(self, code, marker):
         env = dict(self.env)

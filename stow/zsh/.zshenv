@@ -2,39 +2,13 @@
 # Managed by dotfiles. Keep this FAST and SILENT (no output, minimal forks):
 # it runs even for `zsh -c '...'`. Interactive-only config lives in ~/.zshrc.
 
-# --- Homebrew (arch-aware): needed by non-interactive scripts/cron too --------
-# Guard avoids re-running the subprocess in inherited child shells.
-if [[ -z "${HOMEBREW_PREFIX:-}" ]]; then
-    if [[ -x /opt/homebrew/bin/brew ]]; then
-        eval "$(/opt/homebrew/bin/brew shellenv)"
-    elif [[ -x /usr/local/bin/brew ]]; then
-        eval "$(/usr/local/bin/brew shellenv)"
-    fi
+# --- Environment shared with bash and agents ----------------------------------
+# PATH, Homebrew, Go, editor, pager and locale come from one POSIX file that bash
+# (~/.bashrc) and Claude Code's Bash tool (CLAUDE_ENV_FILE) read too.
+if [[ -r "$HOME/.config/shell/env.sh" ]]; then
+    emulate sh -c '. "$HOME/.config/shell/env.sh"'
 fi
-
-# --- Go -----------------------------------------------------------------------
-export GOPATH="${GOPATH:-$HOME/go}"
-
-# --- PATH: user bins + go bin (Homebrew paths added by shellenv above) --------
-typeset -U path   # dedupe, keep first occurrence
-path=("$HOME/bin" "$HOME/.local/bin" "$GOPATH/bin" $path)
-
-# --- Core environment (safe in every shell) -----------------------------------
-# Prefer nvim if installed, else vim (command -v is a builtin -- no fork).
-if [[ -z "${EDITOR:-}" ]]; then
-    if command -v nvim &>/dev/null; then export EDITOR=nvim; else export EDITOR=vim; fi
-fi
-export VISUAL="${VISUAL:-$EDITOR}"
-export PAGER="${PAGER:-less}"          # plain less; bat-as-PAGER mangles man pages
-export LANG="${LANG:-en_US.UTF-8}"     # set LANG only; never force LC_ALL
-
-# --- zoxide -------------------------------------------------------------------
-# Silence zoxide's init-position "doctor": oh-my-zsh loads the zoxide plugin in the
-# MIDDLE of ~/.zshrc (plugins init before any post-plugin config), so its "init at
-# the very end of the rc file" check always warns even though zoxide works fine --
-# and that warning prints on EVERY non-interactive tool shell. Set here (sourced
-# before ~/.zshrc) so it is exported before the plugin's init runs.
-export _ZO_DOCTOR=0
+typeset -U path   # dedupe later additions, keep first occurrence
 
 # --- Agent shells -------------------------------------------------------------
 # Codex runs its model-written commands through this zsh: it takes the shell from

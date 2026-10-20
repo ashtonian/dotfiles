@@ -50,6 +50,7 @@ Stow's default ignore rules exclude package README files.
 | mackup | `.mackup.cfg`; filesystem storage and app exclusions |
 | neofetch | `.config/neofetch/config.conf`; legacy config, not used by Fastfetch |
 | opencode | `.config/opencode/opencode.jsonc`, coordinator agent, delegate plugin |
+| shell | `.config/shell/env.sh` (POSIX environment for every shell and agent), `.bashrc` |
 | ssh | .ssh/config; OrbStack include, private local include, shared defaults |
 | taskwarrior | `.taskrc` |
 | zsh | `.zshenv`, `.zprofile`, `.zshrc`, `.config/zsh/*.zsh` |
@@ -62,11 +63,11 @@ before moving or adopting files.
 
 | Stage | Behavior |
 | ------- | ---------- |
-| `.zshenv` | Every Zsh: guarded Homebrew environment, core variables, user paths; bash-like globbing and word splitting for Codex command shells (`AGENT_SHELL`) |
-| `.zprofile` | Login shells: pipx path and optional OrbStack integration |
+| `env.sh` | Every shell and agent command: PATH (system, Homebrew, toolchains, user bins), Homebrew variables, Go, editor, pager, locale; builtins only |
+| `.zshenv` | Every Zsh: sources `env.sh`; bash-like globbing and word splitting for Codex command shells (`AGENT_SHELL`) |
+| `.zprofile` | Login shells: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; optional OrbStack integration |
 | `.zshrc` | Interactive shells: classify real terminal vs zsh `-ic`; source sorted modules, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
 | `00-init.zsh` | Bootstrap Zinit and annexes, set shell options |
-| `10-path.zsh` | Tool-specific paths and environment |
 | `20-history.zsh` | Shared history, 50,000-entry limits, duplicate/space handling |
 | `30-plugins.zsh` | Theme, highlighting, autosuggestions, completions, compinit; deferred plugins and selected OMZ snippets |
 | `40-keybindings.zsh` | Emacs keys, navigation/history keys, then Atuin initialization when installed |

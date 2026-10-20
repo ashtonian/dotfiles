@@ -59,7 +59,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | Component | Description |
 | ----------- | ------------- |
 | **Homebrew** | Package manager + all packages from Brewfile |
-| **Stow packages** | All 12 packages in stow/; see [package inventory](STRUCTURE.md#stow-packages) |
+| **Stow packages** | All 13 packages in stow/; see [package inventory](STRUCTURE.md#stow-packages) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | App config backup (copy mode, not symlinks) |
 | **LaunchAgents** | Sync every 4 hours, Friday updates, eligible Codex/OpenCode/agent dashboard services |
@@ -175,7 +175,6 @@ launchctl start com.dotfiles.sync
 ```text
 ~/.config/zsh/
 ├── 00-init.zsh        # Zinit bootstrap
-├── 10-path.zsh        # PATH & environment
 ├── 20-history.zsh     # History settings
 ├── 30-plugins.zsh     # Zinit plugins (turbo mode)
 ├── 40-keybindings.zsh # Key bindings + Atuin
@@ -183,6 +182,11 @@ launchctl start com.dotfiles.sync
 ├── 60-functions.zsh   # Functions & external sources
 └── 70-greeting.zsh    # Optional terminal greeting
 ```
+
+PATH and the core environment (Homebrew, Go, language toolchains, editor,
+pager, locale) are defined once in `~/.config/shell/env.sh` (stow package
+`shell`). `~/.zshenv` sources it for every zsh, `~/.bashrc` for bash, and
+Claude Code runs it before each Bash tool command (`CLAUDE_ENV_FILE`).
 
 ### Local Overrides
 
