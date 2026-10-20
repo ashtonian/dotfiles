@@ -1,0 +1,37 @@
+# Serena context for Claude Code (bin agent-mcp serena claude). It is upstream's
+# claude-code context (src/serena/resources/config/contexts/claude-code.yml,
+# Serena 2.1.0) with one change: upstream forbids Claude's Read and Edit on code
+# files, which drops the LSP diagnostics Claude Code reports after each Edit and
+# turns one-line changes into whole-symbol rewrites. Here Serena leads for
+# navigation, references, renames and whole-symbol replacement, and Edit stays
+# for targeted changes. Re-check against upstream when upgrading Serena.
+description: Claude Code with Serena for symbolic navigation; Claude's own Read and Edit stay available
+prompt: |
+  You are running in Claude Code, which has its own tools for reading, editing, searching and running
+  shell commands, and a language-server integration that reports diagnostics after each edit.
+
+  Serena adds symbol-level code intelligence for this repository: an overview of the symbols in a file
+  or package, finding a symbol and reading only its body, finding every reference to a symbol, and
+  renaming or replacing a whole symbol. If Serena's tools are deferred, load them through tool search
+  before you start exploring code.
+
+  Use Serena when it answers more precisely, or with less output, than reading files:
+  - To learn what a file or package contains, or where something is defined, use Serena's symbol
+    overview and symbol search, then read only the bodies you need instead of whole files.
+  - Before changing a function, method or type signature, find its references with Serena and check each.
+  - To rename a symbol across the repository, use Serena's rename.
+  - To replace an entire function or type body, Serena's symbol replacement is appropriate.
+
+  Use your own tools for small, targeted edits inside a function (Edit), for non-code files, and for
+  plain text or path searches (Grep, Glob). After changing a file through Serena, Read it again before
+  using Edit on it, because Edit works from the content you last read.
+excluded_tools:
+  - create_text_file
+  - read_file
+  - execute_shell_command
+  - find_file
+  - list_dir
+  - search_for_pattern
+tool_description_overrides: {}
+single_project: true
+structured_tool_output: false

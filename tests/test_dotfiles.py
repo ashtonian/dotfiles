@@ -851,5 +851,79 @@ class OtelAgent(Fixture):
             self.assertFalse(deleted(key), key)
 
 
+class AgentMcp(Fixture):
+    SCRIPT = ROOT / 'stow/agent-mcp/.local/bin/agent-mcp'
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.mcp = self.path / 'mcp'
+        self.config = self.path / 'agent-mcp'
+        self.env.update(HOME=str(self.home), AGENT_MCP_HOME=str(self.mcp), AGENT_MCP_CONFIG=str(self.config))
+
+    def run_mcp(self, *args):
+        return subprocess.run(['/bin/sh', str(self.SCRIPT), *args], cwd=self.path, env=self.env,
+                              capture_output=True, text=True, timeout=20)
+
+    def fake(self, path, name='server'):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f'#!/bin/sh\necho "{name} $*"\n')
+        path.chmod(0o755)
+
+    def test_unknown_server_or_harness_is_a_usage_error(self):
+        self.assertEqual(self.run_mcp('bogus').returncode, 64)
+        p = self.run_mcp('serena', 'gemini')
+        self.assertEqual(p.returncode, 64)
+        self.assertIn("unknown harness 'gemini'", p.stderr)
+
+    def test_missing_install_names_the_server(self):
+        p = self.run_mcp('pprof')
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('pprof:', p.stderr)
+        self.assertIn('not installed', p.stderr)
+
+    def test_serena_uses_the_claude_context_file_for_claude(self):
+        self.fake(self.bin / 'serena', 'serena')
+        (self.config).mkdir()
+        (self.config / 'serena-claude-code.yml').write_text('')
+        p = self.run_mcp('serena', 'claude')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(f'--context {self.config}/serena-claude-code.yml', p.stdout)
+        for flag in ('--project-from-cwd', '--add-mode no-memories', '--enable-web-dashboard false',
+                     '--open-web-dashboard false'):
+            self.assertIn(flag, p.stdout)
+
+    def test_serena_uses_upstream_context_for_codex(self):
+        self.fake(self.bin / 'serena', 'serena')
+        p = self.run_mcp('serena', 'codex')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('--context codex ', p.stdout)
+
+    def test_serena_for_claude_without_context_file_is_a_config_error(self):
+        self.fake(self.bin / 'serena', 'serena')
+        p = self.run_mcp('serena')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('stow the agent-mcp package', p.stderr)
+
+    def test_codebase_memory_restricts_codex_to_the_analysis_profile(self):
+        self.fake(self.home / '.local/libexec/codebase-memory-mcp/0.12.1/codebase-memory-mcp', 'cbm')
+        self.assertEqual(self.run_mcp('codebase-memory', 'codex').stdout.strip(), 'cbm --tool-profile=analysis')
+        self.assertEqual(self.run_mcp('codebase-memory', 'claude').stdout.strip(), 'cbm')
+
+    def test_grafana_enables_fewer_tool_categories_for_codex(self):
+        self.fake(self.mcp / 'grafana.sh', 'grafana')
+        claude = self.run_mcp('grafana').stdout
+        codex = self.run_mcp('grafana', 'codex').stdout
+        self.assertIn('pyroscope', claude)
+        self.assertNotIn('pyroscope', codex)
+        self.assertIn('-enabled-tools search,datasource,prometheus,loki,dashboard', codex)
+
+    def test_kubernetes_stays_read_only(self):
+        self.fake(self.mcp / 'bin/kubernetes-mcp-server', 'k8s')
+        out = self.run_mcp('kubernetes').stdout
+        for flag in ('--read-only', '--disable-destructive', '--disable-multi-cluster'):
+            self.assertIn(flag, out)
+
+
 if __name__ == '__main__':
     unittest.main()

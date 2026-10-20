@@ -20,6 +20,7 @@ This file maps the checked-in implementation.
 ├── docs/OPERATIONS.md       # Configuration and operations
 ├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
+├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -133,6 +134,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
 | [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback, `gate` its LAN gate |
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
+| [stow/agent-mcp/.local/bin/agent-mcp](stow/agent-mcp/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 
 ## Automation and data boundaries

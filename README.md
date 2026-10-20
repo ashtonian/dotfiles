@@ -255,6 +255,15 @@ and cost analytics, and a Run page that starts sessions with the CLIs' own login
 checks it. Setup, configuration, operations and security:
 [docs/AGENT-MONITOR.md](docs/AGENT-MONITOR.md).
 
+### Agent MCP servers
+
+Repositories list the MCP servers they need in committed `.mcp.json` (Claude
+Code) and `.codex/config.toml` (Codex) files; every entry runs
+`agent-mcp <server>`, which pins each server's binary and flags in one place.
+Servers load only where they are used: Serena in the Go repositories, the code
+graph in karsto, Kubernetes, Terraform and Grafana in home-ops. See
+[docs/AGENT-MCP.md](docs/AGENT-MCP.md).
+
 ### Agent telemetry
 
 Claude Code, Codex and OpenCode export OpenTelemetry metrics and events to a
