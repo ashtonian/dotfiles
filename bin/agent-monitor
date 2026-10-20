@@ -9,10 +9,14 @@
 #   agent-monitor serve                      run the dashboard (the LaunchAgent's entry point)
 #   agent-monitor status                     service, health and hook state
 #   agent-monitor uninstall-hooks            remove the dashboard's Claude Code and Codex hooks
+#   agent-monitor lan enable < token-file    let the LAN gate serve the dashboard to holders
+#                                            of this token (the cluster proxy); installs its agent
+#   agent-monitor lan disable                stop the LAN gate and delete its token
+#   agent-monitor gate                       run the LAN gate (its LaunchAgent's entry point)
 #
 # The dashboard listens on 127.0.0.1:$AGENT_MONITOR_PORT and reads ~/.claude and
-# ~/.codex directly, so it must run on the machine that runs the agents.
-# See docs/AGENT-MONITOR.md.
+# ~/.codex directly, so it must run on the machine that runs the agents. LAN
+# access goes only through the gate on $AGENT_MONITOR_GATE_PORT. See docs/AGENT-MONITOR.md.
 set -euo pipefail
 
 # One pinned upstream release: the tag and the commit it must resolve to.
@@ -26,12 +30,15 @@ readonly NODE_VERSION=24.22.0
 bin_dir=${0:A:h} # captured here: inside a function $0 is the function name
 home=${AGENT_MONITOR_HOME:-$HOME/.local/share/agent-monitor}
 port=${AGENT_MONITOR_PORT:-4820}
+gate_port=${AGENT_MONITOR_GATE_PORT:-4821}
 fnm_dir=${FNM_DIR:-$HOME/Library/Application Support/fnm}
 app=$home/app
 data=$home/data # symlink to the data volume; the LaunchAgent waits for it to resolve
 config=$home/config
 node_bin=$fnm_dir/node-versions/v$NODE_VERSION/installation/bin/node
+gate_token=$config/gate-token
 agent=com.ashtonian.agent-monitor
+gate_agent=com.ashtonian.agent-monitor-gate
 
 die() { # die <exit status> <message>
 	print -u2 "agent-monitor: $2"
@@ -127,6 +134,48 @@ cmd_serve() {
 	exec $node_bin server/index.js
 }
 
+cmd_gate() {
+	[[ -x $node_bin ]] || die 78 "Node $NODE_VERSION is missing; run agent-monitor install"
+	[[ -s $gate_token ]] || die 78 "$gate_token is missing; run agent-monitor lan enable"
+	export GATE_TOKEN_FILE=$gate_token
+	export GATE_PORT=$gate_port
+	export GATE_UPSTREAM_PORT=$port
+	exec $node_bin $bin_dir/agent-monitor-gate.mjs
+}
+
+# The token is the one the cluster proxy sends (Secret agent-monitor-gate in the
+# dev namespace). It is read from stdin so it never appears in argv or history.
+cmd_lan() {
+	case ${1:-} in
+		enable)
+			[[ -t 0 ]] && die 64 "pipe the token in: agent-monitor lan enable < token-file"
+			local token
+			token=$(cat)
+			token=${token//[[:space:]]/}
+			(( ${#token} >= 32 )) || die 65 "expected a token of at least 32 characters on stdin"
+			mkdir -p $config
+			chmod 700 $config
+			(umask 077 && print -rn -- $token > $gate_token.tmp) && mv $gate_token.tmp $gate_token
+			$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-only
+			;;
+		disable)
+			launchctl bootout gui/$UID/$gate_agent 2>/dev/null || true
+			rm -f $HOME/Library/LaunchAgents/$gate_agent.plist $gate_token
+			print "LAN gate stopped and its token deleted"
+			;;
+		*) die 64 "usage: agent-monitor lan enable|disable" ;;
+	esac
+}
+
+# agent_state <label>: launchd's state for a loaded agent.
+agent_state() {
+	if launchctl print gui/$UID/$1 >/dev/null 2>&1; then
+		launchctl print gui/$UID/$1 | awk -F' = ' '/^\tstate = /{print $2; exit}'
+	else
+		print "not loaded"
+	fi
+}
+
 # hook_state <settings file> <handler name>: how many dashboard hook entries it holds.
 hook_state() {
 	[[ -f $1 ]] || { print "no file"; return }
@@ -144,12 +193,13 @@ cmd_status() {
 	[[ -d $app/.git ]] && version=$(git -C $app describe --tags --always 2>/dev/null || print unknown)
 	print "release:      $version (pinned v$CCAM_VERSION)"
 	print "data:         $data -> $(readlink $data 2>/dev/null || print missing)"
-	if launchctl print gui/$UID/$agent >/dev/null 2>&1; then
-		print "LaunchAgent:  $(launchctl print gui/$UID/$agent | awk -F' = ' '/^\tstate = /{print $2; exit}')"
-	else
-		print "LaunchAgent:  not loaded"
-	fi
+	print "LaunchAgent:  $(agent_state $agent)"
 	print "health:       $(curl -fsS -m 5 http://127.0.0.1:$port/api/health 2>/dev/null || print unreachable)"
+	if [[ -s $gate_token ]]; then
+		print "LAN gate:     $(agent_state $gate_agent), port $gate_port"
+	else
+		print "LAN gate:     disabled"
+	fi
 	print "claude hooks: $(hook_state $HOME/.claude/settings.json $app/scripts/hook-handler.js)"
 	print "codex hooks:  $(hook_state ${CODEX_HOME:-$HOME/.codex}/hooks.json $app/scripts/codex-hook-handler.js)"
 }
@@ -185,6 +235,8 @@ case ${1:-} in
 	serve) cmd_serve ;;
 	status) cmd_status ;;
 	uninstall-hooks) cmd_uninstall_hooks ;;
+	gate) cmd_gate ;;
+	lan) shift; cmd_lan "$@" ;;
 	-h|--help) awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' $0 ;;
-	*) die 64 "usage: agent-monitor install|serve|status|uninstall-hooks" ;;
+	*) die 64 "usage: agent-monitor install|serve|status|uninstall-hooks|lan|gate" ;;
 esac

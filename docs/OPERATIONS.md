@@ -77,7 +77,7 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | `--sync-only` / `--update-only` | Install/reload one scheduled job |
 | `--codex-only` / `--opencode-only` / `--agent-monitor-only` | Install/reload one service if prerequisites exist |
 | `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all five installed agent plists |
+| `--uninstall` | Unload and remove all six installed agent plists |
 | `--help` | Show supported options |
 
 Source templates live in launchagents/; installed copies live in

@@ -14,6 +14,8 @@
 #     to (only when opencode is installed; see stow/opencode/README.md)
 #   - com.ashtonian.agent-monitor : the loopback Claude Code / Codex agent dashboard
 #     (only after `agent-monitor install`; see docs/AGENT-MONITOR.md)
+#   - com.ashtonian.agent-monitor-gate : its token-checked LAN gate (only after
+#     `agent-monitor lan enable`)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -23,7 +25,7 @@
 #   --update-only  Install only the update agent
 #   --codex-only   Install only the Codex app-server agent
 #   --opencode-only  Install only the OpenCode server agent
-#   --agent-monitor-only  Install only the agent dashboard agent
+#   --agent-monitor-only  Install only the agent dashboard (and its LAN gate when enabled)
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -38,6 +40,7 @@ LAUNCH_AGENTS_DST="$HOME/Library/LaunchAgents"
 CODEX_AGENT="com.ashtonian.codex-remote-control"
 OPENCODE_AGENT="com.ashtonian.opencode"
 AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
+AGENT_MONITOR_GATE_AGENT="com.ashtonian.agent-monitor-gate"
 
 # Colors
 RED='\033[0;31m'
@@ -154,6 +157,11 @@ install_agent_monitor_agent() {
     mkdir -p "$HOME/Library/Logs/agent-monitor" # launchd does not create log directories
     install_agent "$AGENT_MONITOR_AGENT"
     log_info "One-time: allow node access to the data volume when macOS asks (Privacy & Security > Files and Folders)"
+    # LAN access is opt-in: the gate exists only once its token does.
+    if [[ -s "$HOME/.local/share/agent-monitor/config/gate-token" ]]; then
+        install_agent "$AGENT_MONITOR_GATE_AGENT"
+        log_info "One-time: allow node to accept incoming connections when the macOS firewall asks"
+    fi
 }
 
 show_status() {
@@ -161,7 +169,7 @@ show_status() {
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -238,6 +246,7 @@ uninstall_all() {
     uninstall_agent "$CODEX_AGENT"
     uninstall_agent "$OPENCODE_AGENT"
     uninstall_agent "$AGENT_MONITOR_AGENT"
+    uninstall_agent "$AGENT_MONITOR_GATE_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."

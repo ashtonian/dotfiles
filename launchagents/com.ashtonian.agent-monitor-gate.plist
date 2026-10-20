@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The agent dashboard's LAN gate: the only LAN listener, token-checked, relaying
+  to the loopback dashboard. Runs through bin/agent-monitor gate and is installed
+  only after `agent-monitor lan enable` (see docs/AGENT-MONITOR.md).
+  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.agent-monitor-gate</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/agent-monitor</string>
+        <string>gate</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>ThrottleInterval</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/agent-monitor/gate.stdout.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/agent-monitor/gate.stderr.log</string>
+</dict>
+</plist>

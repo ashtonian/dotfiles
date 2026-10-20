@@ -465,7 +465,7 @@ process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
         self.assertNotIn('--dangerously-skip-permissions', args)
 
 
-class AgentMonitor(Fixture):
+class AgentMonitorFixture(Fixture):
     NODE_VERSION = '24.22.0'
 
     def setUp(self):
@@ -497,6 +497,8 @@ class AgentMonitor(Fixture):
         return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), *args],
                               cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
 
+
+class AgentMonitor(AgentMonitorFixture):
     def test_serve_runs_pinned_node_on_loopback(self):
         self.install_node('#!/bin/sh\nprintf "%s\\n" "cwd=$PWD" "args=$*" "host=$DASHBOARD_HOST" '
                           '"port=$DASHBOARD_PORT" "data=$DASHBOARD_DATA_DIR" "env=$DASHBOARD_ENV_PATH" '
@@ -541,6 +543,136 @@ class AgentMonitor(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(json.loads(claude.read_text()), {'model': 'opus', 'hooks': {'PostToolUse': [other]}})
         self.assertEqual(json.loads(codex.read_text()), {'hooks': {}})
+
+    def test_lan_enable_rejects_a_short_token(self):
+        p = subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), 'lan', 'enable'],
+                           cwd=self.path, env=self.env, input='short\n', capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 65)
+        self.assertFalse((self.monitor / 'config/gate-token').exists())
+
+
+class AgentMonitorGate(AgentMonitorFixture):
+    TOKEN = 'fixture-token-' + 'x' * 40
+
+    def setUp(self):
+        super().setUp()
+        import http.server
+        import socket
+        import threading
+
+        self.upstream_requests = []
+        requests = self.upstream_requests
+
+        class Upstream(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                if self.headers.get('Upgrade'):
+                    self.connection.sendall(b'HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n'
+                                            b'Connection: Upgrade\r\nX-Seen-Host: '
+                                            + self.headers['Host'].encode() + b'\r\n\r\n')
+                    self.connection.sendall(self.connection.recv(4))
+                    self.close_connection = True
+                    return
+                self.reply()
+
+            do_POST = do_GET
+
+            def reply(self):
+                length = int(self.headers.get('Content-Length') or 0)
+                if length:
+                    self.rfile.read(length)
+                requests.append(self.path)
+                body = json.dumps({k.lower(): v for k, v in self.headers.items()}).encode()
+                self.send_response(200)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
+        self.upstream = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Upstream)
+        threading.Thread(target=self.upstream.serve_forever, daemon=True).start()
+        self.addCleanup(self.upstream.server_close)
+        self.addCleanup(self.upstream.shutdown)
+        with socket.socket() as probe:
+            probe.bind(('127.0.0.1', 0))
+            self.gate_port = probe.getsockname()[1]
+        self.install_node()
+        config = self.monitor / 'config'
+        config.mkdir(parents=True)
+        (config / 'gate-token').write_text(self.TOKEN)
+        self.env.update(AGENT_MONITOR_PORT=str(self.upstream.server_address[1]),
+                        AGENT_MONITOR_GATE_PORT=str(self.gate_port))
+
+    def start_gate(self):
+        import socket
+        import time
+        gate = subprocess.Popen(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), 'gate'],
+                                cwd=self.path, env=self.env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+
+        def stop():
+            gate.terminate()
+            gate.communicate(timeout=10)  # also closes the pipe
+        self.addCleanup(stop)
+        for _ in range(100):
+            try:
+                socket.create_connection(('127.0.0.1', self.gate_port), timeout=0.2).close()
+                return gate
+            except OSError:
+                time.sleep(0.05)
+        self.fail('gate did not start')
+
+    def request(self, path, method='GET', token=None):
+        import http.client
+        conn = http.client.HTTPConnection('127.0.0.1', self.gate_port, timeout=5)
+        headers = {'Host': 'agents.example'}
+        if token:
+            headers['Authorization'] = 'Bearer ' + token
+        conn.request(method, path, body=b'{}' if method == 'POST' else None, headers=headers)
+        try:
+            response = conn.getresponse()
+            return response.status, response.read()
+        finally:
+            conn.close()
+
+    def test_requires_the_token_and_presents_requests_as_local(self):
+        self.start_gate()
+        self.assertEqual(self.request('/api/sessions')[0], 401)
+        self.assertEqual(self.request('/api/sessions', token='wrong' * 10)[0], 401)
+        status, body = self.request('/api/sessions', token=self.TOKEN)
+        self.assertEqual(status, 200)
+        seen = json.loads(body)
+        self.assertEqual(seen['host'], f'127.0.0.1:{self.upstream.server_address[1]}')
+        self.assertNotIn('authorization', seen)
+        self.assertEqual(seen['x-forwarded-host'], 'agents.example')
+
+    def test_refuses_hook_routes(self):
+        self.start_gate()
+        self.assertEqual(self.request('/api/hooks/event', method='POST', token=self.TOKEN)[0], 404)
+        self.assertEqual(self.request('/api/hooks', method='POST', token=self.TOKEN)[0], 404)
+        self.assertEqual(self.upstream_requests, [])
+
+    def test_relays_websocket_upgrades(self):
+        import socket
+        self.start_gate()
+        with socket.create_connection(('127.0.0.1', self.gate_port), timeout=5) as client:
+            client.sendall(b'GET /ws HTTP/1.1\r\nHost: agents.example\r\nUpgrade: websocket\r\n'
+                           b'Connection: Upgrade\r\nSec-WebSocket-Key: Zml4dHVyZQ==\r\n'
+                           b'Sec-WebSocket-Version: 13\r\nAuthorization: Bearer ' + self.TOKEN.encode() + b'\r\n\r\n')
+            head = b''
+            while b'\r\n\r\n' not in head:
+                head += client.recv(1024)
+            self.assertTrue(head.startswith(b'HTTP/1.1 101'), head)
+            self.assertIn(f'X-Seen-Host: 127.0.0.1:{self.upstream.server_address[1]}'.encode(), head)
+            client.sendall(b'ping')
+            self.assertEqual(client.recv(4), b'ping')
+
+    def test_refuses_to_start_with_a_weak_token(self):
+        (self.monitor / 'config/gate-token').write_text('short')
+        p = subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), 'gate'],
+                           cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('fewer than 32 characters', p.stderr)
 
 
 if __name__ == '__main__':

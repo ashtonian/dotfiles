@@ -11,6 +11,18 @@ API keys.
 
 `bin/agent-monitor` installs a pinned release, wires both CLIs' hooks to it, and
 runs it as the `com.ashtonian.agent-monitor` LaunchAgent on `127.0.0.1:4820`.
+After `lan enable`, the LAN reaches it at `https://agents.<internal domain>`.
+That URL goes through the cluster's internal ingress (Authentik) and the
+home-ops-private app `k8s/dev/agent-monitor`, then a token-checked gate on this
+Mac (`com.ashtonian.agent-monitor-gate`, port 4821). The dashboard itself never
+listens on the LAN.
+
+```text
+browser ─TLS─> ingress (Authentik) ─> cluster proxy ─token─> gate 0.0.0.0:4821 ─> dashboard 127.0.0.1:4820
+```
+
+Over the LAN the dashboard is read and manage only. The Run page accepts only
+localhost origins, so agents start only from <http://127.0.0.1:4820> on this Mac.
 
 The dashboard runs here, not in the cluster, because it reads `~/.claude/projects`
 and `~/.codex/sessions` directly. A remote copy gets live hook events only. Its
@@ -32,6 +44,7 @@ of them, so the service runs on the defaults.
 | ---------- | ------ | --------- | ------------- |
 | `AGENT_MONITOR_HOME` | Directory path | `~/.local/share/agent-monitor` | Release checkout (`app/`), settings (`config/.env`) and the data link (`data`). The LaunchAgent template and installer assume the default |
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
+| `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in home-ops-private `k8s/dev/agent-monitor` |
 | `FNM_DIR` | Directory path | `~/Library/Application Support/fnm` | Where the pinned Node.js release is installed |
 | `CODEX_HOME` | Directory path | `~/.codex` | Codex home for hooks and history |
 
@@ -79,6 +92,8 @@ server's dependencies are skipped, including an analytics ping.
 | ----------- | ---------- |
 | Web UI | <http://127.0.0.1:4820> |
 | Health | `GET /api/health` → `{"status":"ok","version":"2.3.0",…}` |
+| LAN gate | `0.0.0.0:4821`. Requires `Authorization: Bearer <gate token>` (401 otherwise), returns 404 for `/api/hooks*`, and relays HTTP and WebSockets to the dashboard as a loopback request |
+| LAN URL | `https://agents.<internal domain>` (needs the gate) |
 | REST API and OpenAPI | `/api/*`, interactive docs at `/api/docs` |
 | Claude Code hooks | 8 events in `~/.claude/settings.json`: `node <app>/scripts/hook-handler.js <event>` |
 | Codex hooks | 6 events in `~/.codex/hooks.json`: `node <app>/scripts/codex-hook-handler.js <event>` |
@@ -103,8 +118,13 @@ open http://127.0.0.1:4820
 # Remove the hooks (the service and data stay)
 ~/.dotfiles/bin/agent-monitor uninstall-hooks
 
+# LAN access: hand over the cluster-generated token (installs and starts the gate)
+kubectl -n dev get secret agent-monitor-gate -o jsonpath='{.data.token}' | base64 -d \
+  | ~/.dotfiles/bin/agent-monitor lan enable
+~/.dotfiles/bin/agent-monitor lan disable   # stop the gate, delete the token
+
 # Tests (no network)
-python3 -B -m unittest tests.test_dotfiles.AgentMonitor -v
+python3 -B -m unittest tests.test_dotfiles.AgentMonitor tests.test_dotfiles.AgentMonitorGate -v
 ```
 
 The first start imports all existing Claude Code and Codex history. Expect
@@ -112,7 +132,9 @@ minutes of CPU and disk activity before analytics are complete.
 
 ## Operations
 
-Logs: `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` (not rotated).
+Logs: `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` and
+`gate.{stdout,stderr}.log` (not rotated). The gate logs every refused request
+with its source address.
 
 ```sh
 launchctl print "gui/$(id -u)/com.ashtonian.agent-monitor"
@@ -144,16 +166,25 @@ Troubleshooting:
   the hooks were installed appear through history import, not live events.
 - **Port in use.** `lsof -nP -iTCP:4820 -sTCP:LISTEN`, then stop the other process
   or set `AGENT_MONITOR_PORT` for `install` and in the installed plist.
+- **The LAN URL returns 502.** The gate is down, or the macOS firewall blocks it.
+  Check `status`, `gate.stderr.log`, and System Settings → Network → Firewall →
+  Options, where `node` must be allowed incoming connections.
+- **Gate log shows 401 for the cluster proxy's address.** The tokens differ.
+  Repeat the `lan enable` pipe.
 
 There is no metrics endpoint wired to the homelab. Upstream's `/api/metrics`
 needs `DASHBOARD_TOKEN`.
 
 ## Security
 
-- Listens on loopback only, without a token. Upstream treats the loopback bind
-  as the trust boundary. The API returns every transcript and can start
-  `claude`/`codex` with your logins, so do not widen `DASHBOARD_HOST` without
-  `DASHBOARD_TOKEN` and TLS.
+- The dashboard listens on loopback only, without a token. Upstream treats the
+  loopback bind as the trust boundary. The API returns every transcript and can
+  start `claude`/`codex` with your logins, so do not widen `DASHBOARD_HOST`.
+- The gate is the only LAN listener. It needs the 64-character token, which
+  lives only in the cluster Secret and in `config/gate-token` (0600), and it
+  never forwards hook routes. The cluster proxy adds the token only after
+  Authentik sign-in and refuses cross-site writes. The proxy-to-gate hop is
+  plain HTTP on the LAN.
 - Upstream rejects requests whose `Host` is not loopback (DNS rebinding) and Run
   requests from non-localhost origins.
 - The data directory holds full transcript copies, so it is created with mode 0700.
@@ -164,7 +195,9 @@ needs `DASHBOARD_TOKEN`.
 
 | Path | Role |
 | ------ | ------ |
-| `bin/agent-monitor` | Install/update, `serve` entry point, status, hook removal |
+| `bin/agent-monitor` | Install/update, `serve` and `gate` entry points, `lan enable/disable`, status, hook removal |
+| `bin/agent-monitor-gate.mjs` | LAN gate: token check, hook-route refusal, HTTP and WebSocket relay to loopback |
+| `launchagents/com.ashtonian.agent-monitor-gate.plist` | Gate service; installed only once a token exists |
 | `launchagents/com.ashtonian.agent-monitor.plist` | Service template: loopback, PATH for Run, waits on the data link |
 | `bin/dotfiles-install-launchagents.sh` | `--agent-monitor-only`; included in the full install once installed |
-| `tests/test_dotfiles.py` (`AgentMonitor`) | Loopback env, missing-install error, usage error, hook removal |
+| `tests/test_dotfiles.py` (`AgentMonitor`, `AgentMonitorGate`) | Loopback env, errors, hook removal, short-token refusal; gate token, Host rewrite, hook refusal, WebSocket relay |
