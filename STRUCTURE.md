@@ -19,6 +19,7 @@ This file maps the checked-in implementation.
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
 ├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
+├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -132,6 +133,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
 | [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback, `gate` its LAN gate |
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
+| [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 
 ## Automation and data boundaries
 
@@ -143,6 +145,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.opencode | Always on; HTTP server; default `0.0.0.0:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `0.0.0.0:4821`, token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
+| com.ashtonian.otel-agent | Always on after `otel-agent configure`; OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
 
 Templates are copied, not linked. Reinstall the affected agent to apply a
 template change; restarting a loaded job keeps its loaded plist settings.

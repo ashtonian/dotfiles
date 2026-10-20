@@ -46,6 +46,7 @@ plugin and the server wrapper.
 | `share` | `disabled` | Disable OpenCode's session-sharing feature. |
 | `autoupdate` | `false` | Homebrew owns upgrades. |
 | `shell` | `/opt/homebrew/bin/bash` | The shell tool runs `bash -c`, matching Claude Code's Bash tool; bash semantics for model-written commands. |
+| `plugin` | `@devtheops/opencode-plugin-otel@1.5.1` with endpoint `http://127.0.0.1:4318`, `http/protobuf`, cumulative metrics, traces off | Token, cost, session and tool telemetry to the local collector (`bin/otel-agent`, [docs/AGENT-TELEMETRY.md](../../docs/AGENT-TELEMETRY.md)). The 1.x line targets OpenCode V1; OpenCode installs it on server start. |
 | `default_agent` | `coordinator` | |
 | `model`, `small_model` | `homelab/qwen3.6-35b` | Keep coordinator, title, and summary requests on the same alias. |
 | `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |

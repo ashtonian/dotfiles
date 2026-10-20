@@ -164,6 +164,9 @@ launchctl start com.dotfiles.sync
 # Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
 
+# Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
+
 # Uninstall
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
 ```
@@ -251,6 +254,15 @@ and cost analytics, and a Run page that starts sessions with the CLIs' own login
 `~/.dotfiles/bin/agent-monitor install` sets it up, and `agent-monitor status`
 checks it. Setup, configuration, operations and security:
 [docs/AGENT-MONITOR.md](docs/AGENT-MONITOR.md).
+
+### Agent telemetry
+
+Claude Code, Codex and OpenCode export OpenTelemetry metrics and events to a
+local collector (`bin/otel-agent`, LaunchAgent `com.ashtonian.otel-agent`). It
+deletes identities and tool content and forwards the rest to the cluster's OTLP
+gateway, where the Coding Agents dashboard shows tokens, cost, tools and latency
+per harness and repository. Setup and operations:
+[docs/AGENT-TELEMETRY.md](docs/AGENT-TELEMETRY.md).
 
 AI-assisted development workflows from `lib_sh/claude.sh`:
 

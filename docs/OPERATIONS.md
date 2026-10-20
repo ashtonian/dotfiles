@@ -27,7 +27,8 @@ relocate the installer or rewrite LaunchAgent templates.
 
 OpenCode's [config tables](../stow/opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
-agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config).
+agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), and the agent
+telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config).
 LaunchAgents do not read `~/.zshrc.local`. Set service overrides in an installed
 plist's `EnvironmentVariables` and reload it. Reinstallation replaces local plist
 edits with the checked-in template.
@@ -76,9 +77,9 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | -------- | ---------- |
 | No options | Install/reload all eligible agents; sync starts at load |
 | `--sync-only` / `--update-only` | Install/reload one scheduled job |
-| `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` | Install/reload one service if prerequisites exist |
+| `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` | Install/reload one service if prerequisites exist |
 | `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all six installed agent plists |
+| `--uninstall` | Unload and remove all seven installed agent plists |
 | `--help` | Show supported options |
 
 Source templates live in launchagents/; installed copies live in
@@ -138,7 +139,8 @@ template sets a soft limit of 65,536. Apply plist changes with `--codex-only`;
 `kickstart -k` alone keeps the previously loaded settings. If sessions repeatedly
 drop, inspect the log and `launchctl list` for duplicate jobs before removing a
 specific stale job. OpenCode has separate [operations instructions](../stow/opencode/README.md#operations),
-and so does the [agent dashboard](AGENT-MONITOR.md#operations).
+and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
+[telemetry collector](AGENT-TELEMETRY.md#operations).
 
 ## App backups
 
