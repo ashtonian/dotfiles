@@ -3,8 +3,12 @@ description: Coordinates work across Claude Code and GPT Astra (Codex) sessions;
 mode: primary
 temperature: 0.2
 permission:
-  edit: deny
-  task: deny
+  edit: allow
+  task: allow
+  webfetch: allow
+  delegate_write: allow
+  bash:
+    "*": allow
 ---
 # Coordinator
 
