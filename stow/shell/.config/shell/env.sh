@@ -31,6 +31,7 @@ _env_back() {
     esac
 }
 
+_env_main() {
 # System directories, as /usr/libexec/path_helper would add them for a login shell.
 for _env_f in /etc/paths /etc/paths.d/*; do
     [ -f "$_env_f" ] || continue
@@ -95,6 +96,14 @@ export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
 # zoxide's init-position check always warns (its plugin loads mid-.zshrc), and
 # the warning prints in every non-interactive zsh.
 export _ZO_DOCTOR=0
+}
 
+# Claude Code also prepends this file to commands in sessions still running zsh,
+# where an unmatched glob would abort the command; sh emulation passes it through.
+if [ -n "${ZSH_VERSION:-}" ]; then
+    emulate sh -c _env_main
+else
+    _env_main
+fi
 unset _env_p _env_f _env_d
-unset -f _env_front _env_back
+unset -f _env_main _env_front _env_back

@@ -45,6 +45,7 @@ plugin and the server wrapper.
 | `enabled_providers` | `["homelab"]` | Enable only the local provider in this config. Delegated worker CLIs contact their own configured providers. |
 | `share` | `disabled` | Disable OpenCode's session-sharing feature. |
 | `autoupdate` | `false` | Homebrew owns upgrades. |
+| `shell` | `/opt/homebrew/bin/bash` | The shell tool runs `bash -c`, matching Claude Code's Bash tool; bash semantics for model-written commands. |
 | `default_agent` | `coordinator` | |
 | `model`, `small_model` | `homelab/qwen3.6-35b` | Keep coordinator, title, and summary requests on the same alias. |
 | `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |
@@ -81,6 +82,7 @@ Keep them compatible with the server configuration.
 
 | Variable | Type | Default | Read by / effect |
 | ---------- | ------ | --------- | ------------------ |
+| `BASH_ENV` | File path | `~/.config/shell/env.sh` (LaunchAgent) | Every `bash -c` the shell tool runs sources the shared environment (stow package `shell`); delegated Claude workers inherit it too |
 | `OPENCODE_HOSTNAME` | Address string | 0.0.0.0 | Server wrapper bind address |
 | `OPENCODE_PORT` | Port number | 4096 | Server wrapper, `oc`, `ocweb` |
 | `OPENCODE_SERVER_PASSWORD` | Secret string | Loaded from server-password | Server wrapper replaces any inherited value from the local file |

@@ -7,6 +7,9 @@
   "share": "disabled",
   // Homebrew owns upgrades; a self-update would rewrite the Cellar copy.
   "autoupdate": false,
+  // The shell tool runs `<shell> -c`. Model-written commands are bash, as in
+  // Claude Code's Bash tool; the service sets BASH_ENV to the shared environment.
+  "shell": "/opt/homebrew/bin/bash",
 
   "default_agent": "coordinator",
   // The gateway serves a single resident model; title and summary requests use it

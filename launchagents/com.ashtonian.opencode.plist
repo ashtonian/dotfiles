@@ -20,6 +20,10 @@
         <!-- claude lives in ~/.local/bin; the delegate plugin resolves workers on PATH. -->
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
+        <!-- The shell tool runs `bash -c`, which reads only BASH_ENV: the shared
+             environment (stow/shell), so commands get the full PATH and toolchains. -->
+        <key>BASH_ENV</key>
+        <string>$HOME/.config/shell/env.sh</string>
     </dict>
     <key>RunAtLoad</key>
     <true/>

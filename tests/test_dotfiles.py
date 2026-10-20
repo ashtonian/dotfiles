@@ -513,6 +513,11 @@ class SharedEnvironment(Fixture):
     def test_login_zsh_keeps_the_order_after_path_helper(self):
         self.assert_order(self.path_of('/bin/zsh', '-l', '-c', 'print -rn -- $PATH'))
 
+    def test_native_zsh_with_nomatch_can_source_it(self):
+        # Claude Code prepends CLAUDE_ENV_FILE to commands in sessions still on zsh.
+        self.assert_order(self.path_of('/bin/zsh', '-f', '-c',
+                                       'setopt NOMATCH; source "$HOME/.config/shell/env.sh" && print -rn -- $PATH'))
+
     def test_bashrc_reads_the_shared_environment(self):
         self.assert_order(self.path_of('/bin/bash', '-c', '. "$HOME/.bashrc"; printf %s "$PATH"'))
 
