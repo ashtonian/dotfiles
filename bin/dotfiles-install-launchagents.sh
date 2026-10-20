@@ -26,6 +26,7 @@
 #   --codex-only   Install only the Codex app-server agent
 #   --opencode-only  Install only the OpenCode server agent
 #   --agent-monitor-only  Install only the agent dashboard (and its LAN gate when enabled)
+#   --agent-monitor-gate-only  Install only the agent dashboard's LAN gate
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -157,11 +158,18 @@ install_agent_monitor_agent() {
     mkdir -p "$HOME/Library/Logs/agent-monitor" # launchd does not create log directories
     install_agent "$AGENT_MONITOR_AGENT"
     log_info "One-time: allow node access to the data volume when macOS asks (Privacy & Security > Files and Folders)"
-    # LAN access is opt-in: the gate exists only once its token does.
-    if [[ -s "$HOME/.local/share/agent-monitor/config/gate-token" ]]; then
-        install_agent "$AGENT_MONITOR_GATE_AGENT"
-        log_info "One-time: allow node to accept incoming connections when the macOS firewall asks"
+    install_agent_monitor_gate_agent
+}
+
+# install_agent_monitor_gate_agent installs the dashboard's LAN gate. LAN access
+# is opt-in: the gate exists only once `agent-monitor lan enable` stored a token.
+install_agent_monitor_gate_agent() {
+    if [[ ! -s "$HOME/.local/share/agent-monitor/config/gate-token" ]]; then
+        return 0
     fi
+    mkdir -p "$HOME/Library/Logs/agent-monitor"
+    install_agent "$AGENT_MONITOR_GATE_AGENT"
+    log_info "One-time: allow node to accept incoming connections when the macOS firewall asks"
 }
 
 show_status() {
@@ -273,6 +281,9 @@ main() {
             ;;
         --agent-monitor-only)
             install_agent_monitor_agent
+            ;;
+        --agent-monitor-gate-only)
+            install_agent_monitor_gate_agent
             ;;
         --uninstall)
             uninstall_all

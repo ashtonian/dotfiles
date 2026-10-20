@@ -156,7 +156,8 @@ cmd_lan() {
 			mkdir -p $config
 			chmod 700 $config
 			(umask 077 && print -rn -- $token > $gate_token.tmp) && mv $gate_token.tmp $gate_token
-			$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-only
+			# The gate alone: reinstalling the dashboard's agent would restart it.
+			$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-gate-only
 			;;
 		disable)
 			launchctl bootout gui/$UID/$gate_agent 2>/dev/null || true
