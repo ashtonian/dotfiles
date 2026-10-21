@@ -93,6 +93,16 @@ are never used again, so for five days the cache would hold two working sets. Ea
 what a run would delete. A deleted entry costs one recompile the next time a
 build needs it.
 
+The cache's location and build flags are Go's own settings (`go env -w`, stored
+in `$(go env GOENV)`): `GOCACHE`, `GOMODCACHE` and `GOTMPDIR` under
+`/Volumes/E2TB/cache/go/`, and `GOFLAGS=-trimpath`. Without `-trimpath`, Go keys
+every compiled package by its checkout's absolute directory, so each agent
+checkout of the same commit filled the cache with its own copy; with it, they
+share one entry. A test that locates files from `runtime.Caller` sees a
+module-relative path under `-trimpath`; resolve such files from the working
+directory instead. Check with `go env GOFLAGS`; run one build without it with
+`GOFLAGS= go build ...`.
+
 Source templates live in launchagents/; installed copies live in
 `~/Library/LaunchAgents/`. Pause a scheduled job without deleting its plist:
 
