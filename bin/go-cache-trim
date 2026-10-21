@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+#===============================================================================
+# go-cache-trim - delete Go build cache entries no build has used recently
+#===============================================================================
+#
+# USAGE:
+#   go-cache-trim            trim entries unused for GO_CACHE_TRIM_HOURS (48)
+#   go-cache-trim --dry-run  report what a trim would free, delete nothing
+#
+# Go trims its build cache itself, but only of entries unused for five days,
+# and that limit cannot be changed. The agent checkouts on this Mac share one
+# cache (`go env GOCACHE`, on E2TB) whose working set is about 320 GiB. Cache
+# keys include the toolchain version, so a Go upgrade orphans that whole set,
+# and for Go's five days the cache holds two of them. The LaunchAgent
+# com.ashtonian.go-cache-trim runs this every six hours.
+#
+# A build refreshes the mtime of every entry it uses (at most hourly), and
+# Go's own trim reads the same mtime, so an entry deleted here was unused for
+# the whole window. A later build that needs it compiles it again.
+set -euo pipefail
+
+hours=${GO_CACHE_TRIM_HOURS:-48}
+dry_run=false
+case "${1:-}" in
+    --dry-run) dry_run=true ;;
+    "") ;;
+    *) echo "usage: go-cache-trim [--dry-run]" >&2; exit 2 ;;
+esac
+if [[ ! $hours =~ ^[0-9]+$ ]] || (( hours < 2 )); then
+    # Under two hours the hourly mtime refresh could expire an entry in use.
+    echo "go-cache-trim: GO_CACHE_TRIM_HOURS=$hours: want a whole number of at least 2" >&2
+    exit 2
+fi
+
+cache=$(go env GOCACHE)
+if [[ ! -d $cache ]]; then
+    echo "$(date -u +%FT%TZ) cache $cache absent (volume not mounted?); nothing to trim"
+    exit 0
+fi
+# Refuse anything that is not a Go build cache: the find below deletes files.
+if [[ $cache != /* ]] || ! head -1 "$cache/README" 2>/dev/null | grep -q '^This directory holds cached build artifacts from the Go build system\.$'; then
+    echo "go-cache-trim: $cache is not a Go build cache" >&2
+    exit 1
+fi
+
+# Entries live in the 256 two-hex-digit directories; README, trim.txt and the
+# fuzz corpus beside them are left alone.
+stale() {
+    find "$cache" -mindepth 2 -maxdepth 2 -path "$cache/[0-9a-f][0-9a-f]/*" -type f -mmin +$(( hours * 60 )) "$@"
+}
+
+# summarize VERB: one log line from the entry sizes on stdin.
+summarize() {
+    awk -v now="$(date -u +%FT%TZ)" -v verb="$1" -v h="$hours" -v cache="$cache" \
+        '{ n++; b += $1 } END { printf "%s %s %d entries (%.1f GiB) unused for %d h from %s\n", now, verb, n, b / 1073741824, h, cache }'
+}
+
+if $dry_run; then
+    stale -exec stat -f %z {} + | summarize "would delete"
+else
+    # Each batch is sized just before it is removed, so the total is what this
+    # run deleted even while builds write to the cache.
+    stale -print0 | xargs -0 -n 1000 sh -c 'stat -f %z "$@" && rm -f "$@"' go-cache-trim | summarize deleted
+fi

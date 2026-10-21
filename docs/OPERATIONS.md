@@ -17,6 +17,8 @@ relocate the installer or rewrite LaunchAgent templates.
 | `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
+| `PLAYWRIGHT_BROWSERS_PATH` | Directory path | `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads, kept beside the Go and npm caches on E2TB (npm's is `cache=` in `~/.npmrc`) |
+| `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `48` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if installed, else vim / `$EDITOR` | Core editor defaults from `.zshenv` |
 | `PAGER` | Command | less | Core pager default |
 | `LANG` | Locale string | en_US.UTF-8 | Existing value is preserved |
@@ -76,11 +78,20 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | Option | Behavior |
 | -------- | ---------- |
 | No options | Install/reload all eligible agents; sync starts at load |
-| `--sync-only` / `--update-only` | Install/reload one scheduled job |
+| `--sync-only` / `--update-only` / `--go-cache-trim-only` | Install/reload one scheduled job |
 | `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` | Install/reload one service if prerequisites exist |
 | `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all seven installed agent plists |
+| `--uninstall` | Unload and remove all eight installed agent plists |
 | `--help` | Show supported options |
+
+`com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every six hours. Go
+trims its build cache only of entries unused for five days. The agent
+checkouts share one cache whose working set is about 320 GiB, and cache keys
+include the toolchain version: after a Go upgrade the old toolchain's entries
+are never used again, so for five days the cache would hold two working sets. Each run logs the entries and GiB it deleted to
+`~/Library/Logs/go-cache-trim/trim.log`; `bin/go-cache-trim --dry-run` reports
+what a run would delete. A deleted entry costs one recompile the next time a
+build needs it.
 
 Source templates live in launchagents/; installed copies live in
 `~/Library/LaunchAgents/`. Pause a scheduled job without deleting its plist:

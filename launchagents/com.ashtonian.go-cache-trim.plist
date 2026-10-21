@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Every six hours, deletes Go build cache entries no build has used for 48
+  hours (bin/go-cache-trim). Go's own trim waits five days, which the shared
+  agent cache would outgrow. Set GO_CACHE_TRIM_HOURS below to change the window.
+  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.go-cache-trim</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/go-cache-trim</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>GO_CACHE_TRIM_HOURS</key>
+        <string>48</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>21600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/go-cache-trim/trim.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/go-cache-trim/trim.err</string>
+</dict>
+</plist>

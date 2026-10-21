@@ -19,6 +19,8 @@
 #   - com.ashtonian.otel-agent : the local collector that forwards coding-agent
 #     telemetry to the cluster (only after `otel-agent install` and `configure`;
 #     see docs/AGENT-TELEMETRY.md)
+#   - com.ashtonian.go-cache-trim : every six hours, deletes Go build cache
+#     entries unused for 48 hours (only when go is installed; see bin/go-cache-trim)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -31,6 +33,7 @@
 #   --agent-monitor-only  Install only the agent dashboard (and its LAN gate when enabled)
 #   --agent-monitor-gate-only  Install only the agent dashboard's LAN gate
 #   --otel-agent-only  Install only the agent telemetry collector
+#   --go-cache-trim-only  Install only the Go build cache trim
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -47,6 +50,7 @@ OPENCODE_AGENT="com.ashtonian.opencode"
 AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
 AGENT_MONITOR_GATE_AGENT="com.ashtonian.agent-monitor-gate"
 OTEL_AGENT="com.ashtonian.otel-agent"
+GO_CACHE_TRIM_AGENT="com.ashtonian.go-cache-trim"
 
 # Colors
 RED='\033[0;31m'
@@ -194,12 +198,21 @@ install_otel_agent() {
     log_info "One-time: allow otelcol to find devices on the local network when macOS asks"
 }
 
+install_go_cache_trim_agent() {
+    if [[ ! -x /opt/homebrew/bin/go ]]; then
+        log_warn "go is not installed (brew install go); skipping $GO_CACHE_TRIM_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/go-cache-trim" # launchd does not create log directories
+    install_agent "$GO_CACHE_TRIM_AGENT"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT" "$GO_CACHE_TRIM_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -251,6 +264,7 @@ install_all() {
     install_opencode_agent
     install_agent_monitor_agent
     install_otel_agent
+    install_go_cache_trim_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -279,6 +293,7 @@ uninstall_all() {
     uninstall_agent "$AGENT_MONITOR_AGENT"
     uninstall_agent "$AGENT_MONITOR_GATE_AGENT"
     uninstall_agent "$OTEL_AGENT"
+    uninstall_agent "$GO_CACHE_TRIM_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -311,6 +326,9 @@ main() {
             ;;
         --otel-agent-only)
             install_otel_agent
+            ;;
+        --go-cache-trim-only)
+            install_go_cache_trim_agent
             ;;
         --uninstall)
             uninstall_all

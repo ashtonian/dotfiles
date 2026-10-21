@@ -136,6 +136,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
 | [stow/agent-mcp/.local/bin/agent-mcp](stow/agent-mcp/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
+| [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (48); `--dry-run` reports only |
 
 ## Automation and data boundaries
 
@@ -148,6 +149,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `0.0.0.0:4821`, token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on after `otel-agent configure`; OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
+| com.ashtonian.go-cache-trim | Every 6 hours and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 
 Templates are copied, not linked. Reinstall the affected agent to apply a
 template change; restarting a loaded job keeps its loaded plist settings.

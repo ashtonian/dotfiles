@@ -62,7 +62,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Stow packages** | All 13 packages in stow/; see [package inventory](STRUCTURE.md#stow-packages) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | App config backup (copy mode, not symlinks) |
-| **LaunchAgents** | Sync every 4 hours, Friday updates, eligible Codex/OpenCode/agent dashboard services |
+| **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every 6 hours, eligible Codex/OpenCode/agent dashboard services |
 
 ## Architecture
 
@@ -166,6 +166,9 @@ launchctl start com.dotfiles.sync
 
 # Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
+
+# Go build cache trim only (entries unused for 48 h, every 6 h; see docs/OPERATIONS.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
 # Uninstall
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall

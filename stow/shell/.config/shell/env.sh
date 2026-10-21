@@ -62,6 +62,9 @@ fi
 
 export GOPATH="${GOPATH:-$HOME/go}"
 export FNM_DIR="${FNM_DIR:-$HOME/Library/Application Support/fnm}"
+# Browser builds Playwright downloads (~3 GB) go beside the other caches on
+# E2TB, off the nearly full internal disk. npm's cache is set in ~/.npmrc.
+export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/Volumes/E2TB/cache/ms-playwright}"
 
 # Highest priority last. Language toolchains outrank Homebrew's generic copies,
 # and the user's own bins outrank everything.
