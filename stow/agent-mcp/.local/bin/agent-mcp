@@ -1,0 +1,116 @@
+#!/bin/sh
+#===============================================================================
+# agent-mcp - start a coding-agent MCP server by name
+#===============================================================================
+#
+# USAGE:
+#   agent-mcp <server> [claude|codex]
+#   agent-mcp postgres <claude|codex> <databases>
+#
+# Repositories list the servers they need by name in their committed agent
+# config (.mcp.json for Claude Code, .codex/config.toml for Codex) and run them
+# through this launcher, so each server's binary, version and flags are defined
+# once here instead of in every repository and harness. The harness argument
+# (default claude) picks per-harness options such as Serena's context. postgres
+# also takes the name of the dbhub config listing the repository's development
+# databases, ~/.claude/mcp/dbhub/<databases>.toml.
+#
+# Servers: serena, codebase-memory, playwright, postgres, kubernetes, terraform,
+# pprof, grafana. Installs and pinned versions: ~/.claude/mcp/README.md and
+# docs/AGENT-MCP.md.
+set -eu
+
+mcp=${AGENT_MCP_HOME:-$HOME/.claude/mcp}
+config=${AGENT_MCP_CONFIG:-$HOME/.config/agent-mcp}
+readonly cbm_version=0.12.1
+
+die() { # die <exit status> <message>
+	echo "agent-mcp: $2" >&2
+	exit "$1"
+}
+
+# run <executable> [args...]: exec it, or explain what is missing. The client
+# shows this message as the server's failure reason.
+run() {
+	command -v "$1" >/dev/null 2>&1 || die 69 "$server: $1 is not installed (see docs/AGENT-MCP.md)"
+	exec "$@"
+}
+
+server=${1:-}
+harness=${2:-claude}
+case $harness in
+	claude | codex) ;;
+	*) die 64 "unknown harness '$harness' (claude or codex)" ;;
+esac
+
+case $server in
+	serena)
+		# Claude Code keeps its own Read and Edit (and their LSP diagnostics);
+		# upstream's claude-code context forbids them. Codex uses upstream's.
+		# Memories and onboarding duplicate the repository's AGENTS.md/CLAUDE.md,
+		# and a dashboard per session would mean dozens of local web servers.
+		if [ "$harness" = claude ]; then
+			context=$config/serena-claude-code.yml
+			[ -r "$context" ] || die 78 "missing $context; stow the agent-mcp package"
+		else
+			context=codex
+		fi
+		run serena start-mcp-server --project-from-cwd --context "$context" --add-mode no-memories \
+			--enable-web-dashboard false --open-web-dashboard false --enable-gui-log-window false
+		;;
+	codebase-memory)
+		# Codex loads every tool schema up front; the analysis profile keeps the
+		# eleven inspection tools. Claude Code defers schemas, so it gets all.
+		cbm=$HOME/.local/libexec/codebase-memory-mcp/$cbm_version/codebase-memory-mcp
+		# The indexer reads history with `git log --name-only`. Rename detection
+		# (the user config sets diff.renames=copies) needs blob contents, and in a
+		# partial clone each missing blob is fetched from the remote one request
+		# at a time: a gox index ran for minutes without finishing. Names need
+		# only trees. The daemon inherits this environment from the server that
+		# starts it.
+		n=${GIT_CONFIG_COUNT:-0}
+		export "GIT_CONFIG_KEY_$n=diff.renames" "GIT_CONFIG_VALUE_$n=false"
+		export GIT_CONFIG_COUNT=$((n + 1)) GIT_NO_LAZY_FETCH=1
+		if [ "$harness" = codex ]; then
+			run "$cbm" --tool-profile=analysis
+		fi
+		run "$cbm"
+		;;
+	playwright)
+		run "$mcp/node/node_modules/.bin/playwright-mcp" --browser chromium --headless --isolated \
+			--output-dir "$HOME/.cache/playwright-mcp"
+		;;
+	postgres)
+		# One config per repository, so an agent reaches only its own
+		# repository's databases.
+		databases=${3:-}
+		case $databases in
+			'' | *[!a-z0-9_-]*) die 64 "postgres: name the dbhub config, e.g. agent-mcp postgres $harness karsto" ;;
+		esac
+		dbhub_config=$mcp/dbhub/$databases.toml
+		[ -r "$dbhub_config" ] || die 78 "postgres: missing $dbhub_config"
+		run "$mcp/node/node_modules/.bin/dbhub" --transport stdio --config "$dbhub_config"
+		;;
+	kubernetes)
+		run "$mcp/bin/kubernetes-mcp-server" --kubeconfig "$HOME/.kube/mcp-homelab.yaml" \
+			--read-only --disable-destructive --disable-multi-cluster
+		;;
+	terraform)
+		run "$mcp/bin/terraform-mcp-server" stdio --toolsets=registry
+		;;
+	pprof)
+		run "$mcp/bin/pprof-analyzer-mcp"
+		;;
+	grafana)
+		# Only the categories this Grafana (OSS: Mimir, Loki, Pyroscope) has; the
+		# default set adds Cloud-only incident, oncall, asserts and similar tools.
+		# Codex, which loads every schema per request, gets the query essentials.
+		if [ "$harness" = codex ]; then
+			run "$mcp/grafana.sh" -enabled-tools search,datasource,prometheus,loki,dashboard
+		fi
+		run "$mcp/grafana.sh" -enabled-tools search,datasource,prometheus,loki,alerting,dashboard,folder,pyroscope
+		;;
+	*)
+		die 64 "usage: agent-mcp <serena|codebase-memory|playwright|postgres|kubernetes|terraform|pprof|grafana> [claude|codex] [databases]"
+		;;
+esac

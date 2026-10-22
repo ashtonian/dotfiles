@@ -21,6 +21,8 @@ logs/
 *.local
 # Keep committed local-override templates.
 !*.local.example
+# Stow packages that install into ~/.local keep that tree tracked.
+!stow/*/.local/
 .envrc
 *.pem
 *.key
