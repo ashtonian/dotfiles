@@ -93,6 +93,15 @@ are never used again, so for five days the cache would hold two working sets. Ea
 what a run would delete. A deleted entry costs one recompile the next time a
 build needs it.
 
+The job runs at low I/O priority (`LowPriorityIO` in the plist), so its
+deletes wait whenever builds keep the volume busy, and a run can then take
+hours. Meanwhile `launchctl print "gui/$(id -u)/com.ashtonian.go-cache-trim"`
+shows `state = running`, and launchd starts no second run until it exits.
+Errors go to `~/Library/Logs/go-cache-trim/trim.err`. A long run is
+progressing if `pgrep -f 'go-cache-trim /'` shows a new batch PID every few
+minutes. Entries a run could not reach, for example because the volume dropped,
+stay until the next run deletes them.
+
 The cache's location and build flags are Go's own settings (`go env -w`, stored
 in `$(go env GOENV)`): `GOCACHE`, `GOMODCACHE` and `GOTMPDIR` under
 `/Volumes/E2TB/cache/go/`, and `GOFLAGS=-trimpath`. Without `-trimpath`, Go keys

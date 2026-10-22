@@ -55,10 +55,15 @@ summarize() {
         '{ n++; b += $1 } END { printf "%s %s %d entries (%.1f GiB) unused for %d h from %s\n", now, verb, n, b / 1073741824, h, cache }'
 }
 
+# Each batch is sized just before it is removed, so the total is what this run
+# deleted even while builds write to the cache. Go's own trim can remove an
+# entry after find lists it; stat skips that entry, and the rest of its batch
+# is still sized and removed.
 if $dry_run; then
-    stale -exec stat -f %z {} + | summarize "would delete"
+    verb="would delete"
+    batch='stat -f %z "$@" 2>/dev/null || true'
 else
-    # Each batch is sized just before it is removed, so the total is what this
-    # run deleted even while builds write to the cache.
-    stale -print0 | xargs -0 -n 1000 sh -c 'stat -f %z "$@" && rm -f "$@"' go-cache-trim | summarize deleted
+    verb=deleted
+    batch='stat -f %z "$@" 2>/dev/null; rm -f "$@"'
 fi
+stale -print0 | xargs -0 -n 1000 sh -c "$batch" go-cache-trim | summarize "$verb"
