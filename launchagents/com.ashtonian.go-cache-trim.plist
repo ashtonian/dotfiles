@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  Every six hours, deletes Go build cache entries no build has used for 48
+  Every hour, deletes Go build cache entries no build has used for 24
   hours (bin/go-cache-trim). Go's own trim waits five days, which the shared
   agent cache would outgrow. Set GO_CACHE_TRIM_HOURS below to change the window.
   $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
@@ -19,10 +19,10 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>GO_CACHE_TRIM_HOURS</key>
-        <string>48</string>
+        <string>24</string>
     </dict>
     <key>StartInterval</key>
-    <integer>21600</integer>
+    <integer>3600</integer>
     <key>RunAtLoad</key>
     <true/>
     <key>ProcessType</key>

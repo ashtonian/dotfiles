@@ -136,7 +136,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
 | [stow/agent-mcp/.local/bin/agent-mcp](stow/agent-mcp/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
-| [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (48); `--dry-run` reports only |
+| [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
 
 ## Automation and data boundaries
 

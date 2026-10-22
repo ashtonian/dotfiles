@@ -19,8 +19,8 @@
 #   - com.ashtonian.otel-agent : the local collector that forwards coding-agent
 #     telemetry to the cluster (only after `otel-agent install` and `configure`;
 #     see docs/AGENT-TELEMETRY.md)
-#   - com.ashtonian.go-cache-trim : every six hours, deletes Go build cache
-#     entries unused for 48 hours (only when go is installed; see bin/go-cache-trim)
+#   - com.ashtonian.go-cache-trim : every hour, deletes Go build cache
+#     entries unused for 24 hours (only when go is installed; see bin/go-cache-trim)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]

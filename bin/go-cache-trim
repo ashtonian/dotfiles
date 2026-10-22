@@ -4,7 +4,7 @@
 #===============================================================================
 #
 # USAGE:
-#   go-cache-trim            trim entries unused for GO_CACHE_TRIM_HOURS (48)
+#   go-cache-trim            trim entries unused for GO_CACHE_TRIM_HOURS (24)
 #   go-cache-trim --dry-run  report what a trim would free, delete nothing
 #
 # Go trims its build cache itself, but only of entries unused for five days,
@@ -12,14 +12,14 @@
 # cache (`go env GOCACHE`, on E2TB) whose working set is about 320 GiB. Cache
 # keys include the toolchain version, so a Go upgrade orphans that whole set,
 # and for Go's five days the cache holds two of them. The LaunchAgent
-# com.ashtonian.go-cache-trim runs this every six hours.
+# com.ashtonian.go-cache-trim runs this every hour.
 #
 # A build refreshes the mtime of every entry it uses (at most hourly), and
 # Go's own trim reads the same mtime, so an entry deleted here was unused for
 # the whole window. A later build that needs it compiles it again.
 set -euo pipefail
 
-hours=${GO_CACHE_TRIM_HOURS:-48}
+hours=${GO_CACHE_TRIM_HOURS:-24}
 dry_run=false
 case "${1:-}" in
     --dry-run) dry_run=true ;;

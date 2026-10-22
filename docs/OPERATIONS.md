@@ -18,7 +18,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads, kept beside the Go and npm caches on E2TB (npm's is `cache=` in `~/.npmrc`) |
-| `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `48` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
+| `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if installed, else vim / `$EDITOR` | Core editor defaults from `.zshenv` |
 | `PAGER` | Command | less | Core pager default |
 | `LANG` | Locale string | en_US.UTF-8 | Existing value is preserved |
@@ -84,7 +84,7 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | `--uninstall` | Unload and remove all eight installed agent plists |
 | `--help` | Show supported options |
 
-`com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every six hours. Go
+`com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour. Go
 trims its build cache only of entries unused for five days. The agent
 checkouts share one cache whose working set is about 320 GiB, and cache keys
 include the toolchain version: after a Go upgrade the old toolchain's entries
