@@ -7,6 +7,12 @@
 - This bites hardest on claims that sound settled — "X is just a stub," "Y isn't built yet," "Z already handles this." Those are exactly the ones another agent quietly ships out from under you. Re-read before you say it, especially when a decision (what to build, bench, or recommend) rides on it.
 - A summary or prior-session note describes the past, not the present. Treat it as a lead to verify, not a fact to repeat. When you catch yourself about to assert state confidently, that's the trigger to go check.
 
+## Check long-running work every 10 minutes
+
+- **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
+- Run it in the background, and set a 10-minute tick beside it (e.g. a background `sleep 600`, or a Monitor). On each tick, read its progress — log tail, lock holder/queue, container state, CI status — and give the user a one-line status. Act as soon as it goes wrong: a hang, an error in the log, no progress since the last tick.
+- A queued job counts too: check what is ahead of it and whether that holder is still making progress.
+
 ## Analyze the profiles — never hand-wave a performance conclusion
 
 - **For ANY performance, benchmark, optimization, or efficiency work, read the actual profiles BEFORE drawing a single conclusion.** This is a hard rule, repeatedly demanded. Open `cpu.pprof` (where CPU goes — cumulative AND flat), `heap.pprof`/`allocs.pprof` (where memory/allocs go), `mutex.pprof`/`block.pprof` (contention). Then state conclusions grounded in what the profile shows, and cite it.
