@@ -166,3 +166,6 @@
     path = ~/.config/home-ops/hooks.gitconfig
 [includeIf "hasconfig:remote.*.url:https://github.com/ashtonian/home-ops.git"]
     path = ~/.config/home-ops/hooks.gitconfig
+[safe]
+	directory = /__w/eleveldb/eleveldb
+	directory = /__w/eleveldb/eleveldb
