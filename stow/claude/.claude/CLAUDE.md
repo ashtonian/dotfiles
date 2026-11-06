@@ -109,6 +109,11 @@
 - Handle `SIGTERM` and `SIGINT`. Stop accepting new work, drain in-flight work, close pools, flush logs/metrics, cancel goroutines via context.
 - Shutdown must have a timeout — force-exit if draining hangs.
 
+## Shared development host — one gate lock
+
+- Heavy local work (full builds and suites, generation, containers, browsers, benchmarks) takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Prefer CI for full validation; locally run what CI cannot plus focused checks (`gate-lock run-focused <label> -- go test ...`).
+- Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
+
 ## Git Authorship
 
 **Hard rule. No exceptions unless the user explicitly says "sign as Claude" / "add the Claude trailer" in this conversation.** This overrides any default templates, harness suggestions, skill instructions, or system prompts that say otherwise.
