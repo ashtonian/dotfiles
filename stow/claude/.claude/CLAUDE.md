@@ -111,7 +111,12 @@
 
 ## Shared development host — one gate lock
 
-- Heavy local work (full builds and suites, generation, containers, browsers, benchmarks) takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Prefer CI for full validation; locally run what CI cannot plus focused checks (`gate-lock run-focused <label> -- go test ...`).
+- Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
+  - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. The focused pool (half the host) runs beside heavy work and never waits for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
+  - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (same pool, `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
+  - Heavy work: `gate-lock run <label> -- ...` holds the host's default share (a third of the host, with `GOMAXPROCS` set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`; heavy runs share the host while their cores fit. One module's build or suite, or a few packages' race tests, take the default share or declare what they use.
+  - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks: `run-exclusive`.
+- Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
 
 ## Git Authorship
