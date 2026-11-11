@@ -267,9 +267,91 @@ Requirements:
   to its genuine source with integrity checks.
 - The status page compares installed extensions against the catalog.
 
-The per-browser install mechanism (Chromium external-extension files or
-policies, Firefox enterprise policies) is specified in a follow-up revision of
-this section.
+### Mechanisms
+
+| Browser | Mechanism | Root | Removal |
+|---|---|---|---|
+| Firefox | `org.mozilla.firefox` user defaults domain: `EnterprisePoliciesEnabled = true` and a generated `ExtensionSettings` dictionary keyed by add-on GUID. Survives app updates and leaves the app signature intact | no | Two phases: rewrite the entry as `blocked` (Firefox uninstalls it at next start), then drop it once no profile's `extensions.json` lists it. Dropping an entry alone only makes the add-on user-removable |
+| Chrome, Brave | `/Library/Managed Preferences/com.google.Chrome.plist` and `com.brave.Browser.plist`, owned `root:wheel` 0644, generated whole and installed only when its hash changes, then `killall cfprefsd`. `ExtensionSettings` entries use `normal_installed` with the Web Store update URL | yes | Remove the entry; the browser uninstalls the extension at next start. Delete the file when nothing is left |
+| Safari | Host apps through `mas`; enabling has no supported command line outside supervised MDM | `mas install` needs root | Manual; shown on the status page |
+
+Rejected mechanisms:
+
+- **User-level `defaults write com.google.Chrome` or `com.brave.Browser`.**
+  Chromium reads non-forced values as recommended, and extension policies
+  require mandatory ones.
+- **External Extensions JSON files.** They prompt for each extension, and once
+  the user removes an extension Chromium never offers it again, so a script
+  cannot converge.
+- **`policies.json` inside `Firefox.app`.** It breaks the code signature and is
+  replaced on every update.
+- **Configuration profiles.** Since macOS 11, `profiles` cannot install them
+  from the command line; each change needs approval in System Settings. This
+  is the fallback only if the managed-preferences file does not survive a
+  reboot (rollout gate below).
+
+Constraints on an unmanaged Mac:
+
+- Chromium filters out every policy install whose update URL is not the Web
+  Store, unless the Mac is MDM-enrolled or domain-joined. Off-store extensions
+  can only be allowlisted (`installation_mode = "allowed"`) and then installed
+  by hand.
+- Chrome removed Manifest V2 support; uBlock Origin Lite replaces uBlock
+  Origin there. Brave hosts uBlock Origin, NoScript, uMatrix and AdGuard as MV2
+  extensions under its own IDs; enabling them is a toggle at
+  `brave://settings/extensions/v2`, shown as a manual step.
+
+Extension settings:
+
+- Chromium managed storage lives in
+  `/Library/Managed Preferences/<bundle>.extensions.<id>.plist`, for example
+  the uBlock Origin Lite rulesets.
+- Firefox takes `3rdparty.Extensions.<guid>` in the same defaults domain, with
+  each value a JSON string (plist booleans arrive as 1 and 0).
+
+Checks:
+
+- **Chromium:** profiles come from `Local State`. Each profile's
+  `Secure Preferences` gives every extension's install location and disable
+  reasons; `Extensions/<id>/<version>/manifest.json` gives versions. The
+  installed policy file is compared with the generated one.
+- **Firefox:** profiles come from `profiles.ini`, and each profile's
+  `extensions.json` gives `id`, `version`, `active` and `signedState`. The
+  defaults domain is compared with the generated dictionary.
+- **Safari:** `mas list` and `pluginkit -m -p com.apple.Safari.web-extension`;
+  enabled state is reported as manual.
+
+Rollout gates to verify before relying on the design:
+
+- `/Library/Managed Preferences` files persist across a reboot and show as
+  Platform / Mandatory at `chrome://policy`.
+- Firefox policy installs pick up new host permissions on update without a
+  prompt.
+- Whether policy can install Brave's hosted MV2 IDs.
+
+### Bypass Paywalls Clean
+
+Not on the Chrome Web Store, and removed from the Firefox add-on site after
+DMCA notices, though still Mozilla-signed. Publishers file DMCA notices
+against it; enabling it is the machine owner's decision. The maintainer
+(`magnolia1234`) publishes on GitFlic: code in
+`bypass-paywalls-{chrome,firefox}-clean`, builds in `bpc_uploads`, update
+manifests in `bpc_updates`. Identity is checked cryptographically, never by
+name:
+
+| | Firefox | Chromium |
+|---|---|---|
+| ID | `magnolia@12.34`, signed by Mozilla's add-on CA (only the owning account can obtain a signature for that ID) | `lkbebcjgcmobigpeffafkodonchffocl`, equal to the CRX3 header ID and the SHA-256 of its public key |
+| Update manifest | `bpc_updates` `updates.json` | `bpc_updates` `updates.xml` |
+| Scripted install | Yes, silent, through `ExtensionSettings` with an `install_url`; auto-updates, each update signature-checked | No silent install without MDM; policy allowlists the ID, the client downloads and verifies the crx, the user installs it once per profile, then it auto-updates |
+| Pin | ID, signer certificate, and SHA-256 of the first download from the catalog | ID derived from the key, and SHA-256 of the first download |
+
+`browser.firefox.bypass-paywalls` is the recommended toggle: it's the only
+fully scripted, signature-enforced path, and it keeps an extension with
+cookie access on about 950 sites out of the main browser. Its strict mode pins
+a local, verified xpi with updates disabled and bumps the version from the
+catalog. Residual risks are compromise of the maintainer's account and the
+hosting's availability.
 
 ### Initial catalog
 
@@ -278,7 +360,7 @@ extensions now differ between Chromium browsers and Firefox.
 
 | Extension | Chrome / Brave | Firefox |
 |---|---|---|
-| uBlock Origin | uBlock Origin Lite `ddkjiahejlhfcafbddmgiahcphecmpfh` | `uBlock0@raymondhill.net` |
+| uBlock Origin | Chrome: uBlock Origin Lite `ddkjiahejlhfcafbddmgiahcphecmpfh`; Brave: its hosted MV2 build (manual toggle) | `uBlock0@raymondhill.net` |
 | Privacy Badger | `pkehgijcmpdhfbdbbnkijodmdjhbjlgp` | `jid1-MnnxcxisBPnSXQ@jetpack` |
 | Decentraleyes | `ldpochfccmkkmhdbclfhpagapcfdljkj` | `jid1-BoFifL9Vbdl2zQ@jetpack` |
 | ClearURLs | none (removed, no vetted MV3 port) | `{74145f27-f039-47ce-a470-a662b129930a}` |
