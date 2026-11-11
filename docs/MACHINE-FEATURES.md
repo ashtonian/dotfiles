@@ -447,7 +447,57 @@ order of preference:
 3. Manual entry: `dotfiles secret copy <feature>.<field>` puts the value on
    the clipboard and clears it after 30 seconds.
 
-The evaluated candidate list is in the following revision of this section.
+None of the evaluated Chrome Web Store packages declares
+`storage.managed_schema`, so route 1 is unavailable on Chrome and Brave for
+every extension below. On Firefox only New Tab Override reads managed
+settings. Many extensions keep their settings in `storage.sync`, so those are
+entered once per browser sync account rather than once per machine.
+
+Apps whose API path sits behind SSO forward-auth reject an extension's API
+key: the proxy checks for its session, then treats the key as a credential it
+does not recognise. Those extensions need the app's API path exempted at the
+ingress first, as is already done for several apps.
+
+| App | Extension (Chrome ID / Firefox GUID) | Needs | Route | Verdict |
+|---|---|---|---|---|
+| wallabag | wallabagger `gbmgphmejlcoihgedabhgjdkcahacjlj` / `{7a7b1d36-d7a4-481b-92c6-9f5427cb9eb1}` | URL, OAuth client id and secret, username, password | 2: "Load from file" `wallabag.json` | Add |
+| Readeck | Readeck `jnmcpmfimecibicbojhopfkcbmkafhee` / `readeck@readeck.com` | URL; sign-in is OAuth approved in the browser | 3, no secret | Add |
+| Karakeep | Karakeep `kgcjekpmcjjogibpjebkhaanilehneje` / `addon@karakeep.app` | URL, API key | 3 | Add, or Linkwarden instead |
+| Linkwarden | Linkwarden `pnidmkljnhbjfffciajlcpeldoljnidn` / `jordanlinkwarden@gmail.com` | URL, API key | 3 | Alternative to Karakeep |
+| LiteLLM | Page Assist `jfgfiigpkhlkbnfnbobbkinehhfdhndo` / `page-assist@nazeem` | OpenAI-compatible base URL, key | 2: data export/import | Add |
+| Wakapi | WakaTime `jnbbnacmeggbgdjgaoojpmhdlkkpblgi` / `addons@wakatime.com` | Wakapi's WakaTime-compatible API URL, key | 3 (synced); `~/.wakatime.cfg` rendered for editor plugins | Add |
+| RSSHub, FreshRSS | RSSHub Radar `kefjpfngnndepjbopdmoebkipbgkggaa` / `i@diygod.me` | RSSHub URL and access key, FreshRSS URL | 3 | Add |
+| Invidious, Piped, Redlib | LibRedirect `7esoorv3@alefvanoon.anonaddy.me` (Firefox only; no current Chrome build) | Instance URLs | 2: settings import | Add on Firefox |
+| Memos | Memos Web Clipper `nebaoebnljalfegiidibihhkebeiklbl` / `web-clipper@usememos.com` | URL, access token | 3 | Add if Memos is used |
+| Nextcloud | floccus `fnaicdffflnofjppbagibeoednhnbjhg` / `floccus@handmadeideas.org` | URL, username, app password | 2: `floccus.export.json` | Add if Nextcloud Bookmarks is installed |
+| Homepage | New Tab Override `newtaboverride@agenedia.com` (Firefox) | New-tab URL | 1: Firefox `3rdparty` | Add on Firefox |
+| ArchiveBox | ArchiveBox `habonpimjphpdnmcfkaockjnffodikoj` / `archivebox@tjhorner.dev` | URL, API key | 3 | After API-path exemption |
+| Tube Archivist | Tube Archivist Companion `jjnkmicfnfojkkgobdfeieblocadmcie` / `{08f0f80f-2b26-4809-9267-287a5bdda2da}` | URL, API token | 3 | After API-path exemption |
+| Sonarr, Radarr, Lidarr | Sonarr/Radarr/Lidarr Autosearch `jmmjjcddjldjdjgckdiokhfokccdnekc` / `sonarr-radarr-lidarr-autosearch@robgreen.me` | URL and API key per instance | 2: backup JSON | Optional |
+| Seerr | Overseerr Assistant `hopnjiadheaagfhpipecoamoegijhnij` / `RemiRigal@Overseerr-Assistant` | Host, API key | 3 (synced) | Optional |
+| SABnzbd | NZB Unity `mpejfoghnejnbfkpbiafklkmlhebkapb` / `{96586e48-b9a2-45dd-b1a1-54fa85a97c91}` | URL, API key | 3 | Optional |
+| rTorrent | Remote Torrent Adder `oabphaconndgibllomdcjbfdghcmenci` / `remote-torrent-adder@bogenpirat` | ruTorrent URL, username, password | 2: JSON import | Optional |
+| FreshRSS | FreshRSS Checker `fkckemcdpfnblnkndachclpjfmlhofeg` / `freshrss-checker@addons.mozilla.org` | URL, username, API password | 3 | Optional |
+| Mealie, Vikunja, Kimai | Mini Mealie, Vikunja Quick Add, Kimai (community, small user bases) | URL, token | 3 | Optional |
+| ActivityWatch | aw-watcher-web `nglaklhklhcoonedhgnpgddginnjdadi` / `{ef87d84c-2127-493f-b952-5b4e744245bc}` | Fixed to a local ActivityWatch server | 3 | Only with the local ActivityWatch app |
+
+Skipped: changedetection.io (stale since 2025-03, and behind forward-auth),
+Sourcegraph (its listing is live, but it decorates GitHub pages, not Gitea),
+Joplin Web Clipper (needs the desktop app), Immich, Paperless-ngx and Home
+Assistant (unofficial, stale or trivial), ntfy, Outline and Open WebUI (no
+worthwhile extension). Five save-a-page apps run in the cluster (wallabag,
+Readeck, Karakeep, Linkwarden, ArchiveBox); choosing one or two avoids five
+overlapping extensions (D25).
+
+Settings files for route 2 are rendered with
+`op inject -i <template> -o <file> --file-mode 0600`, imported, then deleted.
+
+### Search engine and start page
+
+| Browser | Search engine | Home and new tab | Notes |
+|---|---|---|---|
+| Firefox | `SearchEngines` policy: add the SearXNG engine with its search and suggestion URL templates and make it `Default`. Available in all Firefox releases since 139 | `Homepage` policy for the start page; New Tab Override (managed) for the new-tab page, since the `NewTabPage` policy is on/off only | Scripted through the defaults domain |
+| Chrome, Brave | Not scriptable on an unmanaged Mac | Not scriptable on an unmanaged Mac | `DefaultSearchProvider*`, `HomepageLocation`, `NewTabPageLocation` and `RestoreOnStartup*` are sensitive policies that Chromium ignores unless the Mac is MDM-enrolled or domain-joined. The initial-preferences file applies only when a profile is first created. Set by hand and listed as a manual step |
 
 ### Initial catalog
 
@@ -488,8 +538,9 @@ enhanced-github, Octotree.
 Not carried over: HTTPS Everywhere (retired; every browser has an HTTPS-only
 mode), JSON Viewer (Firefox has one built in), Simple Allow Copy, Smile
 Always, friendly-github, GitHub code folding, github-awesome-autocomplete,
-hide-files-on-github, octohint, OctoLinker and Sourcegraph (removed from the
-store, archived, or covered natively by GitHub).
+hide-files-on-github, octohint and OctoLinker (removed from the store,
+archived, or covered natively by GitHub), and Sourcegraph (see self-hosted
+app extensions).
 
 ## Toggl
 
@@ -643,12 +694,20 @@ Proposed: a vault named `dotfiles`, one item per service, fields `url`,
 `api_key` or `token`, `username`, `password`. Status: open.
 
 **D13. How do machines without a person present resolve secrets?**
-Options: interactive `dotfiles secrets sync` into the Keychain, with scheduled
-jobs reading only the Keychain; 1Password Connect (already deployed in the
-home cluster) with a token in the Keychain; a 1Password service account, if
-the plan includes them.
-Recommendation: Keychain cache synced interactively; Connect for machines
-that need unattended refresh. Status: open.
+Options:
+- Interactive `dotfiles secrets sync` into the Keychain, with scheduled jobs
+  reading only the Keychain. The 1Password desktop-app unlock lasts at most 12
+  hours and ends when the app locks, so it suits interactive runs only.
+- A 1Password service account. These are available on Individual and Families
+  plans, with a limit of 1,000 reads a day per account. The account cannot
+  read the built-in Personal or Private vaults, so the secrets live in a
+  dedicated vault, and its token is kept in the Keychain.
+- 1Password Connect. The cluster's Connect server has no ingress and is scoped
+  to the cluster's vault, so using it from a Mac means exposing it and issuing
+  a new token.
+
+Recommendation: Keychain cache synced interactively; a service account for
+machines that need unattended refresh. Status: open.
 
 **D14. Accept sudo for Chrome and Brave policy changes?**
 Extension policies must be mandatory, which on an unmanaged Mac means a
@@ -703,7 +762,19 @@ Recommendation: remove after confirming; `doctor` reports it until then.
 Status: open.
 
 **D24. Which self-hosted app extensions to add?**
-See [Self-hosted app extensions](#self-hosted-app-extensions). Status: open.
+Recommended: wallabagger, Readeck, Karakeep, Page Assist, WakaTime pointed at
+Wakapi, RSSHub Radar, and on Firefox LibRedirect and New Tab Override. Memos
+and floccus if those apps are in use. See
+[Self-hosted app extensions](#self-hosted-app-extensions). Status: open.
+
+**D25. Which save-a-page apps get an extension?**
+wallabag, Readeck, Karakeep, Linkwarden and ArchiveBox all run in the
+cluster. Recommendation: one or two, not five. Status: open.
+
+**D26. Exempt API paths from forward-auth for ArchiveBox and Tube Archivist?**
+Their extensions cannot authenticate while the API path requires an SSO
+session. The change lands in the home cluster repository, not here.
+Status: open.
 
 ## Rollout
 
