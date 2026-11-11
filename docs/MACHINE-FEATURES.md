@@ -233,23 +233,101 @@ macOS's own (`macosx`: `.GlobalPreferences.plist`, symbolic hotkeys, key
 bindings, Scripts, Workflows, PDF Services). Declarative system settings stay
 in the `macos.defaults.*` features; Mackup carries what is left.
 
-- **Allowlist only.** `generated/mackup.cfg` lists `[applications_to_sync]`
-  from enabled `backup.mackup.<app>` features. There is no ignore list to keep
-  complete.
+### Copy mode only
+
+Mackup has two families of commands:
+
+| Commands | What they do | Used here |
+|---|---|---|
+| `backup`, `restore` | Copy files between `$HOME` and the storage folder | yes |
+| `link install`, `link`, `link uninstall` | Move files into the storage folder and leave symlinks in `$HOME` | never |
+
+Link mode breaks modern macOS: apps and `cfprefsd` write preferences
+atomically, which replaces the symlink with a regular file, so the stored copy
+silently stops updating and settings diverge or are lost. Guards:
+
+- `backup.mackup` invokes Mackup only through `dotfiles mackup`, which passes an
+  explicit argument list containing `backup` or `restore <app>` and nothing
+  else.
+- `shell.core` shadows `mackup` in interactive shells with a function that
+  refuses any `link` subcommand; `command mackup` remains available on purpose.
+- `doctor` reports an error for any symlink under `$HOME` that points into the
+  Mackup storage folder, which is the signature of link mode having run.
+- `~/.mackup.cfg` is a generated real file (mode 0600) pointing at the git
+  store with the allowlist, so a manual `mackup backup` also uses the safe
+  configuration instead of Mackup's Dropbox default.
+
+### Git as the backing store
+
+Mackup's engines are Dropbox, Google Drive, iCloud and `file_system`; there is
+no git engine. The store is a `file_system` folder that is a git repository:
+
+- `~/.sync/mackup`, a clone of a private repository, with one directory per
+  machine (`<host>/`) so machines never overwrite each other.
+- After each backup the publisher stages the machine's directory, runs
+  gitleaks over the staged diff, refuses files larger than 5 MB and paths
+  matching the credential patterns below, confirms the remote is private
+  (`gh api repos/<owner>/<repo> --jq .private`), commits signed and pushes.
+- Encrypting the store at rest is decision D9.
+
+### What gets backed up
+
+- **Allowlist only.** `[applications_to_sync]` is generated from enabled
+  `backup.mackup.<app>` features. There is no ignore list to keep complete.
 - **Credential-bearing apps are refused in code**, even if enabled: codex,
   opencode, kubectl, npm, aws, docker, gh, ssh, gnupg, and any app whose
-  definition includes an `auth`, `token`, `credentials` or `.netrc` path.
+  definition includes an `auth`, `token`, `credentials`, `.netrc` or `keychain`
+  path.
 - **Stow-managed apps are refused**, so a restore never replaces a symlink with
   a copy.
 - **Custom definitions** for apps Mackup lacks live in
   `features/backup.mackup/apps/*.cfg` and are linked into `~/.mackup/`.
-- **Storage** is `~/.sync/mackup/<host>`. Before every push, gitleaks scans the
-  repo and the publisher confirms the remote is private.
-- **Restore** is manual and per app: `dotfiles mackup restore <app> --from
-  <host>` quits the app, restores, and restarts `cfprefsd` so macOS picks up
-  the plist.
-- The temporary config is written under `$HOME`, because Mackup rejects a
-  config elsewhere, and parsed with `allow_no_value`.
+
+### Preference plists
+
+Preference plists are captured with `defaults export <domain>` and restored
+with `defaults import <domain>`, which go through `cfprefsd`. Copying the plist
+file directly can capture stale content (the live values sit in the
+`cfprefsd` cache) and a copied-in file can be overwritten by the cache. Other
+files in an app definition use Mackup's copy.
+
+### Restore
+
+Manual and per app: `dotfiles mackup restore <app> --from <host>` quits the
+app, restores, and restarts `cfprefsd`. Restoring across machines is explicit,
+because machine directories differ.
+
+The temporary configuration is written under `$HOME` (Mackup refuses configs
+elsewhere) and parsed with `allow_no_value`, because Mackup's configuration
+uses value-less keys.
+
+## Secrets
+
+A 1Password vault is the source of truth for every secret a feature needs;
+the macOS login Keychain is each machine's cache.
+
+| Step | Mechanism |
+|---|---|
+| Declare | A feature setting of type `secret` holds an `op://<vault>/<item>/<field>` reference, never a value |
+| Sync | `dotfiles secrets sync` runs `op read` for each reference of the enabled features and writes the value to the Keychain as `dotfiles/<feature>/<field>`. It runs interactively, so 1Password's desktop-app unlock applies |
+| Use | Features and scheduled jobs read only the Keychain (`security find-generic-password`), so a 3 a.m. job never waits on a 1Password prompt |
+| Render | Config files that must contain a secret (for example `~/.wakatime.cfg`) are rendered from templates at apply time, mode 0600, outside the repo |
+| Report | The status page shows each secret's presence and last sync time, never the value |
+
+Item layout: one 1Password item per service, with fields `url`, `api_key` or
+`token`, and `username`/`password` where the service needs them. The vault
+name and the headless option are decisions D12 and D13.
+
+Constraints:
+
+- A secret placed in Chromium managed storage lives in a root-owned file under
+  `/Library/Managed Preferences` that any local user can read. That is
+  acceptable only for low-value keys scoped to one service; anything else is
+  entered by hand or imported from a file.
+- Firefox's user defaults domain (`~/Library/Preferences`) is readable only by
+  the user.
+- Secrets never enter the environment of shells or agents, logs, the status
+  page, or the repo.
 
 ## Browsers
 
@@ -352,6 +430,24 @@ cookie access on about 950 sites out of the main browser. Its strict mode pins
 a local, verified xpi with updates disabled and bumps the version from the
 catalog. Residual risks are compromise of the maintainer's account and the
 hosting's availability.
+
+### Self-hosted app extensions
+
+Extensions that pair with the self-hosted apps in the home cluster are
+features in the same catalog. Each needs a server URL and usually an API key;
+both come from the app's 1Password item (see [Secrets](#secrets)). How an
+extension's settings get provisioned depends on what it supports, in this
+order of preference:
+
+1. Managed storage: Chromium `storage.managed_schema` through
+   `<bundle>.extensions.<id>.plist`, or Firefox `3rdparty.Extensions.<guid>`.
+2. A settings file the extension imports: rendered to
+   `~/.local/state/dotfiles/browser-import/<extension>.json` (mode 0600),
+   with a manual import step on the status page.
+3. Manual entry: `dotfiles secret copy <feature>.<field>` puts the value on
+   the clipboard and clears it after 30 seconds.
+
+The evaluated candidate list is in the following revision of this section.
 
 ### Initial catalog
 
@@ -464,6 +560,150 @@ move into the features that own them.
 - Agent shell tests with the real Claude Code and Codex command lines.
 - `docs/FEATURES.md` is generated from the manifests; CI fails when it is
   stale.
+
+## Decisions
+
+Each entry: the question, why it matters, the options, the recommendation,
+and its status. Decided entries record who decided.
+
+### Decided
+
+| ID | Decision | Decided by |
+|---|---|---|
+| D0.1 | Every capability is a per-machine toggle with fine granularity (each Oh My Zsh plugin, each extension, each scheduled step) | owner |
+| D0.2 | Updates and sync run automatically on every machine; a local status page shows feature and automation health | owner |
+| D7 | Mackup runs in copy mode only (`backup`, `restore`); link mode is refused | owner |
+| D8 | Mackup's store is a private git repository with one directory per machine | owner |
+| D0.3 | Browser extensions, including their settings and keys, are scripted; keys come from a 1Password vault | owner |
+| D0.4 | Bypass Paywalls Clean is wanted (see D15 for where) | owner |
+| D0.5 | Work happens on branch `plan/machine-features` | owner |
+
+### Open
+
+**D1. Which profiles exist?**
+Profiles are named feature sets; machines pick several.
+Options: role-based (`base`, `dev`, `desktop`, `server`, `work`) plus host
+profiles for host facts (`studio`), or host-only profiles.
+Recommendation: role-based plus host profiles; host profiles hold only facts
+such as volume paths. Status: open.
+
+**D2. Entry points as local stubs, or symlinks into the repo?**
+Installers and `git config --global` write into these files; a symlink sends
+the write into the public repo.
+Options: one-line local stubs created once by `apply`; or symlinks plus
+guards. Trade-off: a stub is never updated by the repo, so it must stay one
+line.
+Recommendation: stubs. Status: open.
+
+**D3. How does Codex get bash?**
+Codex always runs the passwd login shell and has no setting to change it.
+Options: system config (`shell_snapshot = false`, `AGENT_SHELL`) plus a
+`.zshenv` hand-off to Homebrew bash; or `chsh` to bash with an interactive
+hand-off back to zsh. Trade-off: `chsh` changes `$SHELL` for tmux, ssh and
+editors, and breaks logins if Homebrew bash disappears.
+Recommendation: system config plus hand-off. Status: open.
+
+**D4. Where do network services listen?**
+opencode and the agent-monitor gate serve plain HTTP.
+Options: loopback plus the Tailscale address; LAN with TLS in front.
+Recommendation: loopback plus Tailscale. Status: open.
+
+**D5. Delete stale inventories?**
+`software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,
+`.zshrc.omz-backup`, the neofetch package and `lib_sh/requirers.sh` duplicate
+or contradict current sources.
+Recommendation: delete; the generated feature catalog replaces them.
+Status: open.
+
+**D6. Language for the feature engine?**
+Options: Go (typed manifests, dependency resolution, concurrent checks,
+`html/template`, table-driven tests, no runtime dependencies); bash plus
+Python's standard library (no build step; macOS's Python 3.9 has no TOML
+parser, so manifests would be JSON).
+Recommendation: Go. Status: open.
+
+**D9. Encrypt the Mackup store at rest?**
+Preference plists can contain license keys and session tokens that gitleaks
+does not recognise.
+Options: plaintext in a private repo with gitleaks and the allowlist; or
+`age` encryption with the key in 1Password, cached in the Keychain. Trade-off:
+encrypted diffs are unreadable in git, and restore needs the key.
+Recommendation: encrypt. Status: open.
+
+**D10. Which apps does Mackup back up?**
+Proposed: `macosx`, alt-tab, bartender, rectangle, karabiner-elements, iterm2,
+istat-menus, hammerspoon. Status: open.
+
+**D11. Plists through `defaults export`/`import`?**
+Direct plist copies can be stale or overwritten by `cfprefsd`.
+Recommendation: yes, as specified under Mackup. Status: proposed.
+
+**D12. 1Password vault and item layout?**
+Proposed: a vault named `dotfiles`, one item per service, fields `url`,
+`api_key` or `token`, `username`, `password`. Status: open.
+
+**D13. How do machines without a person present resolve secrets?**
+Options: interactive `dotfiles secrets sync` into the Keychain, with scheduled
+jobs reading only the Keychain; 1Password Connect (already deployed in the
+home cluster) with a token in the Keychain; a 1Password service account, if
+the plan includes them.
+Recommendation: Keychain cache synced interactively; Connect for machines
+that need unattended refresh. Status: open.
+
+**D14. Accept sudo for Chrome and Brave policy changes?**
+Extension policies must be mandatory, which on an unmanaged Mac means a
+root-owned file; every change to the extension set needs sudo once.
+Options: accept; or manage only Firefox automatically and list Chromium
+extensions as manual steps. Status: open.
+
+**D15. Where does Bypass Paywalls Clean run, and how is it pinned?**
+Options: Firefox only (silent, signature-checked updates); Chrome and Brave as
+well (manual install per profile). Pinning: follow the maintainer's update
+manifest, or a strict mode with a verified local file and updates disabled.
+Recommendation: Firefox only, following the update manifest with the signer
+and ID checked. Status: open.
+
+**D16. Ad blocking in Brave?**
+Options: Shields only; Brave's hosted uBlock Origin (manual toggle);
+uBlock Origin Lite. Status: open.
+
+**D17. Toggl details.**
+Needed: the organization ID (no API endpoint returns it) and whether timers
+run in Toggl 2.0 (focus.toggl.com) or classic Toggl Track. The key is shared
+by every machine through 1Password, because creating a new key revokes the
+previous one. Status: waiting on the owner.
+
+**D18. What does the work PC get?**
+Needed: its operating system. A `work` profile disables personal features
+(Mackup, Bypass Paywalls Clean, personal agents). The engine is macOS-only
+today. Status: waiting on the owner.
+
+**D19. Which machines publish?**
+`sync.publish` can be off for pull-only machines.
+Recommendation: publish from personal machines; pull-only on the work PC.
+Status: open.
+
+**D20. Per-directory Node versions?**
+`fnm env` runs without `--use-on-cd`, so it costs startup time without
+switching versions.
+Options: add `--use-on-cd`; or drop the per-shell call and use the default
+alias on PATH. Status: open.
+
+**D21. The stale remote branch `update_2026`?**
+It holds 33 auto-sync commits that never reached `master`.
+Options: delete; merge. Status: open.
+
+**D22. Register this machine's signing key on GitHub.**
+Needs `gh auth refresh -s admin:gpg_key` by the owner, then `gh gpg-key add`.
+Status: action needed.
+
+**D23. Remove the unused `~/.oh-my-zsh` checkout?**
+zinit loads Oh My Zsh plugins from its own snippet cache.
+Recommendation: remove after confirming; `doctor` reports it until then.
+Status: open.
+
+**D24. Which self-hosted app extensions to add?**
+See [Self-hosted app extensions](#self-hosted-app-extensions). Status: open.
 
 ## Rollout
 
