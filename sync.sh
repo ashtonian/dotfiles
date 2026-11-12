@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Sync dotfiles and per-host app backups; install missing shared packages.
+# Sync dotfiles and auxiliary repositories; install missing shared packages.
 set -euo pipefail
 umask 077
 
@@ -8,6 +8,12 @@ SYNC_DIR="${SYNC_DIR:-$HOME/.sync}"
 LOG_DIR="$DOTFILES_DIR/logs"
 LOG_FILE="$LOG_DIR/sync.log"
 MAX_LOG_SIZE=1048576
+# A repository with a tracked change newer than this is being edited; sync
+# leaves it for a later run instead of committing half-finished work.
+SYNC_QUIET_MINUTES="${SYNC_QUIET_MINUTES:-30}"
+# Machine-local files found inside stow packages are held here while their
+# package is relinked. Same volume as $HOME, so moves are renames.
+STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"; }
 run_logged() { "$@" 2>&1 | tee -a "$LOG_FILE"; }
@@ -71,31 +77,6 @@ sync_brewfile() {
     return "$result"
 }
 
-run_mackup_backup() (
-    if ! command -v mackup >/dev/null; then
-        log "WARN: Mackup is not installed"
-        return 1
-    fi
-    local cfg="${MACKUP_CONFIG_FILE:-$HOME/.mackup.cfg}" host_dir tmp_cfg
-    host_dir="mackup/$(stable_host)"
-    [[ -f "$cfg" ]] || { log "ERROR: Missing Mackup configuration"; return 1; }
-    tmp_cfg=$(mktemp) || return
-    trap 'rm -f -- "$tmp_cfg"' EXIT
-    mkdir -p "$SYNC_DIR/$host_dir" || return
-    python3 - "$cfg" "$tmp_cfg" "$SYNC_DIR" "$host_dir" <<'PY' || return
-import configparser, sys
-config = configparser.ConfigParser()
-config.read(sys.argv[1])
-if not config.has_section('storage'):
-    config.add_section('storage')
-config['storage'].update(engine='file_system', path=sys.argv[3], directory=sys.argv[4])
-with open(sys.argv[2], 'w') as output:
-    config.write(output)
-PY
-    log "INFO: Backing up app configs to $SYNC_DIR/$host_dir"
-    run_logged mackup --config-file="$tmp_cfg" backup --force
-)
-
 repo_idle() {
     local state location conflicts
     for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer BISECT_LOG; do
@@ -110,6 +91,24 @@ repo_idle() {
         log "ERROR: Unresolved Git conflicts; leaving repository unchanged"
         return 1
     fi
+}
+
+# Succeeds, and names the reason, when someone is working in the repository.
+repo_busy() {
+    local lock file
+    lock=$(git rev-parse --git-path index.lock) || return 1
+    if [[ -e "$lock" ]]; then
+        log "INFO: ${PWD##*/} has a Git index lock; leaving it for the next sync"
+        return 0
+    fi
+    while IFS= read -r -d '' file; do
+        [[ -e "$file" ]] || continue
+        if [[ -n "$(find "$file" -prune -mmin "-$SYNC_QUIET_MINUTES" 2>/dev/null)" ]]; then
+            log "INFO: ${PWD##*/} changed in the last $SYNC_QUIET_MINUTES minutes ($file); leaving it for the next sync"
+            return 0
+        fi
+    done < <(git diff --name-only -z HEAD --)
+    return 1
 }
 
 signing_ready() {
@@ -190,10 +189,11 @@ verify_github_commits() {
 }
 
 sync_git_repo() (
-    local repo_dir="$1" auto_resolve="${2:-false}" branch changes sha commits repo attempt
+    local repo_dir="$1" auto_resolve="${2:-false}" branch changes untracked sha commits repo attempt
     cd "$repo_dir" || return
     git rev-parse --git-dir >/dev/null 2>&1 || { log "WARN: Not a Git repository: $repo_dir"; return 1; }
     repo_idle || return
+    if repo_busy; then return 0; fi
     branch=$(git symbolic-ref --quiet --short HEAD) || { log "ERROR: Detached HEAD; skipping sync"; return 1; }
     signing_ready || return
     log "INFO: Syncing ${repo_dir##*/}"
@@ -207,9 +207,14 @@ sync_git_repo() (
         fi
         run_logged git fetch origin || return
     fi
-    changes=$(git status --porcelain) || return
+    changes=$(git status --porcelain --untracked-files=no) || return
+    untracked=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ') || return
+    if [[ "$untracked" -gt 0 ]]; then
+        log "INFO: ${repo_dir##*/} has $untracked untracked file(s); sync never publishes new files, so commit them by hand"
+    fi
     if [[ -n "$changes" ]]; then
-        git add -A -- ':!*.local' ':!.env*' ':!*.secret*' || return
+        # Tracked files only: a file a tool drops into the tree is never published.
+        git add -u -- . ':(exclude,glob)**/*.local' ':(exclude,glob)**/.env*' ':(exclude,glob)**/*.secret*' || return
         if ! git diff --cached --quiet; then
             scan_dotfiles --staged || return
             run_logged git commit -S -m "auto: sync $(date '+%Y-%m-%d %H:%M') from $(stable_host)" || return
@@ -256,29 +261,106 @@ sync_auxiliary_repos() {
 }
 sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
 
-# gh keeps its OAuth token in ~/.config/gh/hosts.yml. A folded package makes
-# ~/.config/gh a symlink into this public repo, which would put the token in
-# the working tree, so these packages are stowed file by file.
-NO_FOLDING_PACKAGES=(gh)
+# Directories stow must never turn into links into the repository, created
+# private before any package is linked.
+HOME_DIRS=(.claude .config .local/bin .local/share .ssh)
+
+ensure_home_dirs() {
+    local dir
+    for dir in "${HOME_DIRS[@]}"; do
+        # A link here is a folded package directory; relinking its package
+        # replaces it with a real directory.
+        [[ -L "$HOME/$dir" ]] && continue
+        mkdir -p "$HOME/$dir" || return
+    done
+    for dir in .claude .ssh; do
+        [[ -L "$HOME/$dir" ]] || chmod 700 "$HOME/$dir" || return
+    done
+}
+
+# Ignored files inside a package were written by tools through a folded
+# directory link (gh's hosts.yml, opencode's node_modules). They belong in
+# $HOME, not the repository, and must not be linked back in.
+hold_ignored() {
+    local package="$1" hold="$2" path manifest="$2/$1.held"
+    mkdir -p "$hold" || return
+    : > "$manifest" || return
+    while IFS= read -r -d '' path; do
+        path=${path%/}
+        mkdir -p "$hold/$(dirname "$path")" || return
+        mv "$DOTFILES_DIR/$path" "$hold/$path" || return
+        printf '%s\0' "$path" >> "$manifest" || return
+    done < <(git -C "$DOTFILES_DIR" ls-files -z --others --ignored --exclude-standard --directory -- "stow/$package")
+}
+
+# Puts held files back into the package after a failed relink.
+return_held() {
+    local package="$1" hold="$2" path manifest="$2/$1.held"
+    [[ -f "$manifest" ]] || return 0
+    while IFS= read -r -d '' path; do
+        mkdir -p "$DOTFILES_DIR/$(dirname "$path")" || return
+        mv "$hold/$path" "$DOTFILES_DIR/$path" || return
+    done < "$manifest"
+    rm -f -- "$manifest"
+}
+
+# Moves held files to their place in $HOME. A real file already there is
+# kept, and the held copy stays in the hold directory for the owner.
+place_held() {
+    local package="$1" hold="$2" path rel dest manifest="$2/$1.held" result=0
+    [[ -f "$manifest" ]] || return 0
+    while IFS= read -r -d '' path; do
+        rel=${path#"stow/$package/"}
+        dest="$HOME/$rel"
+        # A link stow made to this file before it was held now dangles.
+        if [[ -L "$dest" && "$(readlink "$dest")" == *"/stow/$package/$rel" ]]; then
+            rm -f -- "$dest" || return
+        fi
+        if [[ -e "$dest" || -L "$dest" ]]; then
+            log "ERROR: $dest already exists; the machine-local copy from the repository is in $hold/$path"
+            result=1
+            continue
+        fi
+        mkdir -p "$(dirname "$dest")" || return
+        mv "$hold/$path" "$dest" || return
+        log "INFO: Moved machine-local $path out of the repository to $dest"
+    done < "$manifest"
+    [[ $result -ne 0 ]] || rm -f -- "$manifest"
+    return "$result"
+}
+
+# One package at a time: hold its ignored files, relink it without folding
+# (stow changes nothing if it finds a conflict), then move the held files home.
+stow_package() {
+    local package="$1" hold="$2"
+    hold_ignored "$package" "$hold" || { return_held "$package" "$hold"; return 1; }
+    if ! run_logged stow --no-folding -R -v -t "$HOME" "$package"; then
+        log "ERROR: Stow left $package unchanged; resolve the conflict above and run sync.sh stow"
+        return_held "$package" "$hold" || log "ERROR: Machine-local files for $package remain in $hold"
+        return 1
+    fi
+    place_held "$package" "$hold"
+}
+
+report_untracked() {
+    local files
+    files=$(git -C "$DOTFILES_DIR" ls-files --others --exclude-standard -- stow) || return 0
+    [[ -n "$files" ]] || return 0
+    log "WARN: Untracked files in stow packages are linked but never published; commit or remove them:"
+    printf '%s\n' "$files" | sed 's/^/    /' | tee -a "$LOG_FILE"
+}
 
 run_stow() (
     command -v stow >/dev/null || { log "ERROR: Stow is not installed"; return 1; }
     cd "$DOTFILES_DIR/stow" || return
-    local package result=0
-    local -a flags
+    ensure_home_dirs || return
+    local package result=0 hold
+    hold="$STATE_DIR/stow-hold/$(date +%Y%m%dT%H%M%S)-$$"
     for package in */; do
-        package=${package%/}
-        if [[ $package == gh && -e gh/.config/gh/hosts.yml ]]; then
-            log "ERROR: stow/gh/.config/gh/hosts.yml holds a gh token inside the repo; see docs/OPERATIONS.md#shell-and-stow-troubleshooting"
-            result=1
-            continue
-        fi
-        flags=(-v -R -t "$HOME")
-        if [[ " ${NO_FOLDING_PACKAGES[*]} " == *" $package "* ]]; then
-            flags+=(--no-folding)
-        fi
-        run_logged stow "${flags[@]}" "$package" || result=1
+        stow_package "${package%/}" "$hold" || result=1
     done
+    find "$hold" -depth -type d -empty -delete 2>/dev/null || true
+    report_untracked
     return "$result"
 )
 
@@ -294,7 +376,6 @@ main() {
         sync|all)
             check_connectivity || return 0
             sync_brewfile || status=1
-            run_mackup_backup || status=1
             sync_dotfiles || status=1
             sync_auxiliary_repos || status=1
             if [[ ${1:-sync} == all ]]; then run_stow || status=1; fi
@@ -304,8 +385,7 @@ main() {
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
         stow) run_stow || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
-        mackup) run_mackup_backup || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|repos|stow|brewfile|mackup|all|check}\n' "$0"; return 1 ;;
+        *) printf 'Usage: %s {sync|dotfiles|repos|stow|brewfile|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }

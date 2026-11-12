@@ -1339,40 +1339,24 @@ bot "Configuring Security."
 # https://github.com/drduh/macOS-Security-and-Privacy-Guide
 # https://benchmarks.cisecurity.org/tools2/osx/CIS_Apple_OSX_10.12_Benchmark_v1.0.0.pdf
 
-# Enable firewall. Possible values:
-#   0 = off
-#   1 = on for specific sevices
-#   2 = on for essential services
-running "Enable firewall."
-sudo defaults write /Library/Preferences/com.apple.alf globalstate -int 1
-ok
+# socketfilterfw is the supported interface; current macOS ignores writes to
+# the old com.apple.alf preferences, which left the firewall off.
+firewall=/usr/libexec/ApplicationFirewall/socketfilterfw
 
-# Source: https://support.apple.com/kb/PH18642
+running "Enable the application firewall."
+sudo $firewall --setglobalstate on
+ok
 
 running "Enable firewall stealth mode (no response to ICMP / ping requests)."
-sudo defaults write /Library/Preferences/com.apple.alf stealthenabled -int 1
+sudo $firewall --setstealthmode on
 ok
 
-# running "Enable firewall logging."
-# sudo defaults write /Library/Preferences/com.apple.alf loggingenabled -int 1
-# ok
-
-running "Do not automatically allow signed software to receive incoming connections."
-#sudo defaults write /Library/Preferences/com.apple.alf allowsignedenabled -bool false
+# Signed apps may accept connections without a prompt; anything unsigned asks
+# first. docs/AGENT-MONITOR.md covers allowing the LAN gate if it is blocked.
+running "Allow signed software to receive incoming connections."
+sudo $firewall --setallowsigned on
+sudo $firewall --setallowsignedapp on
 ok
-
-# running "Log firewall events for 90 days."
-# sudo perl -p -i -e 's/rotate=seq compress file_max=5M all_max=50M/rotate=utc compress file_max=5M ttl=90/g' "/etc/asl.conf"
-# sudo perl -p -i -e 's/appfirewall.log file_max=5M all_max=50M/appfirewall.log rotate=utc compress file_max=5M ttl=90/g' "/etc/asl.conf"
-# ok
-
-# (uncomment if above is not commented out)
-# running "Reload the firewall."
-# launchctl unload /System/Library/LaunchAgents/com.apple.alf.useragent.plist
-# sudo launchctl unload /System/Library/LaunchDaemons/com.apple.alf.agent.plist
-# sudo launchctl load /System/Library/LaunchDaemons/com.apple.alf.agent.plist
-# launchctl load /System/Library/LaunchAgents/com.apple.alf.useragent.plist
-# ok
 
 # running "Disable IR remote control."
 # sudo defaults write /Library/Preferences/com.apple.driver.AppleIRController DeviceEnabled -bool false

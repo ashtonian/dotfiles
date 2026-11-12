@@ -16,7 +16,8 @@
 #
 # The dashboard listens on 127.0.0.1:$AGENT_MONITOR_PORT and reads ~/.claude and
 # ~/.codex directly, so it must run on the machine that runs the agents. LAN
-# access goes only through the gate on $AGENT_MONITOR_GATE_PORT. See docs/AGENT-MONITOR.md.
+# access goes only through the gate on $AGENT_MONITOR_GATE_HOST:$AGENT_MONITOR_GATE_PORT.
+# See docs/AGENT-MONITOR.md.
 set -euo pipefail
 
 # One pinned upstream release: the tag and the commit it must resolve to.
@@ -31,6 +32,7 @@ bin_dir=${0:A:h} # captured here: inside a function $0 is the function name
 home=${AGENT_MONITOR_HOME:-$HOME/.local/share/agent-monitor}
 port=${AGENT_MONITOR_PORT:-4820}
 gate_port=${AGENT_MONITOR_GATE_PORT:-4821}
+gate_host=${AGENT_MONITOR_GATE_HOST:-0.0.0.0} # the LAN listener the cluster proxy reaches
 fnm_dir=${FNM_DIR:-$HOME/Library/Application Support/fnm}
 app=$home/app
 data=$home/data # symlink to the data volume; the LaunchAgent waits for it to resolve
@@ -138,6 +140,7 @@ cmd_gate() {
 	[[ -x $node_bin ]] || die 78 "Node $NODE_VERSION is missing; run agent-monitor install"
 	[[ -s $gate_token ]] || die 78 "$gate_token is missing; run agent-monitor lan enable"
 	export GATE_TOKEN_FILE=$gate_token
+	export GATE_LISTEN_HOST=$gate_host
 	export GATE_PORT=$gate_port
 	export GATE_UPSTREAM_PORT=$port
 	exec $node_bin $bin_dir/agent-monitor-gate.mjs

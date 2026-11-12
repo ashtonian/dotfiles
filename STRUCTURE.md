@@ -52,7 +52,7 @@ Stow's default ignore rules exclude package README files.
 | mackup | `.mackup.cfg`; filesystem storage and app exclusions |
 | neofetch | `.config/neofetch/config.conf`; legacy config, not used by Fastfetch |
 | opencode | `.config/opencode/opencode.jsonc`, coordinator agent, delegate plugin |
-| shell | `.config/shell/env.sh` (POSIX environment for every shell and agent), `.bashrc` |
+| shell | `.config/shell/env.sh` (POSIX environment for every shell and agent), `.bashrc`, `.bash_profile` (login bash hands off to `.bashrc`) |
 | ssh | .ssh/config; OrbStack include, private local include, shared defaults |
 | taskwarrior | `.taskrc` |
 | zsh | `.zshenv`, `.zprofile`, `.zshrc`, `.config/zsh/*.zsh` |
@@ -142,12 +142,12 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 
 | Label | Schedule / service | Logs |
 | ------- | -------------------- | ------ |
-| com.dotfiles.sync | Every 14,400 seconds and at load | `logs/sync.log`, `/tmp/dotfiles-sync.{out,err}` |
-| com.dotfiles.update | Friday 09:00 local time | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
+| com.dotfiles.sync | Every 14,400 seconds and at load; runs `sync.sh` directly, not through a login shell | `logs/sync.log`, `/tmp/dotfiles-sync.{out,err}` |
+| com.dotfiles.update | Friday 09:00 local time; runs `dotfiles-update.sh` directly | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
 | com.ashtonian.codex-remote-control | Always on; default Unix socket; soft file limit 65,536 | `~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log` |
-| com.ashtonian.opencode | Always on; HTTP server; default `0.0.0.0:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
+| com.ashtonian.opencode | Always on; HTTP server; default `127.0.0.1:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
-| com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `0.0.0.0:4821`, token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
+| com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `$AGENT_MONITOR_GATE_HOST:4821` (default `0.0.0.0`), token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on after `otel-agent configure`; OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
 | com.ashtonian.go-cache-trim | Every 6 hours and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 

@@ -152,19 +152,6 @@ setup_sync_dir() {
         fi
     done
 
-    # Setup colorls theme
-    if [[ -f "$SYNC_DIR/colorls/dark_colors.yaml" ]]; then
-        mkdir -p "$HOME/.config/colorls"
-        cp "$SYNC_DIR/colorls/dark_colors.yaml" "$HOME/.config/colorls/dark_colors.yaml"
-    fi
-
-    # Initialize mackup repo if not exists
-    if [[ ! -d "$SYNC_DIR/mackup/.git" ]]; then
-        info "Initializing mackup backup repo..."
-        mkdir -p "$SYNC_DIR/mackup"
-        git -C "$SYNC_DIR/mackup" init
-    fi
-
     success "Sync directory ready"
 }
 
@@ -177,20 +164,14 @@ setup_stow() {
         brew install stow
     fi
 
+    # sync.sh owns linking, so a fresh install and every later relink behave
+    # the same: per-file links, never a directory linked into the repository.
     info "Setting up stow packages..."
-    cd "$DOTFILES_DIR/stow"
-
-    local stow_out
-    for package in */; do
-        package="${package%/}"
-        info "  Stowing $package..."
-        if ! stow_out=$(stow -R -t "$HOME" "$package" 2>&1); then
-            warn "  stow reported conflicts for '$package' (pre-existing files left unstowed):"
-            echo "$stow_out" | grep -iE 'conflict|existing|cannot' | sed 's/^/      /'
-        fi
-    done
-
-    success "Stow packages linked"
+    if "$DOTFILES_DIR/sync.sh" stow; then
+        success "Stow packages linked"
+    else
+        warn "Some stow packages were left unchanged; see $DOTFILES_DIR/logs/sync.log"
+    fi
 }
 
 #=============================================================================
@@ -206,19 +187,6 @@ install_packages() {
     else
         warn "No Brewfile found, skipping package installation"
     fi
-}
-
-#=============================================================================
-# MACKUP
-#=============================================================================
-setup_mackup() {
-    if ! command -v mackup &>/dev/null; then
-        info "Installing mackup..."
-        brew install mackup
-    fi
-
-    info "Mackup configured (run 'mackup restore' to restore app configs)"
-    success "Mackup ready"
 }
 
 #=============================================================================
@@ -266,7 +234,6 @@ main() {
     setup_sync_dir
     install_packages
     setup_stow
-    setup_mackup
     install_launch_agents
     configure_macos
 
@@ -277,9 +244,9 @@ main() {
     echo ""
     info "Next steps:"
     echo "  1. Restart your terminal"
-    echo "  2. Run 'mackup restore' if you have existing app configs"
-    echo "  3. Run '~/.dotfiles/sync.sh' to start syncing"
+    echo "  2. Run '~/.dotfiles/sync.sh' to start syncing"
     echo ""
 }
 
-if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
+# Piped into bash (curl | bash) there is no BASH_SOURCE, which `set -u` rejects.
+if [[ "${BASH_SOURCE[0]:-$0}" == "$0" ]]; then main "$@"; fi

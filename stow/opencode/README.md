@@ -91,7 +91,7 @@ Keep them compatible with the server configuration.
 | Variable | Type | Default | Read by / effect |
 | ---------- | ------ | --------- | ------------------ |
 | `BASH_ENV` | File path | `~/.config/shell/env.sh` (LaunchAgent) | Every `bash -c` the shell tool runs sources the shared environment (stow package `shell`); delegated Claude workers inherit it too |
-| `OPENCODE_HOSTNAME` | Address string | 0.0.0.0 | Server wrapper bind address |
+| `OPENCODE_HOSTNAME` | Address string | 127.0.0.1 | Server wrapper bind address. Another address exposes the plain-HTTP server, and its password, to that network |
 | `OPENCODE_PORT` | Port number | 4096 | Server wrapper, `oc`, `ocweb` |
 | `OPENCODE_SERVER_PASSWORD` | Secret string | Loaded from server-password | Server wrapper replaces any inherited value from the local file |
 | `XDG_STATE_HOME` | Directory path | `~/.local/state` | Plugin state parent when `DELEGATE_STATE_DIR` is unset |
@@ -146,9 +146,11 @@ content (mail, Drive).
 | `oc [attach options]` | Terminal UI on the running server, in `$PWD` |
 | `ocweb` | Opens the web UI and copies the password to the clipboard |
 
-The web UI is also reachable from other devices on the LAN or over the VPN at
-`http://<this Mac>:4096` (user `opencode`). Remote access requires suitable
-network protection; see Security. The service does not configure TLS or a VPN.
+The server listens on loopback only. To reach the web UI from another device,
+set `OPENCODE_HOSTNAME` in the installed LaunchAgent to an address on a network
+you trust and reinstall it; the UI is then at `http://<this Mac>:4096` (user
+`opencode`). The service does not configure TLS, so the password crosses that
+network unencrypted; see Security.
 
 ### Tools (registered by `plugins/delegate.ts`)
 
@@ -312,8 +314,8 @@ Service logs have no rotation configured by these scripts.
 - **The server is a shell on this Mac.** Anyone who can authenticate can run
   agents with bypassed permissions. It binds to all interfaces so other devices
   on the LAN and VPN can reach the web UI. It uses plain HTTP, so the basic-auth
-  password crosses the LAN unencrypted. Keep it off any public network, and set
-  `OPENCODE_HOSTNAME=127.0.0.1` in the LaunchAgent if remote access is not needed.
+  password crosses the network unencrypted when `OPENCODE_HOSTNAME` is set to
+  anything but loopback. Keep it off any public network.
 - **Write access is not approved per job.** The global `permission` block
   allows `delegate_write`, so write-access jobs start without asking; set it to
   `ask` in `coordinator.md` to restore approval per directory (`always`) or per

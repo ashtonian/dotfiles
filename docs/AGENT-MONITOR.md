@@ -44,6 +44,7 @@ of them, so the service runs on the defaults.
 | ---------- | ------ | --------- | ------------- |
 | `AGENT_MONITOR_HOME` | Directory path | `~/.local/share/agent-monitor` | Release checkout (`app/`), settings (`config/.env`) and the data link (`data`). The LaunchAgent template and installer assume the default |
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
+| `AGENT_MONITOR_GATE_HOST` | Address | `0.0.0.0` | LAN gate bind address; set it to one interface's address to keep the gate off the others |
 | `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in home-ops-private `k8s/dev/agent-monitor` |
 | `FNM_DIR` | Directory path | `~/Library/Application Support/fnm` | Where the pinned Node.js release is installed |
 | `CODEX_HOME` | Directory path | `~/.codex` | Codex home for hooks and history |
@@ -92,7 +93,7 @@ server's dependencies are skipped, including an analytics ping.
 | ----------- | ---------- |
 | Web UI | <http://127.0.0.1:4820> |
 | Health | `GET /api/health` → `{"status":"ok","version":"2.3.0",…}` |
-| LAN gate | `0.0.0.0:4821`. Requires `Authorization: Bearer <gate token>` (401 otherwise), returns 404 for `/api/hooks*`, and relays HTTP and WebSockets to the dashboard as a loopback request |
+| LAN gate | `$AGENT_MONITOR_GATE_HOST:4821` (default `0.0.0.0`). Requires `Authorization: Bearer <gate token>` (401 otherwise), returns 404 for `/api/hooks*`, and relays HTTP and WebSockets to the dashboard as a loopback request |
 | LAN URL | `https://agents.<internal domain>` (needs the gate) |
 | REST API and OpenAPI | `/api/*`, interactive docs at `/api/docs` |
 | Claude Code hooks | 8 events in `~/.claude/settings.json`: `node <app>/scripts/hook-handler.js <event>` |

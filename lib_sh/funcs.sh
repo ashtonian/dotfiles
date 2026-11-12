@@ -568,7 +568,8 @@ function flush_dns(){
 function tf_destroy_apply(){
   bot "bro you tryna rebuild [y|n]?"
   read -r "?" response
-  if [[ $response =~ (yes|y|Y) ]];then
+  # Whole-answer match: "not yet" must not count as a yes.
+  if [[ ${response:l} == (y|yes) ]];then
     action "you'da boss."
     terraform destroy -var-file=.tfvars -auto-approve
     terraform apply -var-file=.tfvars -auto-approve
