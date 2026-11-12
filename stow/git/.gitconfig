@@ -5,10 +5,6 @@
 [github]
   user = ashtonian
 
-# Include local/private config if it exists
-[include]
-  path = ~/.gitconfig.local
-
 [advice]
   statusHints = true
 
@@ -169,3 +165,8 @@
 [safe]
 	directory = /__w/eleveldb/eleveldb
 	directory = /__w/eleveldb/eleveldb
+
+# Machine-specific config last, so it overrides everything above, including the
+# credential helper list (gh for github.com instead of osxkeychain).
+[include]
+  path = ~/.gitconfig.local

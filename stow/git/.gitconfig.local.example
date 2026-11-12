@@ -1,6 +1,6 @@
 # ~/.gitconfig.local - Machine-specific git configuration
 # Copy this to ~/.gitconfig.local and customize for each machine.
-# This file is automatically included by .gitconfig via [include].
+# .gitconfig includes this file last, so its settings override the shared ones.
 
 # GPG commit signing (get your key ID with: gpg --list-secret-keys --keyid-format long)
 # [commit]
@@ -13,3 +13,14 @@
 # Machine-specific safe directories
 # [safe]
 #     directory = /path/to/your/repos
+
+# GitHub credentials through gh. Copy these here rather than running
+# `gh auth setup-git`, which writes through the ~/.gitconfig link into the
+# tracked file. The empty helper clears osxkeychain for these hosts, which SSH
+# sessions can't use while the login keychain is locked.
+# [credential "https://github.com"]
+#     helper =
+#     helper = !/opt/homebrew/bin/gh auth git-credential
+# [credential "https://gist.github.com"]
+#     helper =
+#     helper = !/opt/homebrew/bin/gh auth git-credential

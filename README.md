@@ -318,7 +318,8 @@ This repo is designed to sync across multiple machines via LaunchAgent (every 4 
 
 5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
 
-Also run `gh auth login`, authenticate Git transport, and register the signing
+Also log in to gh with the scopes and storage in
+[Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing
 public key and its email with GitHub. The shared Git config contains this repo
 owner's personal identity; set intentional overrides for another user or work
 repository. The installer initializes Mackup without a remote or initial commit.
