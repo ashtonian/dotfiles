@@ -14,6 +14,11 @@ SYNC_QUIET_MINUTES="${SYNC_QUIET_MINUTES:-30}"
 # Machine-local files found inside stow packages are held here while their
 # package is relinked. Same volume as $HOME, so moves are renames.
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles"
+# The feature engine (cmd/dotfiles): this machine's manifest, the binary sync
+# builds from the checkout, and where apply writes the generated Brewfile.
+MACHINE_FILE="${XDG_CONFIG_HOME:-$HOME/.config}/dotfiles/machine.toml"
+DOTFILES_BIN="${DOTFILES_BIN:-$HOME/.local/bin/dotfiles}"
+GENERATED_DIR="$HOME/.config/dotfiles/generated"
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"; }
 run_logged() { "$@" 2>&1 | tee -a "$LOG_FILE"; }
@@ -57,13 +62,18 @@ check_connectivity() {
     fi
 }
 
+# A checkout with features/ is installed by the engine; one without is the
+# older stow layout.
+uses_engine() { [[ -d "$DOTFILES_DIR/features" ]]; }
+
 sync_brewfile() {
     if ! command -v brew >/dev/null; then
         log "WARN: Homebrew is not installed"
         return 1
     fi
-    local file result=0
-    for file in "$DOTFILES_DIR/Brewfile" "$DOTFILES_DIR/Brewfile.local"; do
+    local file result=0 shared="$DOTFILES_DIR/Brewfile"
+    uses_engine && shared="$GENERATED_DIR/Brewfile"
+    for file in "$shared" "$DOTFILES_DIR/Brewfile.local"; do
         [[ -f "$file" ]] || continue
         if HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade --file="$file" >/dev/null 2>&1; then
             continue
@@ -156,6 +166,38 @@ integrate_remote() {
     fi
 }
 
+# upstream_ready REF: merging REF must leave this machine installable. When REF
+# uses the feature engine, this machine needs its manifest, and REF's own
+# engine has to build here and plan that manifest, before the merge. A merge
+# that brought a layout the engine cannot install would leave every link the
+# current layout made pointing at moved or changed files, with nothing to
+# replace them: no shell config, no git identity for the next sync.
+upstream_ready() {
+    local ref="$1" profiles tree status=0
+    git cat-file -e "$ref:features" 2>/dev/null || return 0
+    [[ -n "$(git rev-list --max-count=1 "HEAD..$ref")" ]] || return 0
+    if [[ ! -f "$MACHINE_FILE" ]]; then
+        profiles=$(git ls-tree --name-only "$ref:profiles" 2>/dev/null | sed 's/\.toml$//' | tr '\n' ' ')
+        log "ERROR: $ref installs machine features and this machine has no $MACHINE_FILE; skipping merge and push until it lists this machine's profiles, such as: profiles = [\"base\", \"dev\"] (available: ${profiles% })"
+        return 1
+    fi
+    if ! command -v go >/dev/null; then
+        log "ERROR: $ref installs machine features and Go is not installed to build its engine; skipping merge and push until Go is installed (brew install go)"
+        return 1
+    fi
+    tree=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-upstream.XXXXXX") || return
+    if git archive --format=tar "$ref" | tar -x -f - -C "$tree" &&
+        (cd "$tree" && run_logged env GOTOOLCHAIN=local go build -trimpath -o "$tree/.dotfiles-check" ./cmd/dotfiles) &&
+        run_logged "$tree/.dotfiles-check" check --repo "$tree" --machine "$MACHINE_FILE"; then
+        status=0
+    else
+        log "ERROR: $ref's engine does not build with this machine's Go or cannot plan $MACHINE_FILE (see above); skipping merge and push"
+        status=1
+    fi
+    rm -rf -- "$tree"
+    return "$status"
+}
+
 github_repo() {
     local url
     url=$(git remote get-url --push origin) || return
@@ -232,6 +274,7 @@ sync_git_repo() (
         log "ERROR: Install gh to verify GitHub commit signatures before publishing"
         return 1
     fi
+    if [[ "$repo_dir" == "$DOTFILES_DIR" ]] && ! upstream_ready "origin/$branch"; then return 1; fi
     for attempt in 1 2 3; do
         integrate_remote "$branch" "$auto_resolve" || return
         commits=$(git rev-list "origin/$branch..HEAD") || return
@@ -260,6 +303,52 @@ sync_auxiliary_repos() {
     return "$result"
 }
 sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
+
+# build_engine: rebuild the binary when the checkout's engine sources are newer
+# than it, which a pull that changes them makes them. GOTOOLCHAIN=local: a
+# background job never downloads a Go toolchain.
+build_engine() {
+    local path stale="" sources=()
+    for path in go.mod go.sum cmd internal; do
+        [[ -e "$DOTFILES_DIR/$path" ]] && sources+=("$DOTFILES_DIR/$path")
+    done
+    if [[ -x "$DOTFILES_BIN" ]]; then
+        [[ ${#sources[@]} -gt 0 ]] || return 0
+        stale=$(find "${sources[@]}" -newer "$DOTFILES_BIN" -print -quit) || return
+        [[ -n "$stale" ]] || return 0
+    fi
+    if ! command -v go >/dev/null; then
+        log "ERROR: Go is not installed; cannot build $DOTFILES_BIN"
+        return 1
+    fi
+    log "INFO: Building $DOTFILES_BIN"
+    mkdir -p "${DOTFILES_BIN%/*}" || return
+    if ! (cd "$DOTFILES_DIR" && run_logged env GOTOOLCHAIN=local go build -trimpath -o "$DOTFILES_BIN.tmp" ./cmd/dotfiles); then
+        rm -f "$DOTFILES_BIN.tmp"
+        log "ERROR: Building $DOTFILES_BIN failed"
+        return 1
+    fi
+    mv -f "$DOTFILES_BIN.tmp" "$DOTFILES_BIN"
+}
+
+# apply_features: converge this machine on its features. The engine's own
+# lock serializes it with a manual `dotfiles apply`.
+apply_features() {
+    uses_engine || return 0
+    if [[ ! -f "$MACHINE_FILE" ]]; then
+        log "ERROR: No machine manifest at $MACHINE_FILE; run: $DOTFILES_BIN init --profiles <names>"
+        return 1
+    fi
+    build_engine || return
+    local status=0
+    run_logged "$DOTFILES_BIN" apply --repo "$DOTFILES_DIR" || status=$?
+    case $status in
+        0) return 0 ;;
+        1) log "WARN: dotfiles apply left problems to resolve; see above, or run: $DOTFILES_BIN doctor" ;;
+        *) log "ERROR: dotfiles apply failed (exit $status)" ;;
+    esac
+    return 1
+}
 
 # Directories stow must never turn into links into the repository, created
 # private before any package is linked.
@@ -375,17 +464,22 @@ main() {
         check) log "INFO: Sync lock is available" ;;
         sync|all)
             check_connectivity || return 0
-            sync_brewfile || status=1
+            # Apply right after the merge: a pull that moves tracked files
+            # leaves links to their old paths until it runs. The Brewfile it
+            # generates is installed next.
             sync_dotfiles || status=1
+            apply_features || status=1
+            sync_brewfile || status=1
             sync_auxiliary_repos || status=1
-            if [[ ${1:-sync} == all ]]; then run_stow || status=1; fi
+            if [[ ${1:-sync} == all ]] && ! uses_engine; then run_stow || status=1; fi
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
         dotfiles) check_connectivity || return 0; sync_dotfiles || status=$? ;;
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
-        stow) run_stow || status=$? ;;
+        apply) apply_features || status=$? ;;
+        stow) if uses_engine; then apply_features || status=$?; else run_stow || status=$?; fi ;;
         brewfile) sync_brewfile || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|repos|stow|brewfile|all|check}\n' "$0"; return 1 ;;
+        *) printf 'Usage: %s {sync|dotfiles|repos|apply|stow|brewfile|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }

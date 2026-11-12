@@ -10,6 +10,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | ---------- | ------ | --------- | ---------------- |
 | `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
+| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply` |
 | `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
 | `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home; `dotfiles/applied.json` is what `dotfiles apply` installed and `dotfiles/apply.lock` serialises runs |
 | `XDG_CONFIG_HOME` (engine) | Directory path | `~/.config` | `dotfiles/machine.toml` (this machine's profiles and overrides, `--machine`) and `dotfiles/generated/` (outputs `apply` renders) |
@@ -244,6 +245,11 @@ state files, disable signing, or force-push to clear a failure.
 | Excluded tracked changes remain | Review tracked `*.local`, `.env*` or `*.secret*` paths in any directory. Sync skips merge/push while excluded tracked changes remain. |
 | Sync leaves a repository alone | The log says why: a Git index lock (another Git command is running, or one crashed and left `.git/index.lock`; check `ps` before removing it), or a tracked edit newer than `SYNC_QUIET_MINUTES`. The next run picks it up. |
 | New files are not published | By design: sync stages tracked files only (`git add -u`). Commit new files yourself. |
+| `installs machine features and this machine has no .../machine.toml` | Upstream uses the feature engine and this machine has no manifest, so sync neither merges nor pushes (merging would leave the old stow links pointing at moved files). Write `~/.config/dotfiles/machine.toml` with this machine's profiles from the list in the message, such as `profiles = ["base", "dev", "desktop"]`, then run `sync.sh`: the same run merges and applies. |
+| `installs machine features and Go is not installed to build its engine` | Sync builds the upstream engine before merging it and found no `go` on its PATH, so it neither merges nor pushes. Install Go (`brew install go`; the LaunchAgent's PATH includes `/opt/homebrew/bin`), then run `sync.sh`. |
+| `engine does not build with this machine's Go or cannot plan ...machine.toml` | The lines above it are the build error or `dotfiles check`'s message. A build error usually means Go is older than `go.mod` (sync uses `GOTOOLCHAIN=local`): upgrade Go. A plan error (exit 2) names the profile, feature or setting in `machine.toml` that upstream no longer accepts: fix the manifest. Nothing was merged; rerun `sync.sh`. |
+| `Building ~/.local/bin/dotfiles failed` / `Go is not installed` | Sync builds the engine with the installed Go and `GOTOOLCHAIN=local`, so it never downloads a toolchain. Install or upgrade Go to the version in `go.mod` (`brew install go`), then rerun `sync.sh apply`. |
+| `dotfiles apply left problems to resolve` | The log above lists them; see [Feature engine troubleshooting](#feature-engine-troubleshooting). Sync carries on with packages and the other repositories. |
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
 | Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. |
