@@ -7,17 +7,8 @@
 zinit light dracula/zsh
 
 #=============================================================================
-# ESSENTIAL PLUGINS (loaded immediately)
+# COMPLETIONS (synchronous: their functions must be on fpath before compinit)
 #=============================================================================
-# Syntax highlighting (must load before zsh-history-substring-search)
-zinit light zsh-users/zsh-syntax-highlighting
-
-# Autosuggestions
-ZSH_AUTOSUGGEST_STRATEGY=(history completion)
-ZSH_AUTOSUGGEST_USE_ASYNC=true
-zinit light zsh-users/zsh-autosuggestions
-
-# Completions
 zinit ice atpull"zinit creinstall -q ."
 zinit light zsh-users/zsh-completions
 
@@ -36,7 +27,23 @@ zinit light zsh-users/zsh-completions
         [[ -e "$_link" ]] || command rm -f "$_link"
     done
 }
-autoload -Uz compinit && compinit
+# compinit's security audit (compaudit) is most of its cost. Run the full check
+# once a day and reuse the dump otherwise. -C also skips compinit's own checks
+# that the dump matches this zsh and its completion files, so each zsh version
+# keeps its own dump, and a completion installed today appears by tomorrow (or
+# after `rm` of the dump). A full run does not rewrite an unchanged dump, so
+# touch it to restart the day.
+autoload -Uz compinit
+() {
+    setopt localoptions extendedglob
+    local dump=${XDG_CACHE_HOME:-$HOME/.cache}/zsh/zcompdump-$ZSH_VERSION
+    command mkdir -p ${dump:h}
+    if [[ -n $dump(#qN.mh-24) ]]; then
+        compinit -C -d $dump
+    else
+        compinit -d $dump && command touch $dump
+    fi
+}
 zinit cdreplay -q
 
 #=============================================================================
@@ -46,10 +53,15 @@ zinit cdreplay -q
 #=============================================================================
 
 # Fast directory jumping: zoxide is installed via Homebrew and initialized
-# SYNCHRONOUSLY in 60-functions.zsh (eval "$(zoxide init zsh --cmd cd)"), not
-# here. Turbo-loading it (wait"0") only runs after the first interactive
+# SYNCHRONOUSLY in 60-functions.zsh, in real sessions only, not here. Turbo-loading it (wait"0") only runs after the first interactive
 # prompt, which left `cd` (aliased to zoxide's `z`) undefined in non-interactive
 # shells -> "command not found: z". Synchronous init fixes that.
+
+# Autosuggestions: _zsh_autosuggest_start binds its widgets for the first prompt.
+ZSH_AUTOSUGGEST_STRATEGY=(history completion)
+ZSH_AUTOSUGGEST_USE_ASYNC=true
+zinit ice wait"0" lucid atload"!_zsh_autosuggest_start"
+zinit light zsh-users/zsh-autosuggestions
 
 # Autopair brackets/quotes
 zinit ice wait"0" lucid
@@ -117,7 +129,7 @@ zinit snippet OMZL::clipboard.zsh
 
 # NOTE: OMZL::completion.zsh removed — compinit called explicitly above
 
-zinit ice wait"0" lucid
+zinit ice wait"0" lucid atload"_dotfiles_list_aliases"
 zinit snippet OMZL::directories.zsh
 
 # NOTE: OMZL::git.zsh removed - OMZP::git loads it internally
@@ -127,8 +139,10 @@ zinit snippet OMZL::directories.zsh
 #=============================================================================
 # OMZ PLUGINS (turbo loaded)
 #=============================================================================
-# Git (using regular git plugin - gitfast requires SVN checkout for multi-file support)
-zinit ice wait"0" lucid
+# Git (using regular git plugin - gitfast requires SVN checkout for multi-file support).
+# It defines its own g* aliases after 50-aliases.zsh has run (gc becomes
+# `git commit --verbose`), so put the shared definitions back on top.
+zinit ice wait"0" lucid atload"_dotfiles_git_aliases"
 zinit snippet OMZP::git
 
 zinit ice wait"0" lucid
@@ -223,3 +237,12 @@ zinit snippet OMZP::web-search
 # For full shell integration, install via: iTerm2 > Install Shell Integration
 zinit ice wait"1" lucid
 zinit snippet OMZP::iterm2
+
+#=============================================================================
+# SYNTAX HIGHLIGHTING (last)
+#=============================================================================
+# It wraps the line-editor widgets that exist when it loads, so it comes after
+# every plugin that defines widgets (autosuggestions, autopair, fzf); declared
+# last among the first turbo batch, it loads after them.
+zinit ice wait"0" lucid
+zinit light zsh-users/zsh-syntax-highlighting

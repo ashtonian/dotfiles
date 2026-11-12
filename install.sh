@@ -187,6 +187,10 @@ install_packages() {
     else
         warn "No Brewfile found, skipping package installation"
     fi
+    # The tools mise's configuration names, such as the default Node LTS.
+    if command -v mise &>/dev/null; then
+        mise install --yes || warn "mise could not install every tool; run 'mise install'"
+    fi
 }
 
 #=============================================================================

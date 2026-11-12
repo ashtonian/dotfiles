@@ -62,22 +62,23 @@ timezsh() {
 # frecency jump there turns `cd build && rm -rf *` into a command in another
 # tree.
 #=============================================================================
-if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]] && command -v zoxide &>/dev/null; then
-    eval "$(zoxide init zsh --cmd cd)"
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]]; then
+    _dotfiles_cached_eval zoxide-init -e _ZO_ECHO -e _ZO_RESOLVE_SYMLINKS zoxide init zsh --cmd cd
 fi
 
 #=============================================================================
 # DIRENV (auto-load .envrc files)
 #=============================================================================
-if command -v direnv &>/dev/null; then
-    eval "$(direnv hook zsh)"
-fi
+_dotfiles_cached_eval direnv-hook direnv hook zsh
 
 #=============================================================================
-# FNM (Fast Node Manager)
+# MISE (tool versions per directory: Go, Node, Python and others)
 #=============================================================================
-if command -v fnm &>/dev/null; then
-    eval "$(fnm env)"
+# Real sessions update PATH at each prompt and directory change. Every other
+# shell, agents and LaunchAgents included, gets mise's shims from env.sh. Not
+# cached: the activation script carries this shell's PATH as literal values.
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]] && (( $+commands[mise] )); then
+    eval "$(mise activate zsh)"
 fi
 
 #=============================================================================

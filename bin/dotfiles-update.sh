@@ -4,7 +4,7 @@
 #===============================================================================
 #
 # DESCRIPTION:
-#   Updates Homebrew packages, Zinit plugins, and syncs dotfiles.
+#   Updates Homebrew packages, mise's tools, Zinit plugins, and syncs dotfiles.
 #   Designed to run weekly via LaunchAgent or manually.
 #
 # USAGE:
@@ -12,6 +12,7 @@
 #
 # OPTIONS:
 #   --brew      Update Homebrew only
+#   --mise      Install the tools mise's configuration names and lacks only
 #   --zinit     Update Zinit plugins only
 #   --sync      Sync dotfiles only
 #   --all       Update everything (default)
@@ -93,6 +94,19 @@ update_brew() {
     log "Homebrew update complete"
 }
 
+# The tools mise's configuration names, such as the shared default Node LTS
+# that agents and LaunchAgents reach through mise's shims: install what is
+# missing, which includes a new LTS once one is released.
+update_mise() {
+    log "=== Installing mise tools ==="
+    if ! command -v mise >/dev/null; then
+        log "mise is not installed; skipping"
+        return 0
+    fi
+    run_command mise install --yes || return
+    log "mise tools up to date"
+}
+
 update_zinit() {
     log "=== Updating Zinit plugins ==="
 
@@ -137,6 +151,7 @@ update_all() {
     log "======================================"
 
     update_brew || return
+    update_mise || return
     update_zinit || return
     sync_dotfiles || return
 
@@ -161,6 +176,7 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --brew)     action="brew"; shift ;;
+            --mise)     action="mise"; shift ;;
             --zinit)    action="zinit"; shift ;;
             --sync)     action="sync"; shift ;;
             --all)      action="all"; shift ;;
@@ -172,6 +188,7 @@ main() {
 
     case "$action" in
         brew)   update_brew ;;
+        mise)   update_mise ;;
         zinit)  update_zinit ;;
         sync)   sync_dotfiles ;;
         all)    update_all ;;

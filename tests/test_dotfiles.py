@@ -13,6 +13,13 @@ ROOT = Path(__file__).resolve().parents[1]
 LIVE = Path.home() / '.dotfiles'
 
 
+def cached_eval_helper():
+    """_dotfiles_cached_eval exactly as 00-init.zsh defines it, without zinit."""
+    source = (ROOT / 'stow/zsh/.config/zsh/00-init.zsh').read_text()
+    helper = source[source.index('_dotfiles_cached_eval() {'):]
+    return helper[:helper.index('\n}\n') + 3]
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='dotfiles-test-')
@@ -26,6 +33,7 @@ class Fixture(unittest.TestCase):
                         AWS_SHARED_CREDENTIALS_FILE=str(self.path / 'credentials'),
                         AWS_CONFIG_FILE=str(self.path / 'config'),
                         PATH=str(self.bin) + os.pathsep + self.env['PATH'],
+                        XDG_CACHE_HOME=str(self.path / 'cache'),
                         TMPDIR=str(self.path),
                         PYTHONDONTWRITEBYTECODE='1')
 
@@ -234,7 +242,7 @@ class Helpers(Fixture):
         if not fzf:
             self.skipTest('fzf required')
         self.cli('atuin', "printf \"bindkey -M emacs '^R' atuin-search\\nbindkey -M emacs '^[[A' atuin-up-search\\n\"")
-        code = 'source "$1"; eval "$("$2" --zsh)"; bindkey -M emacs "^R"; bindkey -M emacs "^[[A"'
+        code = cached_eval_helper() + 'source "$1"; eval "$("$2" --zsh)"; bindkey -M emacs "^R"; bindkey -M emacs "^[[A"'
         p = subprocess.run(['/bin/zsh', '-fc', code, 'test',
                             str(ROOT / 'stow/zsh/.config/zsh/40-keybindings.zsh'), fzf],
                            env=self.env, capture_output=True, text=True)
@@ -798,6 +806,19 @@ class SharedEnvironment(Fixture):
         venv, path = self.venv_first('exec /bin/zsh -l "$1"', str(nested))
         self.assertEqual(path[0], str(venv))
 
+    def test_a_virtualenv_stays_first_when_mise_drops_its_shims(self):
+        shims = self.home / '.local/share/mise/shims'
+        installs = self.home / '.local/share/mise/installs/node/24/bin'
+        for d in (shims, installs):
+            d.mkdir(parents=True)
+        # mise's prompt hook takes its shims out of PATH and puts the tool
+        # directories in front, then a nested shell starts.
+        venv, path = self.venv_first('PATH=$(printf %s "$PATH" | tr : "\\n" | grep -vx "$1" | paste -sd: -); '
+                                     'PATH="$2:$PATH"; exec /bin/zsh -c \'print -rn -- $PATH\'', str(shims), str(installs))
+        self.assertEqual(path[0], str(venv))
+        self.assertIn(str(shims), path, 'the nested shell gets the shims back')
+        self.assertNotIn(str(installs), path[:3])
+
     def test_editor_is_chosen_on_the_composed_path(self):
         self.cli('nvim', 'exit 0')
         (self.home / '.local/bin/nvim').symlink_to(self.bin / 'nvim')
@@ -811,6 +832,13 @@ class SharedEnvironment(Fixture):
         p = subprocess.run(['/bin/bash', '-c', '. "$HOME/.bashrc"; printf %s "${AGENT_SHELL-unset}"'],
                            env=env, capture_output=True, text=True, timeout=20)
         self.assertEqual(p.stdout, 'unset', 'a zsh this bash starts must not hand off to bash')
+
+    def test_mise_shims_sit_below_the_users_own_bins(self):
+        shims = self.home / '.local/share/mise/shims'
+        shims.mkdir(parents=True)
+        path = self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; printf %s "$PATH"')
+        self.assertLess(path.index(str(self.home / '.local/bin')), path.index(str(shims)))
+        self.assertLess(path.index(str(shims)), path.index('/usr/bin'))
 
     def test_a_reset_path_is_composed_again(self):
         self.assert_order(self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; PATH=/usr/bin:/bin; '
@@ -879,6 +907,78 @@ class RealSessionGate(Fixture):
     def test_real_sessions_get_launchers_but_never_cc(self):
         self.assertEqual(self.aliases(1), ['c', 'ccont', 'cr', 'co', 'rm'])
 
+    def test_flag_incompatible_replacements_never_take_the_real_name(self):
+        for name in ('eza', 'ncdu', 'gping', 'htop'):
+            self.cli(name, 'exit 0')
+        code = (f'ZSH_REAL_SESSION=1; source {ROOT}/stow/zsh/.config/zsh/50-aliases.zsh; '
+                'for a in ls du ping top; do alias $a >/dev/null && print $a; done; print -r -- "ll=$aliases[ll]"')
+        p = subprocess.run(['/bin/zsh', '-f', '-c', code], cwd=self.path, env=self.env,
+                           capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.split('\n')[0], "ll=eza -l --icons --git")
+
+
+class CachedEval(Fixture):
+    """_dotfiles_cached_eval runs a tool's init once per release and arguments."""
+
+    def setUp(self):
+        super().setUp()
+        self.cache = Path(self.env['XDG_CACHE_HOME'])
+        self.runs = self.path / 'runs'
+        self.env['DOTFILES_TEST_RUNS'] = str(self.runs)
+        self.cli('fixture-tool', 'echo run >> "$DOTFILES_TEST_RUNS"\n'
+                 '[ "$1" = fail ] && exit 3\necho "fixture_loaded=$1"')
+
+    def load(self, *args):
+        p = subprocess.run(['/bin/zsh', '-f', '-c', cached_eval_helper() + '_dotfiles_cached_eval fixture "$@"; '
+                            'print -r -- "rc=$? loaded=${fixture_loaded:-none}"', 'zsh', 'fixture-tool', *args],
+                           cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.stderr, '')
+        return p.stdout.strip()
+
+    def tool_runs(self):
+        return len(self.runs.read_text().split()) if self.runs.exists() else 0
+
+    def test_reuses_the_output_until_the_arguments_change(self):
+        for _ in range(3):
+            self.assertEqual(self.load('v1'), 'rc=0 loaded=v1')
+        self.assertEqual(self.tool_runs(), 1)
+        self.assertEqual(self.load('v2'), 'rc=0 loaded=v2')
+        self.assertEqual(self.tool_runs(), 2)
+
+    def test_a_named_variable_is_part_of_the_cache_key(self):
+        def load(value):
+            p = subprocess.run(['/bin/zsh', '-f', '-c', cached_eval_helper() + 'FIXTURE_OPT=$1; '
+                                '_dotfiles_cached_eval fixture -e FIXTURE_OPT fixture-tool v1; print -r -- $?', 'zsh', value],
+                               cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
+            self.assertEqual((p.stdout.strip(), p.stderr), ('0', ''))
+        load('a')
+        load('a')
+        self.assertEqual(self.tool_runs(), 1)
+        load('b')
+        self.assertEqual(self.tool_runs(), 2)
+
+    def test_each_real_session_activates_mise_with_its_own_path(self):
+        # mise's activation script carries literal values from the shell that ran it.
+        self.cli('mise', '[ "$1" = activate ] && printf "MISE_SAW_PATH=%s\\n" "\'$PATH\'"')
+        def activated_with(path):
+            env = dict(self.env, PATH=path, DOTFILES=str(self.path / 'no-dotfiles'))
+            p = subprocess.run(['/bin/zsh', '-f', '-c', cached_eval_helper() + 'ZSH_REAL_SESSION=1; '
+                                f'source {ROOT / "stow/zsh/.config/zsh/60-functions.zsh"}; print -r -- $MISE_SAW_PATH'],
+                               cwd=self.path, env=env, capture_output=True, text=True, timeout=20)
+            return p.stdout.strip().splitlines()[-1]
+        first, second = f'{self.bin}:/usr/bin:/bin', f'{self.path}:{self.bin}:/usr/bin:/bin'
+        self.assertEqual(activated_with(first), first)
+        self.assertEqual(activated_with(second), second)
+
+    def test_a_failing_init_leaves_no_cache(self):
+        self.assertEqual(self.load('fail'), 'rc=1 loaded=none')
+        self.assertEqual(list((self.cache / 'zsh').iterdir()), [])
+
+    def test_a_missing_tool_is_skipped(self):
+        (self.bin / 'fixture-tool').unlink()
+        self.assertEqual(self.load('v1'), 'rc=0 loaded=none')
+
 
 class DotfilesAgents(Fixture):
     def setUp(self):
@@ -942,13 +1042,13 @@ class AgentMonitorFixture(Fixture):
         self.home = self.path / 'home'
         self.home.mkdir()
         self.monitor = self.home / '.local/share/agent-monitor'
-        self.env.update(HOME=str(self.home), FNM_DIR=str(self.path / 'fnm'))
+        self.env.update(HOME=str(self.home), MISE_DATA_DIR=str(self.path / 'mise'))
         self.env.pop('AGENT_MONITOR_HOME', None)
         self.env.pop('AGENT_MONITOR_PORT', None)
         self.env.pop('CODEX_HOME', None)
 
     def node_path(self):
-        return self.path / f'fnm/node-versions/v{self.NODE_VERSION}/installation/bin/node'
+        return self.path / f'mise/installs/node/{self.NODE_VERSION}/bin/node'
 
     def install_node(self, script=None):
         node = self.node_path()

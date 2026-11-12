@@ -33,11 +33,11 @@ home=${AGENT_MONITOR_HOME:-$HOME/.local/share/agent-monitor}
 port=${AGENT_MONITOR_PORT:-4820}
 gate_port=${AGENT_MONITOR_GATE_PORT:-4821}
 gate_host=${AGENT_MONITOR_GATE_HOST:-0.0.0.0} # the LAN listener the cluster proxy reaches
-fnm_dir=${FNM_DIR:-$HOME/Library/Application Support/fnm}
+mise_dir=${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}
 app=$home/app
 data=$home/data # symlink to the data volume; the LaunchAgent waits for it to resolve
 config=$home/config
-node_bin=$fnm_dir/node-versions/v$NODE_VERSION/installation/bin/node
+node_bin=$mise_dir/installs/node/$NODE_VERSION/bin/node
 gate_token=$config/gate-token
 agent=com.ashtonian.agent-monitor
 gate_agent=com.ashtonian.agent-monitor-gate
@@ -53,9 +53,9 @@ with_node() {
 
 ensure_node() {
 	[[ -x $node_bin ]] && return
-	command -v fnm >/dev/null || die 69 "fnm is required to install Node $NODE_VERSION (brew install fnm)"
-	FNM_DIR=$fnm_dir fnm install $NODE_VERSION
-	[[ -x $node_bin ]] || die 70 "fnm did not install $node_bin"
+	command -v mise >/dev/null || die 69 "mise is required to install Node $NODE_VERSION (brew install mise)"
+	MISE_DATA_DIR=$mise_dir mise install node@$NODE_VERSION
+	[[ -x $node_bin ]] || die 70 "mise did not install $node_bin"
 }
 
 # link_data points $data at the data directory, keeping an existing link unless

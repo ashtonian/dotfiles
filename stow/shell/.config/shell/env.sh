@@ -4,9 +4,9 @@
 # before they hand off to bash), by ~/.bashrc (bash, including the shell Claude
 # Code's Bash tool snapshots), and through BASH_ENV by the OpenCode server's
 # commands. It runs that often, so it must stay idempotent, silent and
-# fork-free: builtins only, no `brew shellenv`, no `fnm env`. Interactive-only
-# setup (prompt, completions, fnm's per-directory Node switching, zoxide,
-# direnv) stays in the zsh modules.
+# fork-free: builtins only, no `brew shellenv`, no `mise activate`.
+# Interactive-only setup (prompt, completions, mise's per-prompt PATH updates,
+# zoxide, direnv) stays in the zsh modules.
 
 # _env_drop DIR: remove every occurrence of DIR from PATH.
 _env_drop() {
@@ -60,7 +60,6 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
 fi
 
 export GOPATH="${GOPATH:-$HOME/go}"
-export FNM_DIR="${FNM_DIR:-$HOME/Library/Application Support/fnm}"
 # Browser builds Playwright downloads (~3 GB) go beside the other caches on
 # E2TB, off the nearly full internal disk. npm's cache is set in ~/.npmrc.
 export PLAYWRIGHT_BROWSERS_PATH="${PLAYWRIGHT_BROWSERS_PATH:-/Volumes/E2TB/cache/ms-playwright}"
@@ -107,8 +106,10 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
         _env_back "$_env_d"
     done
 fi
-# fnm's default Node; interactive zsh puts its per-directory version in front.
-_env_front "$FNM_DIR/aliases/default/bin"
+# mise's shims run the tool version each directory asks for (go.mod, .nvmrc,
+# .python-version, mise.toml) in agents, LaunchAgents and GUI apps; interactive
+# zsh puts the real tool directories in front of them.
+_env_front "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"
 _env_front "$GOPATH/bin"
 _env_front "$HOME/.local/bin"
 _env_front "$HOME/bin"

@@ -16,10 +16,38 @@ fi
 
 source "${ZINIT_HOME}/zinit.zsh"
 
-# Load zinit annexes for extended functionality
-zinit light-mode for \
-    zdharma-continuum/zinit-annex-bin-gem-node \
-    zdharma-continuum/zinit-annex-patch-dl
+#=============================================================================
+# CACHED INIT SCRIPTS
+#=============================================================================
+# _dotfiles_cached_eval NAME [-e VAR]... COMMAND [ARGS...]: source what COMMAND
+# prints, as `eval "$(COMMAND ARGS)"` would, without starting it on every shell.
+# Only for output that depends on nothing but the binary, the arguments and the
+# variables named with -e. The cache under $XDG_CACHE_HOME/zsh starts with the
+# resolved binary, the arguments and those values, so an upgrade (a new Cellar
+# path) or a change to any of them regenerates it; a bottle's file times can
+# predate the cache, so modification times alone would miss one.
+_dotfiles_cached_eval() {
+    local name=$1; shift
+    local -a envs
+    while [[ $1 == -e ]]; do
+        envs+=("$2=${(P)2-}")
+        shift 2
+    done
+    local bin=${commands[$1]:-}
+    [[ -n $bin ]] || return 0
+    local cache=${XDG_CACHE_HOME:-$HOME/.cache}/zsh/init-$name.zsh
+    local stamp="# ${bin:A} ${*:2} | ${(j: :)envs}" first=''
+    [[ -s $cache ]] && IFS= read -r first < $cache
+    if [[ $first != $stamp || $bin -nt $cache ]]; then
+        command mkdir -p ${cache:h}
+        if ! { print -r -- $stamp && "$@" } >| $cache.$$ 2>/dev/null; then
+            command rm -f $cache.$$
+            return 1
+        fi
+        command mv -f $cache.$$ $cache
+    fi
+    source $cache
+}
 
 #=============================================================================
 # CORE ZSH OPTIONS

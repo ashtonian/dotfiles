@@ -202,8 +202,39 @@ launchctl start com.dotfiles.sync
 
 PATH and the core environment (Homebrew, Go, language toolchains, editor,
 pager, locale) are defined once in `~/.config/shell/env.sh` (stow package
-`shell`). `~/.zshenv` sources it for every zsh, `~/.bashrc` for bash, and
-Claude Code runs it before each Bash tool command (`CLAUDE_ENV_FILE`).
+`shell`). `~/.zshenv` sources it for every zsh and `~/.bashrc` for bash, which
+covers Claude Code's Bash tool. A nested shell keeps the PATH its parent built.
+
+Real sessions differ from tool shells: `ls`, `du`, `ping` and `top` stay the
+real commands everywhere (their replacements take different flags); eza
+listings are `ll`, `la` and `lt`, ncdu is `dux`, and `reload` starts a fresh
+shell (`exec zsh`). The git aliases (`gs`, `gc` and the rest) are applied again
+after the OMZ git plugin loads, so `gc` stays `git commit`.
+
+### Language versions (mise)
+
+[mise](https://mise.jdx.dev) selects Go, Node, Python and other tool versions per
+directory, from each project's own files: `toolchain` (or a patch-version `go`)
+lines in `go.mod`/`go.work` and `.go-version`, `.nvmrc`/`.node-version`/`package.json`,
+`.python-version`, plus `mise.toml` and `.tool-versions`. Shared defaults are in
+`~/.config/mise/conf.d/dotfiles.toml` (stow package `mise`), which mise never
+writes; `mise use -g` writes the machine-local `~/.config/mise/config.toml`.
+
+```sh
+mise install            # install the versions the current directory asks for
+mise ls                 # what is selected here, and from which file
+mise trust              # let a project's mise.toml set env vars and run tasks
+```
+
+- Real sessions activate mise at each prompt. Agents, LaunchAgents and GUI apps
+  get mise's shims from `env.sh`, so they run the same versions.
+- `GOTOOLCHAIN=local` keeps Go from downloading a different toolchain than the
+  one mise selected. In a project whose `go.mod` names a Go you do not have
+  yet, run `mise install`.
+- Node outside any project is the LTS release (`mise install` once per machine).
+- A project's `mise.toml` takes effect only after `mise trust`; set
+  `trusted_config_paths` in `~/.config/mise/config.toml` to trust your own
+  project roots, never everything.
 
 ### Local Overrides
 
