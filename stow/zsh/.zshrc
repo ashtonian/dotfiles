@@ -95,7 +95,7 @@ print(mx)
     name="${prefix}-x$$-$RANDOM"
   fi
 
-  # Fleet agents (gitten / relaunch-fleet tmux sessions, all named wg-*) run with
+  # Fleet agents (gitstead / relaunch-fleet tmux sessions, all named wg-*) run with
   # permissions bypassed; keep claude.ai connector content (mail, Drive) out of them.
   local -a fleet_env=()
   if [[ -n $TMUX && "$(tmux display-message -p '#S' 2>/dev/null)" == wg-* ]]; then
@@ -138,12 +138,12 @@ claudeclean() {
   echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
 }
 
-# Open the gitten fleet `fleet` (gox, estavelle, karsto): one tab per workspace,
+# Open the gitstead fleet `fleet` (gox, estavelle, karsto): one tab per workspace,
 # one split per agent, claudemore in each, as tmux -CC panes inside iTerm.
-# gitten flags pass through: `claudefleet --agent astra`, `--launcher iterm`,
-# `--launcher muxy`, `--fresh`. One workspace: `gitten ws open gox`.
+# gitstead flags pass through: `claudefleet --agent astra`, `--launcher iterm`,
+# `--launcher muxy`, `--fresh`. One workspace: `gitstead ws open gox`.
 claudefleet() {
-  gitten fleet open fleet "$@"
+  gitstead fleet open fleet "$@"
 }
 [ -f ~/.corio-bench-secrets ] && source ~/.corio-bench-secrets
 
