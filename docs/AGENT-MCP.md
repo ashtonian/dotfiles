@@ -5,7 +5,7 @@
 Claude Code and Codex load MCP servers per repository. A repository lists the
 servers it needs in committed config, `.mcp.json` for Claude Code and
 `.codex/config.toml` for Codex, and each entry runs `agent-mcp <server>
-[claude|codex]`. The launcher, `stow/agent-mcp/.local/bin/agent-mcp`, defines
+[claude|codex]`. The launcher, `features/agents.agent-mcp/home/.local/bin/agent-mcp`, defines
 every server's binary, version and flags once, so repositories never carry
 paths, hosts or credentials. OpenCode loads no MCP servers: its local model's
 64K context is too small for their tool schemas.
@@ -27,7 +27,7 @@ gopls only in Go code.
 | Setting | Where | Value | Description |
 | --- | --- | --- | --- |
 | `AGENT_MCP_HOME` | environment | `~/.claude/mcp` | Install root of the pinned servers (`node/`, `bin/`, launchers). |
-| `AGENT_MCP_CONFIG` | environment | `~/.config/agent-mcp` | Holds `serena-claude-code.yml` (stow package `agent-mcp`). |
+| `AGENT_MCP_CONFIG` | environment | `~/.config/agent-mcp` | Holds `serena-claude-code.yml` (feature `agents.agent-mcp`). |
 | serena | `agent-mcp` | `serena start-mcp-server --project-from-cwd --add-mode no-memories --enable-web-dashboard false --open-web-dashboard false --enable-gui-log-window false` | Serena 2.1.0 (`uv tool install -p 3.13 serena-agent==2.1.0`), REPL interface. No memories or onboarding, since they would duplicate AGENTS.md and CLAUDE.md. No dashboard, so there is no web server per session. |
 | | Claude | `--context ~/.config/agent-mcp/serena-claude-code.yml` | Upstream's claude-code context without its ban on Claude's Read and Edit, so LSP diagnostics after edits keep working. |
 | | Codex | `--context codex` | Upstream's Codex context. |
@@ -149,6 +149,6 @@ To add a server to a repository, add its name to that repository's
 
 | File | Purpose |
 | --- | --- |
-| [stow/agent-mcp/.local/bin/agent-mcp](../stow/agent-mcp/.local/bin/agent-mcp) | Launcher: server name → pinned binary and flags |
-| [stow/agent-mcp/.config/agent-mcp/serena-claude-code.yml](../stow/agent-mcp/.config/agent-mcp/serena-claude-code.yml) | Serena context for Claude Code |
+| [features/agents.agent-mcp/home/.local/bin/agent-mcp](../features/agents.agent-mcp/home/.local/bin/agent-mcp) | Launcher: server name → pinned binary and flags |
+| [features/agents.agent-mcp/home/.config/agent-mcp/serena-claude-code.yml](../features/agents.agent-mcp/home/.config/agent-mcp/serena-claude-code.yml) | Serena context for Claude Code |
 | [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `AgentMcp` tests |

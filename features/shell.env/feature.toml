@@ -1,0 +1,31 @@
+id = "shell.env"
+description = "One POSIX environment (PATH, Homebrew, toolchains, editor) for every shell and agent"
+category = "shell"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".bash_profile",
+  ".bashrc",
+  ".config/shell/env.sh",
+]
+
+[provides]
+link = [".config/shell"]
+stub = [
+  { path = ".bashrc", line = '[ -r "$HOME/.config/shell/env.sh" ] && . "$HOME/.config/shell/env.sh"' },
+  # Login bash: env.sh itself, since a distribution's ~/.bashrc returns early in
+  # non-interactive shells; then what bash reads without this file: ~/.profile,
+  # which distributions point at ~/.bashrc, or else ~/.bashrc.
+  { path = ".bash_profile", line = '[ -r "$HOME/.config/shell/env.sh" ] && . "$HOME/.config/shell/env.sh"; if [ -r "$HOME/.profile" ]; then . "$HOME/.profile"; elif [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi' },
+]
+
+[settings."paths.agent_monitor_data"]
+type = "path"
+env = "AGENT_MONITOR_DATA_DIR"
+doc = "Where `agent-monitor install` keeps the dashboard database and transcript snapshots (several GB); unset keeps them under its home"
+
+[settings."paths.playwright_browsers"]
+type = "path"
+env = "PLAYWRIGHT_BROWSERS_PATH"
+doc = "Where Playwright keeps its browser builds; unset uses Playwright's own default"

@@ -7,14 +7,34 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
+FEATURES = ROOT / 'features'
+ZSH_DIR = FEATURES / 'shell.zsh/home/.config/zsh'
+
+
+def install_shell(home, stubs):
+    """The shell.env and shell.zsh features as `dotfiles apply` installs them:
+    a link per tracked file, and the named entry-point stubs with the lines
+    their manifests declare."""
+    for feature in ('shell.env', 'shell.zsh'):
+        root = FEATURES / feature / 'home'
+        for source in root.rglob('*'):
+            if source.is_file():
+                target = home / source.relative_to(root)
+                target.parent.mkdir(parents=True, exist_ok=True)
+                target.symlink_to(source)
+        manifest = tomllib.loads((FEATURES / feature / 'feature.toml').read_text())
+        for stub in manifest['provides'].get('stub', []):
+            if stub['path'] in stubs:
+                (home / stub['path']).write_text(stub['line'] + '\n')
 
 
 def cached_eval_helper():
     """_dotfiles_cached_eval exactly as 00-init.zsh defines it, without zinit."""
-    source = (ROOT / 'stow/zsh/.config/zsh/00-init.zsh').read_text()
+    source = (ZSH_DIR / '00-init.zsh').read_text()
     helper = source[source.index('_dotfiles_cached_eval() {'):]
     return helper[:helper.index('\n}\n') + 3]
 
@@ -244,7 +264,7 @@ class Helpers(Fixture):
         self.cli('atuin', "printf \"bindkey -M emacs '^R' atuin-search\\nbindkey -M emacs '^[[A' atuin-up-search\\n\"")
         code = cached_eval_helper() + 'source "$1"; eval "$("$2" --zsh)"; bindkey -M emacs "^R"; bindkey -M emacs "^[[A"'
         p = subprocess.run(['/bin/zsh', '-fc', code, 'test',
-                            str(ROOT / 'stow/zsh/.config/zsh/40-keybindings.zsh'), fzf],
+                            str(ZSH_DIR / '40-keybindings.zsh'), fzf],
                            env=self.env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('atuin-search', p.stdout)
@@ -253,7 +273,7 @@ class Helpers(Fixture):
     def test_ssh_local_overrides_win(self):
         local = self.path / 'ssh.local'
         local.write_text('Host dotfiles-fixture\n ControlMaster no\n ControlPath none\n IdentitiesOnly no\n UseKeychain no\n')
-        config = (ROOT / 'stow/ssh/.ssh/config').read_text().replace('Include ~/.orbstack/ssh/config', '')
+        config = (FEATURES / 'ssh/home/.ssh/dotfiles.conf').read_text().replace('Include ~/.orbstack/ssh/config', '')
         config = config.replace('Include config.local', 'Include ' + str(local))
         file = self.path / 'ssh.config'
         file.write_text(config)
@@ -315,7 +335,11 @@ class Sync(Fixture):
     def test_sync_only_installs_missing_packages_without_upgrade(self):
         audit = self.path / 'brew-audit'
         self.env['DOTFILES_TEST_AUDIT'] = str(audit)
-        (self.path / 'Brewfile').write_text('brew "example"\n')
+        home = self.path / 'home'
+        generated = home / '.config/dotfiles/generated'
+        generated.mkdir(parents=True)
+        (generated / 'Brewfile').write_text('brew "example"\n')
+        self.env['HOME'] = str(home)
         self.cli('brew', 'printf "%s AUTO_UPDATE=%s\\n" "$*" "$HOMEBREW_NO_AUTO_UPDATE" >> "$DOTFILES_TEST_AUDIT"\ncase "$*" in *check*) exit 1;; esac')
         p = self.bash('sync_brewfile')
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -508,12 +532,13 @@ class SyncFeaturesLayout(SignedRepo):
         self.git('remote', 'add', 'origin', str(self.origin))
         self.git('push', '-q', '-u', 'origin', 'master')
         (self.repo / 'logs').mkdir()
-        self.machine = self.path / 'config/dotfiles/machine.toml'
+        self.machine = Path(self.env['HOME']) / '.config/dotfiles/machine.toml'
         self.applied = self.path / 'applied'
         self.checked = self.path / 'checked'
         self.engine = self.path / 'engine/dotfiles'
         gocache = subprocess.run(['go', 'env', 'GOCACHE'], capture_output=True, text=True, check=True).stdout.strip()
-        self.env.update(DOTFILES_DIR=str(self.repo), XDG_CONFIG_HOME=str(self.path / 'config'),
+        self.env.pop('XDG_CONFIG_HOME', None)
+        self.env.update(DOTFILES_DIR=str(self.repo),
                         DOTFILES_BIN=str(self.engine), DOTFILES_TEST_APPLIED=str(self.applied),
                         DOTFILES_TEST_CHECKED=str(self.checked), GOCACHE=gocache)
 
@@ -579,95 +604,170 @@ class SyncFeaturesLayout(SignedRepo):
         self.assertFalse(self.checked.exists())
 
 
-@unittest.skipUnless(shutil.which('stow'), 'GNU Stow required')
-class Stow(Fixture):
+@unittest.skipUnless(shutil.which('go'), 'Go required to build the engine')
+class RealFeatures(Fixture):
+    """The repository's own features and profiles, applied by the real engine to a fresh home."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.build = tempfile.TemporaryDirectory(prefix='dotfiles-engine-')
+        cls.engine = Path(cls.build.name) / 'dotfiles'
+        subprocess.run(['go', 'build', '-trimpath', '-o', str(cls.engine), './cmd/dotfiles'],
+                       cwd=ROOT, check=True, env=dict(os.environ, GOTOOLCHAIN='local'), timeout=300)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.build.cleanup()
+
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        (self.home / '.config').mkdir(parents=True)
-        self.repo = self.path / 'repo'
-        self.env.update(HOME=str(self.home), DOTFILES_DIR=str(self.repo),
-                        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
-        self.env.pop('XDG_STATE_HOME', None)
-        files = {'.gitignore': 'logs/\nstow/gh/.config/gh/hosts.yml\nstow/zsh/.zcompdump\n',
-                 'stow/gh/.config/gh/config.yml': 'git_protocol: ssh\n',
-                 'stow/zsh/.zshrc': '# fixture\n'}
-        for name, text in files.items():
-            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
-            (self.repo / name).write_text(text)
-        (self.repo / 'logs').mkdir()
-        git = ['git', '-C', str(self.repo)]
-        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True, env=self.env)
-        subprocess.run([*git, 'add', '-A'], check=True, env=self.env)
-        subprocess.run([*git, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com',
-                        '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'initial'], check=True, env=self.env)
+        self.home.mkdir()
+        self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
+                        XDG_STATE_HOME=str(self.home / '.local/state'))
 
-    def legacy_stow(self, *packages):
-        # Stow's default folding: ~/.config/gh becomes one link into the repository.
-        subprocess.run(['stow', '-d', str(self.repo / 'stow'), '-t', str(self.home), *packages],
-                       check=True, env=self.env, capture_output=True)
+    def dotfiles(self, *args):
+        return subprocess.run([str(self.engine), *args, '--home', str(self.home), '--repo', str(ROOT)],
+                              env=self.env, capture_output=True, text=True, timeout=60)
 
-    def run_stow(self):
-        return self.bash('run_stow')
-
-    def test_unfolds_links_and_moves_tool_files_out_of_the_repository(self):
-        self.legacy_stow('gh', 'zsh')
-        self.assertTrue((self.home / '.config/gh').is_symlink())
-        (self.home / '.config/gh/hosts.yml').write_text('oauth_token: fixture\n')
-        self.assertTrue((self.repo / 'stow/gh/.config/gh/hosts.yml').exists())
-        (self.repo / 'stow/zsh/.zsh_pending').write_text('# not committed yet\n')
-
-        p = self.run_stow()
+    def converge(self, profiles):
+        p = self.dotfiles('init', '--profiles', profiles)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        gh = self.home / '.config/gh'
-        self.assertFalse(gh.is_symlink())
-        self.assertTrue((gh / 'config.yml').is_symlink())
-        self.assertEqual((gh / 'config.yml').resolve(), (self.repo / 'stow/gh/.config/gh/config.yml').resolve())
-        self.assertFalse((gh / 'hosts.yml').is_symlink())
-        self.assertEqual((gh / 'hosts.yml').read_text(), 'oauth_token: fixture\n')
-        self.assertFalse((self.repo / 'stow/gh/.config/gh/hosts.yml').exists())
-        self.assertTrue((self.home / '.zsh_pending').is_symlink())
-        self.assertTrue((self.repo / 'stow/zsh/.zsh_pending').exists())
-        self.assertIn('Untracked files in stow packages', p.stdout)
-        self.assertEqual(stat.S_IMODE((self.home / '.ssh').stat().st_mode), 0o700)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        again = self.dotfiles('apply')
+        self.assertEqual((again.returncode, again.stdout), (0, ''), 'a second apply changes nothing')
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        return (self.home / '.config/dotfiles/generated/Brewfile').read_text()
 
-        again = self.run_stow()
-        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
-        self.assertNotIn('Moved machine-local', again.stdout)
-        self.assertEqual((gh / 'hosts.yml').read_text(), 'oauth_token: fixture\n')
+    def test_doctor_reports_an_xdg_config_home_it_does_not_install_into(self):
+        self.converge('base')
+        self.env['XDG_CONFIG_HOME'] = str(self.path / 'elsewhere')
+        p = self.dotfiles('doctor')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('problem     XDG_CONFIG_HOME', p.stdout)
 
-    def test_conflict_leaves_the_package_and_its_files_as_they_were(self):
-        (self.home / '.zshrc').write_text('# mine\n')
-        (self.repo / 'stow/zsh/.zcompdump').write_text('cache\n')
-        p = self.run_stow()
-        self.assertNotEqual(p.returncode, 0)
-        self.assertFalse((self.home / '.zshrc').is_symlink())
-        self.assertEqual((self.home / '.zshrc').read_text(), '# mine\n')
-        self.assertEqual((self.repo / 'stow/zsh/.zcompdump').read_text(), 'cache\n')
-        self.assertTrue((self.home / '.config/gh/config.yml').is_symlink())
+    def test_apply_refuses_without_a_machine_manifest(self):
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('dotfiles init --profiles', p.stderr)
+        self.assertEqual(list(self.home.iterdir()), [], 'nothing is installed or removed')
+
+    def test_check_plans_this_machine_without_touching_home(self):
+        p = self.dotfiles('init', '--profiles', 'base,dev,desktop,server')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        before = sorted(self.home.rglob('*'))
+        p = self.dotfiles('check')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sorted(self.home.rglob('*')), before, 'check reads and writes nothing under home')
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '[features]\nenable = ["no.such-feature"]\n')
+        p = self.dotfiles('check')
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn('no.such-feature', p.stderr)
+
+    def test_a_desktop_machine_gets_a_working_shell_git_and_ssh(self):
+        brewfile = self.converge('base,dev,desktop,server')
+        self.assertIn('cask "', brewfile)
+        self.assertIn('vscode "', brewfile)
+        for stub in ('.zshenv', '.zprofile', '.zshrc', '.zlogin', '.bashrc', '.bash_profile', '.gitconfig', '.ssh/config'):
+            self.assertFalse((self.home / stub).is_symlink(), stub + ' is a local stub')
+        self.assertTrue((self.home / '.config/zsh/00-init.zsh').is_symlink())
+        self.assertFalse((self.home / '.config/zsh').is_symlink(), 'no directory is linked')
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'XDG_CONFIG_HOME': str(self.home / '.config')}
+        p = subprocess.run(['/bin/zsh', '-lc', 'print -rn -- $PATH'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(p.stdout.startswith(str(self.home / '.local/bin') + ':'), p.stdout)
+        (self.home / '.gitconfig.local').write_text('[user]\n\temail = machine@example.invalid\n')
+        p = subprocess.run(['git', 'config', '--get', 'user.email'], cwd=self.home, env=env,
+                           capture_output=True, text=True)
+        self.assertEqual(p.stdout.strip(), 'machine@example.invalid', 'the machine-local file wins')
+        with open(self.home / '.ssh/config', 'a') as f:
+            f.write('Host appended.invalid\n    ControlMaster no\n')
+        def ssh_option(host, option):
+            p = subprocess.run(['/usr/bin/ssh', '-G', '-F', str(self.home / '.ssh/config'), host],
+                               env=env, capture_output=True, text=True)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return dict(line.split(' ', 1) for line in p.stdout.splitlines())[option]
+        self.assertEqual(ssh_option('example.invalid', 'controlmaster'), 'auto', 'the shared defaults apply')
+        self.assertEqual(ssh_option('appended.invalid', 'controlmaster'), 'false',
+                         'a host an installer appends to ~/.ssh/config wins over the defaults')
+
+    def test_a_host_profile_sets_its_values(self):
+        self.converge('base,dev,desktop,studio')
+        env = (self.home / '.config/dotfiles/generated/env.sh').read_text()
+        self.assertIn("PLAYWRIGHT_BROWSERS_PATH='/Volumes/E2TB/cache/ms-playwright'", env)
+        self.assertIn("AGENT_MONITOR_DATA_DIR='/Volumes/E2TB/agent-monitor'", env)
+
+    def test_the_work_machine_gets_dev_apps_and_nothing_personal(self):
+        brewfile = self.converge('base,dev,work')
+        self.assertIn('cask "iterm2"', brewfile)
+        self.assertIn('cask "slack"', brewfile, 'applications for any desk reach the work machine')
+        for general in ('mas "Okta Verify"', 'mas "Xcode"'):
+            self.assertIn(general, brewfile)
+        for personal in ('cask "spotify"', 'cask "steam"', 'mas "Day One"', 'wakatime', 'rescuetime'):
+            self.assertNotIn(personal, brewfile)
+        for home_cluster in ('.config/opencode/opencode.jsonc', '.config/otel-agent/config.yaml'):
+            self.assertFalse((self.home / home_cluster).exists(), home_cluster)
+        self.assertFalse((self.home / '.config/neofetch').exists())
+        self.assertFalse((self.home / '.mackup.cfg').exists())
+        self.assertTrue((self.home / '.claude/CLAUDE.md').is_symlink(), 'dev features are on')
 
 
 class Install(Fixture):
-    def test_piped_install_runs_and_links_through_sync(self):
-        home = self.path / 'home'
-        dotfiles = home / '.dotfiles'
+    """install.sh piped into bash, as `curl ... | bash -s -- ...` runs it, with no terminal for prompts."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        dotfiles = self.home / '.dotfiles'
         (dotfiles / '.git').mkdir(parents=True)
         for theme in ('dracula-iterm', 'colorls', 'alfred-dracula'):
-            (home / '.sync' / theme).mkdir(parents=True)
-        audit = self.path / 'audit'
+            (self.home / '.sync' / theme).mkdir(parents=True)
+        (dotfiles / 'profiles').mkdir()
+        (dotfiles / 'profiles/base.toml').write_text('# Every machine.\n')
+        self.audit = self.path / 'audit'
         sync = dotfiles / 'sync.sh'
         sync.write_text('#!/bin/sh\nprintf "sync.sh %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\n')
         sync.chmod(0o755)
-        for tool in ('sudo', 'xcode-select', 'brew', 'git', 'stow'):
+        for tool in ('sudo', 'xcode-select', 'brew', 'git', 'go', 'dotfiles'):
             self.cli(tool, f'printf "{tool} %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
-        env = dict(self.env, HOME=str(home), DOTFILES_TEST_AUDIT=str(audit))
-        # Piped like `curl ... | bash`, with no terminal for the prompts.
-        p = subprocess.run(['/bin/bash'], input=(ROOT / 'install.sh').read_text(), cwd=self.path, env=env,
-                           capture_output=True, text=True, timeout=60, start_new_session=True)
+        self.machine = self.home / '.config/dotfiles/machine.toml'
+        self.env.update(HOME=str(self.home), DOTFILES_TEST_AUDIT=str(self.audit),
+                        DOTFILES_BIN=str(self.bin / 'dotfiles'))
+        self.env.pop('XDG_CONFIG_HOME', None)
+        self.env.pop('DOTFILES_PROFILES', None)
+
+    def install(self, *args):
+        return subprocess.run(['/bin/bash', '-s', '--', *args], input=(ROOT / 'install.sh').read_text(),
+                              cwd=self.path, env=self.env, capture_output=True, text=True, timeout=60,
+                              start_new_session=True)
+
+    def test_installs_through_the_engine(self):
+        p = self.install('--profiles', 'base,dev')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn('Installation complete', p.stdout)
-        self.assertIn('sync.sh stow', audit.read_text())
-        self.assertNotIn('mackup restore', p.stdout)
+        steps = [line for line in self.audit.read_text().splitlines()
+                 if line.startswith(('sync.sh', 'dotfiles'))]
+        self.assertEqual(steps, ['sync.sh build',
+                                 f'dotfiles init --repo {self.home}/.dotfiles --profiles base,dev',
+                                 'sync.sh apply', 'sync.sh brewfile'])
+        self.assertNotIn('stow', self.audit.read_text())
+
+    def test_keeps_an_existing_machine_manifest(self):
+        self.machine.parent.mkdir(parents=True)
+        self.machine.write_text('profiles = ["base"]\n')
+        p = self.install()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertNotIn('dotfiles init', self.audit.read_text())
+        self.assertIn('sync.sh apply', self.audit.read_text())
+
+    def test_without_profiles_or_a_terminal_it_stops_before_installing(self):
+        p = self.install()
+        self.assertEqual(p.returncode, 64, p.stdout + p.stderr)
+        self.assertIn('--profiles', p.stdout)
+        self.assertNotIn('sync.sh', self.audit.read_text() if self.audit.exists() else '')
 
 
 @unittest.skipUnless(sys.platform == 'darwin', 'APFS clones and codesign are macOS-only')
@@ -793,13 +893,24 @@ sleep() { :; }
 '''
 
 
+# Where OpenCode installed the plugin's dependencies: its config directory on a
+# machine that runs it, or DOTFILES_TEST_OPENCODE_DEPS (a directory holding
+# node_modules/@opencode-ai/plugin).
+OPENCODE_DEPS = Path(os.environ.get('DOTFILES_TEST_OPENCODE_DEPS', Path.home() / '.config/opencode'))
+
+
 class Delegate(Fixture):
     def worker_args(self, access):
         if not shutil.which('bun'):
             self.skipTest('Bun required')
-        dependencies = ROOT / 'stow/opencode/.config/opencode/node_modules'
-        if not dependencies.exists():
+        if not (OPENCODE_DEPS / 'node_modules/@opencode-ai/plugin').is_dir():
             self.skipTest('OpenCode plugin dependencies required')
+        # The plugin as apply installs it: linked into a config directory that
+        # holds OpenCode's node_modules.
+        config = self.path / 'opencode'
+        (config / 'plugins').mkdir(parents=True)
+        (config / 'node_modules').symlink_to(OPENCODE_DEPS / 'node_modules')
+        (config / 'plugins/delegate.ts').symlink_to(FEATURES / 'agents.opencode/home/.config/opencode/plugins/delegate.ts')
         self.env['DELEGATE_STATE_DIR'] = str(self.path / 'jobs-state')
         self.env['DELEGATE_POLL_MS'] = '60000'
         worker = self.bin / 'fake-claude'
@@ -814,7 +925,7 @@ print(json.dumps({'type':'result','session_id':'fixture-session','result':'fixtu
         ask = 'async()=>{throw Error("unexpected write approval")}' if access == 'read' else 'async()=>({})'
         harness = self.path / 'delegate.ts'
         harness.write_text('''
-const {DelegatePlugin} = await import(process.env.DOTFILES + '/stow/opencode/.config/opencode/plugins/delegate.ts');
+const {DelegatePlugin} = await import(process.env.DELEGATE_PLUGIN);
 const {existsSync, readFileSync} = await import('node:fs');
 const {join} = await import('node:path');
 const hooks = await DelegatePlugin({client:{app:{log:async()=>({})},session:{promptAsync:async()=>({})}}});
@@ -826,6 +937,7 @@ for (let i=0;i<100 && !existsSync(join(dir,'exit'));i++) await Bun.sleep(20);
 if (!existsSync(join(dir,'exit'))) throw Error('worker did not exit');
 process.stdout.write(readFileSync(join(dir,'argv.json'),'utf8'));
 '''.replace('ASK', ask).replace('ACCESS', access))
+        self.env['DELEGATE_PLUGIN'] = str(config / 'plugins/delegate.ts')
         p = subprocess.run(['bun', str(harness)], cwd=self.path, env=self.env, capture_output=True, text=True, timeout=15)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         return json.loads(p.stdout)
@@ -851,13 +963,9 @@ class SharedEnvironment(Fixture):
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        for d in ('bin', '.local/bin', '.config/shell'):
+        for d in ('bin', '.local/bin'):
             (self.home / d).mkdir(parents=True)
-        (self.home / '.config/shell/env.sh').symlink_to(ROOT / 'stow/shell/.config/shell/env.sh')
-        for name in ('.zshenv', '.zprofile'):
-            (self.home / name).symlink_to(ROOT / 'stow/zsh' / name)
-        (self.home / '.bashrc').symlink_to(ROOT / 'stow/shell/.bashrc')
-        (self.home / '.bash_profile').symlink_to(ROOT / 'stow/shell/.bash_profile')
+        install_shell(self.home, {'.zshenv', '.zprofile', '.bashrc', '.bash_profile'})
 
     def path_of(self, *argv):
         env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
@@ -906,7 +1014,12 @@ class SharedEnvironment(Fixture):
                                   + shell_command, 'sh', str(venv), *argv)
 
     def test_login_shells_keep_a_virtualenv_first_after_path_helper(self):
-        for shell in (['/bin/zsh', '-lc', 'print -rn -- $PATH'], ['/bin/bash', '-lc', 'printf %s "$PATH"']):
+        shells = [['/bin/zsh', '-lc', 'print -rn -- $PATH']]
+        # Debian's /etc/profile replaces PATH in login bash before any file of
+        # ours runs; macOS's path_helper keeps what the shell inherited.
+        if sys.platform == 'darwin':
+            shells.append(['/bin/bash', '-lc', 'printf %s "$PATH"'])
+        for shell in shells:
             venv, path = self.venv_first('exec "$@"', *shell)
             self.assertEqual(path[0], str(venv), shell[0])
             self.assertEqual(path[1:3], [str(self.home / 'bin'), str(self.home / '.local/bin')], shell[0])
@@ -939,6 +1052,14 @@ class SharedEnvironment(Fixture):
         p = subprocess.run(['/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; printf %s "$EDITOR"'],
                            env=env, capture_output=True, text=True, timeout=20)
         self.assertEqual(p.stdout, 'nvim')
+
+    def test_sourcing_under_errexit_survives_a_missing_generated_file(self):
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
+        for sh in ('/bin/sh', '/bin/dash', '/bin/bash'):
+            if Path(sh).exists():
+                p = subprocess.run([sh, '-ec', '. "$HOME/.config/shell/env.sh"; echo survived'],
+                                   env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(p.stdout.strip(), 'survived', sh)
 
     def test_bash_drops_the_agent_shell_marker(self):
         env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path), 'AGENT_SHELL': 'codex'}
@@ -973,16 +1094,32 @@ class AgentShell(Fixture):
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        (self.home / '.config/shell').mkdir(parents=True)
-        (self.home / '.config/shell/env.sh').symlink_to(ROOT / 'stow/shell/.config/shell/env.sh')
-        (self.home / '.zshenv').symlink_to(ROOT / 'stow/zsh/.zshenv')
+        self.home.mkdir()
+        install_shell(self.home, {'.zshenv', '.zprofile', '.zlogin'})
 
-    def run_codex_shell(self, command, *args, marker=True):
+    def run_codex_shell(self, command, *args, marker=True, login=True):
         env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
         if marker:
             env['AGENT_SHELL'] = 'codex'
-        return subprocess.run(['/bin/zsh', '-lc', command, *args], cwd=self.path, env=env,
+        return subprocess.run(['/bin/zsh', '-lc' if login else '-c', command, *args], cwd=self.path, env=env,
                               capture_output=True, text=True, timeout=20)
+
+    @unittest.skipUnless(current_bash(), 'bash 4 or later required')
+    def test_lines_installers_append_to_the_stubs_run_before_the_hand_off(self):
+        for stub, var in (('.zshenv', 'FROM_ZSHENV'), ('.zprofile', 'FROM_ZPROFILE')):
+            with open(self.home / stub, 'a') as f:
+                f.write(f'export {var}=yes\n')
+        p = self.run_codex_shell('echo "${BASH_VERSINFO[0]} ${FROM_ZSHENV:-missing} ${FROM_ZPROFILE:-missing}"')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        major, *seen = p.stdout.split()
+        self.assertGreaterEqual(int(major), 4)
+        self.assertEqual(seen, ['yes', 'yes'])
+
+    @unittest.skipUnless(current_bash(), 'bash 4 or later required')
+    def test_a_plain_marked_zsh_c_hands_off_too(self):
+        p = self.run_codex_shell('echo ${BASH_VERSINFO[0]}', login=False)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertGreaterEqual(int(p.stdout.strip()), 4)
 
     @unittest.skipUnless(current_bash(), 'bash 4 or later required')
     def test_marked_shell_runs_the_command_in_bash(self):
@@ -1007,7 +1144,7 @@ class RealSessionGate(Fixture):
 
     def aliases(self, real):
         code = (f'ZSH_REAL_SESSION={real}; source {ROOT}/lib_sh/claude.sh; '
-                f'source {ROOT}/stow/zsh/.config/zsh/50-aliases.zsh; '
+                f'source {ZSH_DIR}/50-aliases.zsh; '
                 'for a in c cc ccont cr co rm; do alias $a >/dev/null && print $a; done; true')
         p = subprocess.run(['/bin/zsh', '-f', '-c', code], cwd=self.path, env=self.env,
                            capture_output=True, text=True, timeout=20)
@@ -1023,7 +1160,7 @@ class RealSessionGate(Fixture):
     def test_flag_incompatible_replacements_never_take_the_real_name(self):
         for name in ('eza', 'ncdu', 'gping', 'htop'):
             self.cli(name, 'exit 0')
-        code = (f'ZSH_REAL_SESSION=1; source {ROOT}/stow/zsh/.config/zsh/50-aliases.zsh; '
+        code = (f'ZSH_REAL_SESSION=1; source {ZSH_DIR}/50-aliases.zsh; '
                 'for a in ls du ping top; do alias $a >/dev/null && print $a; done; print -r -- "ll=$aliases[ll]"')
         p = subprocess.run(['/bin/zsh', '-f', '-c', code], cwd=self.path, env=self.env,
                            capture_output=True, text=True, timeout=20)
@@ -1077,7 +1214,7 @@ class CachedEval(Fixture):
         def activated_with(path):
             env = dict(self.env, PATH=path, DOTFILES=str(self.path / 'no-dotfiles'))
             p = subprocess.run(['/bin/zsh', '-f', '-c', cached_eval_helper() + 'ZSH_REAL_SESSION=1; '
-                                f'source {ROOT / "stow/zsh/.config/zsh/60-functions.zsh"}; print -r -- $MISE_SAW_PATH'],
+                                f'source {ZSH_DIR / "60-functions.zsh"}; print -r -- $MISE_SAW_PATH'],
                                cwd=self.path, env=env, capture_output=True, text=True, timeout=20)
             return p.stdout.strip().splitlines()[-1]
         first, second = f'{self.bin}:/usr/bin:/bin', f'{self.path}:{self.bin}:/usr/bin:/bin'
@@ -1454,7 +1591,7 @@ class OtelAgent(Fixture):
 
     def test_collector_config_deletes_identity_and_content_keys(self):
         import re
-        text = (ROOT / 'stow/otel-agent/.config/otel-agent/config.yaml').read_text()
+        text = (FEATURES / 'agents.otel-agent/home/.config/otel-agent/config.yaml').read_text()
         # Every delete pattern, with `*alias` resolved to its `&anchor` value.
         anchors = dict(re.findall(r"&(\w+) '([^']+)'", text))
         patterns = [re.compile(literal or anchors[ref])
@@ -1471,7 +1608,7 @@ class OtelAgent(Fixture):
 
 
 class AgentMcp(Fixture):
-    SCRIPT = ROOT / 'stow/agent-mcp/.local/bin/agent-mcp'
+    SCRIPT = FEATURES / 'agents.agent-mcp/home/.local/bin/agent-mcp'
 
     def setUp(self):
         super().setUp()
@@ -1522,7 +1659,7 @@ class AgentMcp(Fixture):
         self.fake(self.bin / 'serena', 'serena')
         p = self.run_mcp('serena')
         self.assertEqual(p.returncode, 78)
-        self.assertIn('stow the agent-mcp package', p.stderr)
+        self.assertIn('enable the agents.agent-mcp feature', p.stderr)
 
     def test_codebase_memory_restricts_codex_to_the_analysis_profile(self):
         self.fake(self.home / '.local/libexec/codebase-memory-mcp/0.12.1/codebase-memory-mcp', 'cbm')

@@ -1,0 +1,19 @@
+id = "git"
+description = "Shared git settings; machine-local ones in ~/.gitconfig and ~/.gitconfig.local"
+category = "tools"
+# diff-so-fancy, less and hexdump in the shared config; Windows gets its own in
+# rollout step 7.
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/git/ignore",
+  ".gitconfig",
+  ".gitconfig.local.example",
+]
+
+[provides]
+link = [".config/git"]
+# git reads ~/.config/git/config whatever ~/.gitconfig holds, so an existing one
+# is kept as it is.
+stub = [{ path = ".gitconfig", line = "# Machine-local git settings; git config --global writes here. Shared settings: ~/.config/git/config", keep_existing = true }]

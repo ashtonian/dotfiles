@@ -1,0 +1,12 @@
+id = "tool.neofetch"
+description = "neofetch layout"
+category = "tools"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/neofetch/config.conf",
+]
+
+[provides]
+link = [".config/neofetch"]

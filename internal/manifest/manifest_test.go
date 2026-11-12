@@ -55,6 +55,7 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"an absolute path", "a", "id = \"a\"\n[provides]\nbin = [\"/usr/bin/x\"]\n", "must be relative"},
 		{"a package name with a quote", "a", "id = \"a\"\n[provides]\nbrew = [\"x\\\"; system(1)\"]\n", "characters a package name cannot"},
 		{"a stub with two lines", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".zshrc\", line = \"a\\nb\" }]\n", "exactly one line"},
+		{"a stub keyword that is not one word", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".ssh/config\", line = \"Include x\", before = [\"Host *\"] }]\n", "must be one word"},
 		{"a setting with an unknown type", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"float\"\n", `unknown type "float"`},
 		{"a secret default that is a value", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"secret\"\ndefault = \"hunter2\"\n", "never a value"},
 	}
@@ -79,9 +80,8 @@ func TestLoadFeaturesRejectsASettingDeclaredTwice(t *testing.T) {
 }
 
 func TestLoadMachine(t *testing.T) {
-	m, err := LoadMachine(filepath.Join(t.TempDir(), "machine.toml"))
-	require.NoError(t, err)
-	assert.Equal(t, &Machine{}, m)
+	_, err := LoadMachine(filepath.Join(t.TempDir(), "machine.toml"))
+	assert.ErrorIs(t, err, ErrNoMachine, "a missing manifest is never an empty machine")
 
 	path := filepath.Join(t.TempDir(), "machine.toml")
 	require.NoError(t, os.WriteFile(path, []byte(`profiles = ["base", "dev"]
@@ -90,9 +90,14 @@ disable = ["shell.greeting"]
 [settings]
 "toggl.organization_id" = { secret = "op://dotfiles/toggl/organization_id" }
 `), 0o644))
-	m, err = LoadMachine(path)
+	m, err := LoadMachine(path)
 	require.NoError(t, err)
 	assert.Equal(t, []string{"base", "dev"}, m.Profiles)
 	assert.Equal(t, []string{"shell.greeting"}, m.Features.Disable)
 	assert.NoError(t, CheckValue("secret", m.Settings["toggl.organization_id"]))
+
+	require.NoError(t, os.WriteFile(path, MachineFile([]string{"base", "dev"}), 0o644))
+	m, err = LoadMachine(path)
+	require.NoError(t, err)
+	assert.Equal(t, &Machine{Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
 }

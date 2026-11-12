@@ -2,7 +2,7 @@
 
 Historical machine inventory, including transitive dependencies. This snapshot
 is not kept in sync with package changes and is not an installation manifest.
-The [Brewfile](Brewfile) defines the shared package selection. See
+The `brew.*` [features](STRUCTURE.md#features) define the shared package selection. See
 [inventory exporters](STRUCTURE.md#shell-libraries) to produce a fresh local
 snapshot; review it before publishing.
 

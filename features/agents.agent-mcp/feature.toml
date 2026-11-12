@@ -1,0 +1,13 @@
+id = "agents.agent-mcp"
+description = "The agent-mcp launcher and its Serena context (docs/AGENT-MCP.md)"
+category = "agents"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/agent-mcp/serena-claude-code.yml",
+  ".local/bin/agent-mcp",
+]
+
+[provides]
+link = [".config/agent-mcp", ".local/bin/agent-mcp"]

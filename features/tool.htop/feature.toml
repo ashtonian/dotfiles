@@ -1,0 +1,12 @@
+id = "tool.htop"
+description = "htop settings (a managed copy: htop rewrites it on exit)"
+category = "tools"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/htop/htoprc",
+]
+
+[provides]
+copy = [".config/htop/htoprc"]

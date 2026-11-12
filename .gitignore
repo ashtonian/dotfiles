@@ -21,8 +21,8 @@ logs/
 *.local
 # Keep committed local-override templates.
 !*.local.example
-# Stow packages that install into ~/.local keep that tree tracked.
-!stow/*/.local/
+# Features that install into ~/.local keep that tree tracked.
+!features/*/home/.local/
 .envrc
 *.pem
 *.key
@@ -48,16 +48,17 @@ service-account*.json
 *.secret
 secrets.*
 
-# gh keeps its oauth_token in ~/.config/gh/hosts.yml, which sync.sh keeps out
-# of this PUBLIC repo by stowing gh file by file. Ignored here as a backstop.
-stow/gh/.config/gh/hosts.yml
+# The retired stow tree. Anything still under it is a file a tool wrote through
+# an old directory link, such as gh's hosts.yml with its OAuth token, which
+# `dotfiles apply` moves home. Never track it in this PUBLIC repo.
+/stow/
 
-# OpenCode installs plugin dependencies next to its config, which stow links
-# into this repo; they are machine-local build output.
-stow/opencode/.config/opencode/node_modules/
-stow/opencode/.config/opencode/package.json
-stow/opencode/.config/opencode/package-lock.json
-stow/opencode/.config/opencode/bun.lock
+# What tools write next to their config. apply links each file on its own, so
+# these land in $HOME, never here; ignored in case a link ever folds again.
+features/tool.gh/home/.config/gh/hosts.yml
+features/agents.opencode/home/.config/opencode/node_modules/
+features/agents.opencode/home/.config/opencode/package.json
+features/agents.opencode/home/.config/opencode/bun.lock
 
 __pycache__/
 *.py[cod]

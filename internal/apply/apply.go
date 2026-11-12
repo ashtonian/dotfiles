@@ -24,11 +24,20 @@ import (
 type Env struct {
 	Home     string
 	RepoRoot string // links into this tree are apply's own, including stow's old ones
+	// Tracked reports whether a path relative to RepoRoot is tracked by git.
+	// Unfolding moves only untracked files home: moving a tracked one would
+	// delete it from the repository on the next sync.
+	Tracked func(rel string) bool
+	// StowTree is the retired stow tree inside the repository, laid out as
+	// <package>/<path under $HOME>. Files still in it after the migration are
+	// untracked files a tool wrote, or that an older sync linked one by one;
+	// apply moves each one that $HOME still links to home. Empty for none.
+	StowTree string
 }
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, adopt
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, adopt
 	Path   string
 	Detail string
 }
@@ -53,6 +62,10 @@ type runner struct {
 	next   *State
 	dryRun bool
 	report Report
+	// sources holds every planned link and copy source, relative to the
+	// repository; unfolding leaves them in place even before they are tracked.
+	sources  map[string]bool
+	unfolded map[string]bool // folded directories handled this run
 }
 
 // Run converges the machine on p. prev is the state the last run saved; the
@@ -60,10 +73,24 @@ type runner struct {
 // the report lists what would. I/O failures stop the run; conflicts are
 // reported as problems and leave the file untouched.
 func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (*Report, *State, error) {
-	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun}
+	if env.Tracked == nil {
+		return nil, nil, errors.New("apply: Env.Tracked is required")
+	}
+	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun,
+		sources: map[string]bool{}, unfolded: map[string]bool{}}
 	r.repos = []string{filepath.Clean(env.RepoRoot)}
 	if resolved, err := filepath.EvalSymlinks(env.RepoRoot); err == nil && resolved != r.repos[0] {
 		r.repos = append(r.repos, resolved)
+	}
+	for _, l := range p.Links {
+		if rel, ok := r.repoRel(l.Source); ok {
+			r.sources[rel] = true
+		}
+	}
+	for _, c := range p.Copies {
+		if rel, ok := r.repoRel(c.Source); ok {
+			r.sources[rel] = true
+		}
 	}
 
 	steps := []func() error{
@@ -71,6 +98,8 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 		func() error { return eachItem(r, p.Links, r.link) },
 		func() error { return eachItem(r, p.Copies, r.copy) },
 		func() error { return eachItem(r, p.Stubs, r.stub) },
+		func() error { return eachItem(r, p.Retire, r.retire) },
+		r.rescueStowTree,
 		func() error { return r.teardown(p) },
 	}
 	for _, step := range steps {
@@ -116,21 +145,308 @@ func (r *runner) inRepo(link, dest string) bool {
 	return false
 }
 
-// foldedParent returns a directory between $HOME and target that is a link
-// into the repository: an old stow folding, through which a write would land
-// in the repository.
-func (r *runner) foldedParent(target string) string {
+// repoRel returns path relative to the repository, under either spelling of
+// the repository root.
+func (r *runner) repoRel(path string) (string, bool) {
+	path = filepath.Clean(path)
+	for _, repo := range r.repos {
+		if strings.HasPrefix(path, repo+string(filepath.Separator)) {
+			rel, err := filepath.Rel(repo, path)
+			return rel, err == nil
+		}
+	}
+	return "", false
+}
+
+// foldedParents returns the directories between $HOME and target that are
+// links into the repository: old stow foldings, through which a write would
+// land in the repository. The outermost comes first.
+func (r *runner) foldedParents(target string) []string {
 	home := filepath.Clean(r.env.Home)
+	var folded []string
 	for dir := filepath.Dir(target); dir != home && strings.HasPrefix(dir, home+string(filepath.Separator)); dir = filepath.Dir(dir) {
 		info, err := os.Lstat(dir)
 		if err != nil || info.Mode()&fs.ModeSymlink == 0 {
 			continue
 		}
 		if dest, err := os.Readlink(dir); err == nil && r.inRepo(dir, dest) {
-			return dir
+			folded = append([]string{dir}, folded...)
 		}
 	}
-	return ""
+	return folded
+}
+
+// prepare makes sure nothing between $HOME and target is a folded directory
+// link, so writing target cannot write into the repository. It reports
+// whether target sits under a directory a dry run only pretended to unfold.
+func (r *runner) prepare(target string) (pretend bool, err error) {
+	for _, dir := range r.foldedParents(target) {
+		if err := r.unfold(dir); err != nil {
+			return false, err
+		}
+	}
+	for dir := range r.unfolded {
+		if r.dryRun && strings.HasPrefix(target, dir+string(filepath.Separator)) {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// unfold replaces a folded directory link with a real directory. Untracked
+// files under the link's destination were written there by tools, through the
+// link; they move to their place under the new directory instead of staying
+// in the repository. Tracked files stay: the plan links the ones a feature
+// installs.
+func (r *runner) unfold(dir string) error {
+	if r.unfolded[dir] {
+		return nil
+	}
+	r.unfolded[dir] = true
+	dest, err := os.Readlink(dir)
+	if err != nil {
+		return fmt.Errorf("read link %s: %w", dir, err)
+	}
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(filepath.Dir(dir), dest)
+	}
+	dest = filepath.Clean(dest)
+	r.act("unfold", dir, dest)
+
+	var local []string
+	err = filepath.WalkDir(dest, func(path string, d fs.DirEntry, err error) error {
+		if errors.Is(err, fs.ErrNotExist) && path == dest {
+			return fs.SkipAll // a dangling link has nothing behind it
+		}
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		if rel, ok := r.repoRel(path); ok && (r.sources[rel] || r.env.Tracked(rel)) {
+			return nil
+		}
+		rel, err := filepath.Rel(dest, path)
+		if err != nil {
+			return err
+		}
+		local = append(local, rel)
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("list %s: %w", dest, err)
+	}
+	if r.dryRun {
+		for _, rel := range local {
+			r.act("move-home", filepath.Join(dir, rel), filepath.Join(dest, rel))
+		}
+		return nil
+	}
+
+	if len(local) == 0 {
+		// Nothing to keep; the plan creates the directories it needs.
+		if err := os.Remove(dir); err != nil {
+			return fmt.Errorf("unfold %s: %w", dir, err)
+		}
+		return nil
+	}
+	// The files gather in a sibling first, so the link is replaced in one
+	// rename. A crash in between leaves them in <dir>.dotfiles-unfold-<pid>.
+	staging := fmt.Sprintf("%s.dotfiles-unfold-%d", dir, os.Getpid())
+	if err := os.Mkdir(staging, 0o700); err != nil {
+		return fmt.Errorf("unfold %s: %w", dir, err)
+	}
+	for _, rel := range local {
+		from, to := filepath.Join(dest, rel), filepath.Join(staging, rel)
+		if err := os.MkdirAll(filepath.Dir(to), 0o700); err != nil {
+			return fmt.Errorf("unfold %s: %w", dir, err)
+		}
+		if err := move(from, to); err != nil {
+			return fmt.Errorf("unfold %s: move %s: %w", dir, from, err)
+		}
+		r.act("move-home", filepath.Join(dir, rel), from)
+	}
+	if err := os.Remove(dir); err != nil {
+		return fmt.Errorf("unfold %s: %w", dir, err)
+	}
+	if err := os.Rename(staging, dir); err != nil {
+		return fmt.Errorf("unfold %s: %w", dir, err)
+	}
+	r.removeEmptyDirs(dest)
+	return nil
+}
+
+// removeEmptyDirs removes the directories unfolding left empty: those under
+// root, root itself, and then its parents up to the repository root. Git does
+// not track directories, so an empty one in the repository is clutter.
+func (r *runner) removeEmptyDirs(root string) {
+	var dirs []string
+	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err == nil && d.IsDir() {
+			dirs = append(dirs, path)
+		}
+		return nil
+	})
+	for i := len(dirs) - 1; i >= 0; i-- {
+		_ = os.Remove(dirs[i]) // fails, as intended, unless the directory is empty
+	}
+	for dir := filepath.Dir(root); ; dir = filepath.Dir(dir) {
+		if _, inside := r.repoRel(dir); !inside || os.Remove(dir) != nil {
+			return
+		}
+	}
+}
+
+// move renames from to to, copying across file systems when it must.
+func move(from, to string) error {
+	if err := os.Rename(from, to); err == nil {
+		return nil
+	}
+	info, err := os.Lstat(from)
+	if err != nil {
+		return err
+	}
+	if info.Mode()&fs.ModeSymlink != 0 {
+		dest, err := os.Readlink(from)
+		if err != nil {
+			return err
+		}
+		if err := os.Symlink(dest, to); err != nil {
+			return err
+		}
+		return os.Remove(from)
+	}
+	data, err := os.ReadFile(from)
+	if err != nil {
+		return err
+	}
+	if err := writeAtomic(to, data, info.Mode().Perm()); err != nil {
+		return err
+	}
+	return os.Remove(from)
+}
+
+// retire removes an old install path that is still a link into the repository,
+// or, when stow folded a directory above it, unfolds that directory first.
+func (r *runner) retire(target string) error {
+	pretend, err := r.prepare(target)
+	if err != nil || pretend {
+		return err
+	}
+	info, err := os.Lstat(target)
+	if err != nil || info.Mode()&fs.ModeSymlink == 0 {
+		return nil
+	}
+	dest, err := os.Readlink(target)
+	if err != nil || !r.inRepo(target, dest) {
+		return nil
+	}
+	r.act("retire", target, dest)
+	if r.dryRun {
+		return nil
+	}
+	if err := os.Remove(target); err != nil {
+		return fmt.Errorf("remove %s: %w", target, err)
+	}
+	return nil
+}
+
+// rescueStowTree moves home each file left in the retired stow tree that
+// $HOME links to, directly or through a folded parent directory, and reports
+// the rest: nothing installs them any more, and they are the owner's data.
+func (r *runner) rescueStowTree() error {
+	root := r.env.StowTree
+	if root == "" {
+		return nil
+	}
+	if _, err := os.Lstat(root); errors.Is(err, fs.ErrNotExist) {
+		return nil
+	}
+	var files []string
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if !d.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+	if err != nil {
+		return fmt.Errorf("list %s: %w", root, err)
+	}
+	for _, file := range files {
+		if err := r.ctx.Err(); err != nil {
+			return err
+		}
+		rel, err := filepath.Rel(root, file)
+		if err != nil {
+			return err
+		}
+		_, under, found := strings.Cut(filepath.ToSlash(rel), "/")
+		if repoRel, ok := r.repoRel(file); !found || (ok && r.env.Tracked(repoRel)) {
+			continue // a package's own README, or a file git still tracks
+		}
+		target := filepath.Join(r.env.Home, filepath.FromSlash(under))
+		pretend, err := r.prepare(target)
+		if err != nil {
+			return err
+		}
+		if pretend {
+			continue // a dry run's unfold already listed it
+		}
+		if _, err := os.Lstat(file); errors.Is(err, fs.ErrNotExist) {
+			continue // unfolding moved it home
+		}
+		if dest, err := os.Readlink(target); err == nil && sameFile(target, dest, file) {
+			r.act("move-home", target, file)
+			if !r.dryRun {
+				if err := moveOver(file, target); err != nil {
+					return err
+				}
+			}
+			continue
+		}
+		if filepath.Base(file) == ".DS_Store" {
+			// Finder's view settings for a directory it showed; nothing to keep.
+			r.act("remove", file, "")
+			if !r.dryRun {
+				if err := os.Remove(file); err != nil {
+					return fmt.Errorf("remove %s: %w", file, err)
+				}
+			}
+			continue
+		}
+		r.problem(file, "left in the retired stow tree and not installed any more; move it where it belongs, or delete it")
+	}
+	if !r.dryRun {
+		r.removeEmptyDirs(root)
+		_ = os.Remove(root)
+	}
+	return nil
+}
+
+// sameFile reports whether the link at link, whose destination is dest,
+// points at file.
+func sameFile(link, dest, file string) bool {
+	if !filepath.IsAbs(dest) {
+		dest = filepath.Join(filepath.Dir(link), dest)
+	}
+	return filepath.Clean(dest) == filepath.Clean(file)
+}
+
+// moveOver replaces the link at target with file, in one rename once the
+// file is beside it.
+func moveOver(file, target string) error {
+	tmp := fmt.Sprintf("%s.dotfiles-home-%d", target, os.Getpid())
+	if err := move(file, tmp); err != nil {
+		return fmt.Errorf("move %s home: %w", file, err)
+	}
+	if err := os.Rename(tmp, target); err != nil {
+		return fmt.Errorf("move %s home: %w", file, err)
+	}
+	return nil
 }
 
 func (r *runner) mkdirParent(path string) error {
@@ -170,12 +486,14 @@ func (r *runner) link(l plan.Link) error {
 			r.next.Links[l.Target] = src
 		}
 	}
-	if dir := r.foldedParent(l.Target); dir != "" {
-		r.problem(l.Target, fmt.Sprintf("%s is a directory link into the repository; run `sync.sh stow` to replace it with a real directory", dir))
-		keepPrevious()
-		return nil
+	pretend, err := r.prepare(l.Target)
+	if err != nil {
+		return err
 	}
 	info, err := os.Lstat(l.Target)
+	if pretend {
+		info, err = nil, fs.ErrNotExist
+	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		r.act("link", l.Target, l.Source)
@@ -230,6 +548,11 @@ func (r *runner) copy(c plan.Copy) error {
 	prev, hadPrev := r.prev.Copies[c.Target]
 	record := CopyRecord{Source: c.Source, SHA256: want}
 
+	pretend, err := r.prepare(c.Target)
+	if err != nil {
+		return err
+	}
+
 	write := func(kind string) error {
 		r.act(kind, c.Target, c.Source)
 		if r.dryRun {
@@ -242,6 +565,9 @@ func (r *runner) copy(c plan.Copy) error {
 	}
 
 	info, err := os.Lstat(c.Target)
+	if pretend {
+		info, err = nil, fs.ErrNotExist
+	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		if err := write("copy"); err != nil {
@@ -290,7 +616,14 @@ func (r *runner) copy(c plan.Copy) error {
 
 func (r *runner) stub(s plan.Stub) error {
 	line := s.Line + "\n"
+	pretend, err := r.prepare(s.Path)
+	if err != nil {
+		return err
+	}
 	info, err := os.Lstat(s.Path)
+	if pretend {
+		info, err = nil, fs.ErrNotExist
+	}
 	switch {
 	case errors.Is(err, fs.ErrNotExist):
 		r.act("stub", s.Path, s.Line)
@@ -324,19 +657,59 @@ func (r *runner) stub(s plan.Stub) error {
 		}
 		r.next.Stubs[s.Path] = true
 	default:
+		if s.KeepExisting {
+			break
+		}
 		content, err := os.ReadFile(s.Path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", s.Path, err)
 		}
-		if !bytes.Contains(content, []byte(s.Line)) {
-			r.problem(s.Path, "add this line so it loads the shared configuration: "+s.Line)
+		if detail := stubProblem(content, s); detail != "" {
+			r.problem(s.Path, detail)
 			return nil
 		}
-		if r.prev.Stubs[s.Path] {
-			r.next.Stubs[s.Path] = true
-		}
+	}
+	if r.prev.Stubs[s.Path] {
+		r.next.Stubs[s.Path] = true
 	}
 	return nil
+}
+
+// stubProblem says what an existing entry point needs so it loads the shared
+// configuration, or "" when it has the stub's line, before any of the
+// keywords the stub names.
+func stubProblem(content []byte, s plan.Stub) string {
+	where := ""
+	if len(s.Before) > 0 {
+		where = " before the first " + strings.Join(s.Before, " or ") + " line"
+	}
+	keyword := -1
+	for i, line := range strings.Split(string(content), "\n") {
+		line = strings.TrimSpace(line)
+		if line == s.Line {
+			if keyword >= 0 {
+				return "move this line" + where + ", or it applies only inside that block: " + s.Line
+			}
+			return ""
+		}
+		if keyword < 0 && startsWithKeyword(line, s.Before) {
+			keyword = i
+		}
+	}
+	return "add this line" + where + " so it loads the shared configuration: " + s.Line
+}
+
+// startsWithKeyword reports whether line's first word is one of keywords,
+// ignoring case as ssh_config does.
+func startsWithKeyword(line string, keywords []string) bool {
+	first, _, _ := strings.Cut(line, " ")
+	first, _, _ = strings.Cut(first, "\t")
+	for _, k := range keywords {
+		if strings.EqualFold(first, k) {
+			return true
+		}
+	}
+	return false
 }
 
 // teardown removes what an earlier run installed for features no longer in

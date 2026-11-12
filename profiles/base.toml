@@ -1,0 +1,17 @@
+# Every machine.
+
+[features]
+enable = [
+  "shell.env",
+  "shell.zsh",
+  "git",
+  "git.keychain",
+  "ssh",
+  "tool.gh",
+  "tool.atuin",
+  "tool.htop",
+  "tool.colorls",
+  "tool.mise",
+  "brew.base",
+  "brew.macos",
+]

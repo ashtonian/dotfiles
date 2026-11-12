@@ -13,12 +13,12 @@
 # The server speaks plain HTTP, so any other address sends that password in the
 # clear; set OPENCODE_HOSTNAME only for a network you trust.
 #
-# ONE-TIME SETUP: see stow/opencode/README.md.
+# ONE-TIME SETUP: see features/agents.opencode/README.md.
 set -euo pipefail
 
 password_file=$HOME/.local/share/opencode/homelab/server-password
 if [[ ! -s $password_file ]]; then
-	print -u2 "opencode-server: $password_file is missing; see stow/opencode/README.md"
+	print -u2 "opencode-server: $password_file is missing; see features/agents.opencode/README.md"
 	exit 78 # EX_CONFIG
 fi
 export OPENCODE_SERVER_PASSWORD=$(<$password_file)

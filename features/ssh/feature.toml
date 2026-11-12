@@ -1,0 +1,14 @@
+id = "ssh"
+description = "Shared ssh defaults; this machine's hosts in ~/.ssh/config.local"
+category = "tools"
+# ControlMaster and UseKeychain; Windows gets its own in rollout step 7.
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".ssh/config",
+]
+
+[provides]
+link = [".ssh/dotfiles.conf"]
+stub = [{ path = ".ssh/config", line = "Include dotfiles.conf", before = ["Host", "Match"] }]

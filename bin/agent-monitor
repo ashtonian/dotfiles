@@ -60,13 +60,14 @@ ensure_node() {
 
 # link_data points $data at the data directory, keeping an existing link unless
 # --data-dir names a different one. The database and transcript snapshots grow
-# with history (several GB), so the default target is the external volume.
+# with history (several GB), so a host with a larger volume sets
+# AGENT_MONITOR_DATA_DIR (setting paths.agent_monitor_data, such as studio's).
 link_data() {
 	local target=${1:-}
 	if [[ -L $data && -z $target ]]; then
 		return
 	fi
-	target=${target:-/Volumes/E2TB/agent-monitor}
+	target=${target:-${AGENT_MONITOR_DATA_DIR:-$home/store}}
 	[[ -e $data && ! -L $data ]] && die 73 "$data exists and is not a symlink; move it aside first"
 	mkdir -p $target
 	chmod 700 $target # full transcript copies live here

@@ -1,0 +1,12 @@
+id = "tool.taskwarrior"
+description = "Taskwarrior settings (a managed copy: `task config` rewrites it)"
+category = "tools"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".taskrc",
+]
+
+[provides]
+copy = [".taskrc"]

@@ -8,23 +8,21 @@ This file maps the checked-in implementation.
 
 ```text
 ~/.dotfiles/
-├── Brewfile                 # Shared packages and editor extensions
-├── install.sh               # Bootstrap; default checkout and backup locations
+├── install.sh               # Bootstrap: Go, engine build, machine manifest, apply, packages
 ├── config.sh                # Optional system/app preferences
-├── sync.sh                  # Packages, backups, signed Git publication
+├── sync.sh                  # Signed Git publication, engine build and apply, packages
 ├── go.mod                   # The feature engine's Go module
-├── cmd/dotfiles/            # Engine command: apply, doctor, status, check, adopt
+├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
 ├── internal/plan/           # Links, managed copies, generated outputs and stubs to install
-├── internal/apply/          # Converge on a plan; adopt, state, teardown, locking
-├── features/                # One directory per feature (filled by the migration step)
-├── profiles/                # Named feature sets (filled by the migration step)
+├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, state, teardown, locking
+├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig
+├── profiles/                # Named feature sets: base, dev, desktop, server, work, studio
 ├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
 ├── bin/                     # Executable entry points
 ├── launchagents/            # Templates copied to ~/Library/LaunchAgents
 ├── lib_sh/                  # Libraries sourced by Zsh or config.sh
-├── stow/                    # Packages whose contents map into ~
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
 ├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
@@ -36,7 +34,7 @@ This file maps the checked-in implementation.
 └── win10/                   # Legacy Windows package script
 
 ~/.sync/                    # Separate repos, outside the dotfiles repo
-├── mackup/<LocalHostName>/  # App backups partitioned by source host
+├── mackup/<LocalHostName>/  # Earlier app backups; sync no longer runs Mackup (rollout step 8)
 ├── dracula-iterm/           # Theme checkout
 ├── colorls/                 # Theme checkout
 └── alfred-dracula/          # Theme checkout
@@ -45,45 +43,62 @@ This file maps the checked-in implementation.
 The older `.zshrc.omz-backup` is retained as a historical reference. It is not
 sourced by the modular Zsh configuration.
 
-## Stow packages
+## Features
 
-Every immediate directory in stow/ is attempted by `install.sh` and `sync.sh stow`.
-Stow's default ignore rules exclude package README files.
+Each directory under `features/` is one feature; `home/` mirrors `$HOME`, and
+`apply` links every file under a `link` entry on its own. `retire` lists where
+the old stow package linked a file, so `apply` removes the link on a machine
+where the feature is off.
 
-| Package | Linked files / purpose |
-| --------- | ------------------------ |
-| atuin | `.config/atuin/config.toml`; history UI |
-| claude | .claude/`CLAUDE.md`; shared Claude instructions |
-| colorls | `.config/colorls/dark_colors.yaml`; palette |
-| gh | `.config/gh/config.yml`; preferences; authentication stays local |
-| git | `.gitconfig`, `.gitconfig.local.example`, `.config/git/ignore` |
-| htop | `.config/htop/htoprc` |
-| mackup | `.mackup.cfg`; filesystem storage and app exclusions |
-| neofetch | `.config/neofetch/config.conf`; legacy config, not used by Fastfetch |
-| opencode | `.config/opencode/opencode.jsonc`, coordinator agent, delegate plugin |
-| shell | `.config/shell/env.sh` (POSIX environment for every shell and agent), `.bashrc`, `.bash_profile` (login bash hands off to `.bashrc`) |
-| ssh | .ssh/config; OrbStack include, private local include, shared defaults |
-| taskwarrior | `.taskrc` |
-| zsh | `.zshenv`, `.zprofile`, `.zshrc`, `.config/zsh/*.zsh` |
+| Feature | Profiles | Platforms | Installs |
+| ------- | -------- | --------- | -------- |
+| `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp` |
+| `agents.claude` | dev | all | `~/.claude/CLAUDE.md` |
+| `agents.opencode` | desktop | all | `~/.config/opencode` |
+| `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
+| `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
+| `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
+| `brew.apps` | desktop, work | darwin | Brewfile: 37 cask |
+| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
+| `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
+| `brew.dev-apps` | dev | darwin | Brewfile: 19 cask |
+| `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
+| `brew.macos` | base | darwin | Brewfile: 2 brew |
+| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 17 mas |
+| `brew.mas.personal` | desktop | darwin | Brewfile: 9 mas |
+| `brew.vscode` | dev | darwin | Brewfile: 67 vscode |
+| `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
+| `git.keychain` | base | darwin | gitconfig fragment |
+| `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
+| `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
+| `ssh` | base | darwin, linux | `~/.ssh/dotfiles.conf`; stubs `~/.ssh/config` (its Include before any `Host` or `Match`) |
+| `tool.atuin` | base | all | `~/.config/atuin` |
+| `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
+| `tool.gh` | base | all | copies `~/.config/gh/config.yml` |
+| `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
+| `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` |
+| `tool.neofetch` | desktop | darwin, linux | `~/.config/neofetch` |
+| `tool.taskwarrior` | desktop | darwin, linux | copies `~/.taskrc` |
 
-Edit linked files in place; restow when adding, removing, or repairing links.
-Existing regular files can conflict. See the [Stow commands](README.md#stow-conflicts)
-before moving or adopting files.
+Edit linked files in place. Add, remove or move files, then run
+`dotfiles apply`; a file in the way is reported, never overwritten. See
+[A file is in the way](README.md#a-file-is-in-the-way).
 
 ## Shell loading
 
 | Stage | Behavior |
 | ------- | ---------- |
-| `env.sh` | Every shell and agent command: PATH (system, Homebrew, toolchains, user bins), Homebrew variables, Go, editor, pager, locale; builtins only |
-| `.zshenv` | Every Zsh: sources `env.sh`; bash-like globbing and word splitting for Codex command shells (`AGENT_SHELL`) |
-| `.zprofile` | Login shells: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; optional OrbStack integration |
-| `.zshrc` | Interactive shells: classify real terminal vs zsh `-ic`; source sorted modules, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
+| `env.sh` | Every shell and agent command: Homebrew variables, Go, pager, locale; PATH (system, Homebrew, toolchains, user bins), keeping in front what a parent added since; then the editor and the generated `env.sh` (feature fragments and exported settings); builtins only |
+| `zshenv.zsh` | Every Zsh, through the `~/.zshenv` stub: sources `env.sh`; a marked Codex `zsh -c` (`AGENT_SHELL`) runs in bash 4+, or with bash-like globbing and word splitting |
+| `zprofile.zsh` | Login shells, through `~/.zprofile`: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; OrbStack integration where installed |
+| `zlogin.zsh` | Login shells, through `~/.zlogin`: a marked Codex `zsh -lc` hands off to bash here, after the other entry points and the lines installers appended to them |
+| `zshrc.zsh` | Interactive shells, through `~/.zshrc`: classify real terminal vs zsh `-ic`; source the numbered modules, the generated `zshrc.zsh` fragments, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
 | `00-init.zsh` | Bootstrap Zinit, define `_dotfiles_cached_eval` (tool init scripts cached per binary release), set shell options |
 | `20-history.zsh` | Shared history, 50,000-entry limits, duplicate/space handling |
-| `30-plugins.zsh` | Theme, completions, compinit (full security check once a day, `-C` otherwise); deferred autosuggestions, plugins and selected OMZ snippets; syntax highlighting last |
+| `30-plugins.zsh` | Theme, completions, compinit (one dump per zsh version under `$XDG_CACHE_HOME/zsh`; full security check once a day, `-C` otherwise); deferred autosuggestions, plugins and selected OMZ snippets; syntax highlighting last |
 | `40-keybindings.zsh` | Emacs keys, navigation/history keys, then cached Atuin initialization when installed |
 | `50-aliases.zsh` | Convenience aliases; command-replacing and safety aliases gated to real sessions; eza listings as `ll`/`la`/`lt`; git aliases re-applied after the OMZ git plugin |
-| `60-functions.zsh` | Libraries, cached Helm completion, git-extras completion, cached zoxide (real sessions), direnv and mise (real sessions) |
+| `60-functions.zsh` | Libraries, cached Helm completion, git-extras completion, cached zoxide (real sessions), direnv, mise activation (real sessions, uncached: it embeds the PATH) and gitstead |
 | `70-greeting.zsh` | Define optional greeting; called after local overrides |
 
 Zinit's wait plugins run after the first prompt, so `zsh -ic exit` does not
@@ -139,14 +154,14 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-install-launchagents.sh](bin/dotfiles-install-launchagents.sh) | Copy templates, substitute $HOME, load/unload jobs, show status |
-| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew and Zinit, invoke full sync |
+| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew, install mise's missing tools, update Zinit, invoke full sync |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
 | [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback, `gate` its LAN gate |
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
-| [stow/agent-mcp/.local/bin/agent-mcp](stow/agent-mcp/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
+| [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
 
@@ -167,8 +182,11 @@ Templates are copied, not linked. Reinstall the affected agent to apply a
 template change; restarting a loaded job keeps its loaded plist settings.
 Reloading always-on services interrupts attached sessions.
 
-Sync holds `logs/sync.flock` using macOS lockf, installs missing packages with
-`--no-upgrade`, and gives Mackup a temporary host-specific config. Git sync is
+Sync holds `logs/sync.flock` using macOS lockf, runs `dotfiles apply` right after
+the dotfiles merge (refusing to merge an engine layout this machine cannot
+install: no `machine.toml`, no Go, or an upstream engine that does not build here
+or cannot plan the manifest), then installs the generated Brewfile's missing packages with
+`--no-upgrade`. It does not run Mackup. Git sync is
 separate for dotfiles and each immediate Git repo under `SYNC_DIR`. It signs
 commits and merges, verifies outgoing signatures, and checks GitHub verification
 after publishing. Auxiliary merges use `-X ours`, which prefers local conflicting
@@ -176,5 +194,5 @@ hunks rather than discarding all remote changes. Only dotfiles gets secret scans
 
 Authentication, app backups, worker job state, local overrides, generated plugin
 dependencies, and logs belong outside tracked source. See
-[Operations](docs/OPERATIONS.md) and the [OpenCode package](stow/opencode/README.md)
+[Operations](docs/OPERATIONS.md) and the [OpenCode feature](features/agents.opencode/README.md)
 for configuration and recovery.

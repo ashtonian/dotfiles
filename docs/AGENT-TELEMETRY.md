@@ -7,7 +7,7 @@ local collector on this Mac. The collector deletes identities and tool content,
 then forwards the rest to an OTLP gateway in the cluster, which stores metrics
 in Mimir and events in Loki for dashboards and queries.
 
-```
+```text
 Claude Code ─┐
 Codex       ─┼─ OTLP → otel-agent (127.0.0.1:4318/4317) ─ HTTPS + bearer token → cluster gateway → Mimir / Loki
 OpenCode    ─┘
@@ -19,7 +19,7 @@ What arrives per harness:
 | --- | --- | --- | --- |
 | Claude Code | `~/.claude/settings.json` `env` | `claude_code_token_usage`, `_cost_usage`, `_session_count`, `_active_time_total`, with `model`, `type`, `query_source`, `session_id`, `vcs_repository_name` | `api_request`, `tool_result` (tool name, size, duration, success), `mcp_server_connection`, hooks, `user_prompt` (length only) |
 | Codex | `~/.codex/config.toml` `[otel]` | `codex_turn_token_usage`, `codex_turn_tool_call`, TTFT, turn duration, MCP discovery timings, with `model`, `originator`, `token_type` | `codex.api_request`, `codex.tool_result`, `codex.sse_event`, `codex.user_prompt` (length only) |
-| OpenCode | `stow/opencode/.config/opencode/opencode.jsonc` `plugin` | `opencode_token_usage`, `_cost_usage`, `_session_*`, `_model_usage` | `api_request`, `tool_result`, `session.*`, `user_prompt` (length only) |
+| OpenCode | `features/agents.opencode/home/.config/opencode/opencode.jsonc` `plugin` | `opencode_token_usage`, `_cost_usage`, `_session_*`, `_model_usage` | `api_request`, `tool_result`, `session.*`, `user_prompt` (length only) |
 
 Telemetry starts with new processes. Claude Code sessions pick up the settings
 when started; the Codex app-server and the OpenCode server pick them up when
@@ -33,7 +33,7 @@ restarted.
 | Ingest token | `~/.local/share/otel-agent/token` (0600) | 48 characters | The gateway's `otel-gateway-token-workstation` Secret. |
 | `OTEL_AGENT_HOME` | environment | `~/.local/share/otel-agent` | State directory (endpoint, token). |
 | `OTEL_AGENT_LIBEXEC` | environment | `~/.local/libexec/otelcol` | Where the pinned collector is installed, one directory per version. |
-| `OTEL_AGENT_CONFIG` | environment | `~/.config/otel-agent/config.yaml` | Collector config (stow package `otel-agent`). |
+| `OTEL_AGENT_CONFIG` | environment | `~/.config/otel-agent/config.yaml` | Collector config (feature `agents.otel-agent`). |
 | `OTEL_AGENT_HOST` | environment | `scutil --get LocalHostName` | Written to `host.name` on everything forwarded. |
 | Collector | `bin/otel-agent` | `otelcol` core 0.163.1, darwin_arm64, SHA-256 pinned | The core distribution has the OTLP receiver and exporter and the attributes, resource, batch and memory-limiter processors. |
 | Receivers | `config.yaml` | `127.0.0.1:4318` (HTTP), `127.0.0.1:4317` (gRPC) | Loopback only. |
@@ -142,8 +142,8 @@ gets its own Local Network prompt.
 | File | Purpose |
 | --- | --- |
 | [bin/otel-agent](../bin/otel-agent) | install / configure / serve / status / ping |
-| [stow/otel-agent/.config/otel-agent/config.yaml](../stow/otel-agent/.config/otel-agent/config.yaml) | Collector pipelines and redaction |
+| [features/agents.otel-agent/home/.config/otel-agent/config.yaml](../features/agents.otel-agent/home/.config/otel-agent/config.yaml) | Collector pipelines and redaction |
 | [launchagents/com.ashtonian.otel-agent.plist](../launchagents/com.ashtonian.otel-agent.plist) | Always-on LaunchAgent |
 | [bin/dotfiles-install-launchagents.sh](../bin/dotfiles-install-launchagents.sh) | `--otel-agent-only` installs it |
-| [stow/opencode/.config/opencode/opencode.jsonc](../stow/opencode/.config/opencode/opencode.jsonc) | OpenCode's OTel plugin |
+| [features/agents.opencode/home/.config/opencode/opencode.jsonc](../features/agents.opencode/home/.config/opencode/opencode.jsonc) | OpenCode's OTel plugin |
 | [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `OtelAgent` tests |

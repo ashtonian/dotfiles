@@ -1,0 +1,12 @@
+id = "agents.otel-agent"
+description = "OpenTelemetry Collector config for agent telemetry (docs/AGENT-TELEMETRY.md)"
+category = "agents"
+platforms = ["darwin"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/otel-agent/config.yaml",
+]
+
+[provides]
+link = [".config/otel-agent"]

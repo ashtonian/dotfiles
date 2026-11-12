@@ -1,0 +1,46 @@
+id = "brew.apps"
+description = "Desktop applications for any machine someone sits at, the work machine included"
+category = "packages"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+cask = [
+  "1password",
+  "1password-cli",
+  "alfred",
+  "alt-tab",
+  "apparency",
+  "appcleaner",
+  "balenaetcher",
+  "bartender",
+  "brave-browser",
+  "caffeine",
+  "firefox",
+  "flux-app",
+  "iina",
+  "imageoptim",
+  "keepingyouawake",
+  "keycastr",
+  "krisp",
+  "linear",
+  "mactex",
+  "meetingbar",
+  "microsoft-auto-update",
+  "microsoft-office",
+  "monolingual",
+  "netspot",
+  "notion",
+  "numi",
+  "onyx",
+  "prince",
+  "provisionql",
+  "qlmarkdown",
+  "quicklook-video",
+  "ringcentral",
+  "slack",
+  "soundsource",
+  "suspicious-package",
+  "uhk-agent",
+  "zoom",
+]

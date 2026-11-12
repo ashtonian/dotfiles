@@ -26,11 +26,17 @@ var (
 	// Package names end up inside generated Ruby (the Brewfile), so only the
 	// characters real formula, cask, tap and flatpak names use are allowed.
 	packagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@._+/-]*$`)
+	envPattern     = regexp.MustCompile(`^[A-Z_][A-Z0-9_]*$`)
 	settingPattern = regexp.MustCompile(`^[a-z0-9_]+(?:\.[a-z0-9_]+)*$`)
+	keywordPattern = regexp.MustCompile(`^[A-Za-z][A-Za-z0-9_-]*$`)
 
 	// ErrInvalid wraps every validation failure, so callers can tell a bad
 	// manifest from an I/O error.
 	ErrInvalid = errors.New("invalid manifest")
+	// ErrNoMachine means this machine has no manifest yet. Without one no
+	// profile applies, so apply would remove everything the profiles install;
+	// callers refuse to run instead.
+	ErrNoMachine = errors.New("no machine manifest")
 )
 
 // Feature is one toggleable capability: features/<id>/feature.toml plus the
@@ -45,6 +51,10 @@ type Feature struct {
 	Conflicts   []string           `toml:"conflicts"`
 	Provides    Provides           `toml:"provides"`
 	Settings    map[string]Setting `toml:"settings"`
+	// Retire lists paths under $HOME this feature used to install by another
+	// means, such as a stow link. apply removes each one that is still a link
+	// into the repository and that no feature installs now.
+	Retire []string `toml:"retire"`
 
 	// Dir is the absolute directory holding feature.toml.
 	Dir string `toml:"-"`
@@ -53,19 +63,23 @@ type Feature struct {
 // Provides lists what a feature installs. Paths are relative to the
 // feature's directory; Link and Copy paths are relative to its home/ tree.
 type Provides struct {
-	Tap       []string `toml:"tap"`
-	Brew      []string `toml:"brew"`
-	Cask      []string `toml:"cask"`
-	Mas       []MasApp `toml:"mas"`
-	Flatpak   []string `toml:"flatpak"`
-	Env       string   `toml:"env"`        // POSIX fragment for every shell and agent
-	Zshrc     string   `toml:"zshrc"`      // interactive zsh fragment
-	Gitconfig string   `toml:"gitconfig"`  // git config fragment
-	SSHConfig string   `toml:"ssh_config"` // ssh config fragment
-	Bin       []string `toml:"bin"`        // scripts linked into ~/.local/bin
-	Link      []string `toml:"link"`       // files under home/, linked one by one
-	Copy      []string `toml:"copy"`       // files under home/, installed as managed copies
-	Stub      []Stub   `toml:"stub"`       // local entry points created once, never overwritten
+	Tap  []string `toml:"tap"`
+	Brew []string `toml:"brew"`
+	// BrewLink sets a formula's `link:` option, by formula name.
+	BrewLink  map[string]bool `toml:"brew_link"`
+	Cask      []string        `toml:"cask"`
+	Mas       []MasApp        `toml:"mas"`
+	Flatpak   []string        `toml:"flatpak"`
+	Vscode    []string        `toml:"vscode"`     // editor extension ids
+	Go        []string        `toml:"go"`         // go install packages
+	Env       string          `toml:"env"`        // POSIX fragment for every shell and agent
+	Zshrc     string          `toml:"zshrc"`      // interactive zsh fragment
+	Gitconfig string          `toml:"gitconfig"`  // git config fragment
+	SSHConfig string          `toml:"ssh_config"` // ssh config fragment
+	Bin       []string        `toml:"bin"`        // scripts linked into ~/.local/bin
+	Link      []string        `toml:"link"`       // files under home/, linked one by one
+	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
+	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
 }
 
 // MasApp is a Mac App Store app.
@@ -79,6 +93,14 @@ type MasApp struct {
 type Stub struct {
 	Path string `toml:"path"` // relative to $HOME
 	Line string `toml:"line"`
+	// Before lists keywords the line must precede in an existing file, such as
+	// ssh_config's Host and Match: an Include after the first Host line
+	// applies only inside that block.
+	Before []string `toml:"before"`
+	// KeepExisting leaves an existing file as it is; the line is written only
+	// when apply creates the file. For an entry point that needs nothing from
+	// the line, such as ~/.gitconfig, which git reads after the shared config.
+	KeepExisting bool `toml:"keep_existing"`
 }
 
 // Setting declares a typed configuration value. Names are global across
@@ -88,6 +110,9 @@ type Setting struct {
 	Default  any    `toml:"default"`
 	Required bool   `toml:"required"`
 	Doc      string `toml:"doc"`
+	// Env exports the resolved value under this name in the generated env.sh.
+	// Secrets cannot be exported.
+	Env string `toml:"env"`
 }
 
 // Profile is a named set of feature decisions and setting values.
@@ -165,17 +190,33 @@ func LoadProfiles(root string) (map[string]*Profile, error) {
 	return profiles, nil
 }
 
-// LoadMachine reads the machine manifest. A missing file is an empty machine:
-// feature defaults only.
+// LoadMachine reads the machine manifest. A missing file is ErrNoMachine.
 func LoadMachine(path string) (*Machine, error) {
 	var m Machine
 	if err := decodeStrict(path, &m, settingValue); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return &Machine{}, nil
+			return nil, fmt.Errorf("%w at %s", ErrNoMachine, path)
 		}
 		return nil, err
 	}
 	return &m, nil
+}
+
+// MachineFile renders a new machine manifest that lists profiles. Profile
+// names are validated by LoadProfiles, so they need no escaping.
+func MachineFile(profiles []string) []byte {
+	var b strings.Builder
+	b.WriteString("# This machine's profiles, feature overrides and setting overrides.\n")
+	b.WriteString("# Written by `dotfiles init`; see docs/MACHINE-FEATURES.md.\n")
+	b.WriteString("profiles = [")
+	for i, p := range profiles {
+		if i > 0 {
+			b.WriteString(", ")
+		}
+		fmt.Fprintf(&b, "%q", p)
+	}
+	b.WriteString("]\n")
+	return []byte(b.String())
 }
 
 // Setting values decode into `any`, and the decoder reports the keys inside
@@ -246,12 +287,27 @@ func validateFeature(f *Feature, dirName string) error {
 		if s.Line == "" || strings.ContainsAny(s.Line, "\n\r") {
 			return fmt.Errorf("stub %s needs exactly one line", s.Path)
 		}
+		for _, k := range s.Before {
+			if !keywordPattern.MatchString(k) {
+				return fmt.Errorf("stub %s: before keyword %q must be one word", s.Path, k)
+			}
+		}
 	}
-	for _, list := range [][]string{f.Provides.Tap, f.Provides.Brew, f.Provides.Cask, f.Provides.Flatpak} {
+	for _, p := range f.Retire {
+		if err := checkRelative(p); err != nil {
+			return err
+		}
+	}
+	for _, list := range [][]string{f.Provides.Tap, f.Provides.Brew, f.Provides.Cask, f.Provides.Flatpak, f.Provides.Vscode, f.Provides.Go} {
 		for _, name := range list {
 			if !packagePattern.MatchString(name) {
 				return fmt.Errorf("package name %q has characters a package name cannot", name)
 			}
+		}
+	}
+	for name := range f.Provides.BrewLink {
+		if !slices.Contains(f.Provides.Brew, name) {
+			return fmt.Errorf("brew_link names %q, which is not in brew", name)
 		}
 	}
 	for _, app := range f.Provides.Mas {
@@ -269,6 +325,14 @@ func validateFeature(f *Feature, dirName string) error {
 		if s.Default != nil {
 			if err := CheckValue(s.Type, s.Default); err != nil {
 				return fmt.Errorf("setting %q default: %w", name, err)
+			}
+		}
+		if s.Env != "" {
+			if !envPattern.MatchString(s.Env) {
+				return fmt.Errorf("setting %q exports %q, which is not an environment variable name", name, s.Env)
+			}
+			if s.Type == "secret" {
+				return fmt.Errorf("setting %q is a secret, so it cannot be exported to the environment", name)
 			}
 		}
 	}

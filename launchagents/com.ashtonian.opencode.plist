@@ -2,7 +2,7 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
   The OpenCode server: web UI and API for the coordinator agent, which `oc` and
-  browsers attach to. Runs through bin/opencode-server (see stow/opencode/README.md).
+  browsers attach to. Runs through bin/opencode-server (see features/agents.opencode/README.md).
   $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
 -->
 <plist version="1.0">
@@ -21,7 +21,7 @@
         <key>PATH</key>
         <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/bin</string>
         <!-- The shell tool runs `bash -c`, which reads only BASH_ENV: the shared
-             environment (stow/shell), so commands get the full PATH and toolchains. -->
+             environment (feature shell.env), so commands get the full PATH and toolchains. -->
         <key>BASH_ENV</key>
         <string>$HOME/.config/shell/env.sh</string>
     </dict>

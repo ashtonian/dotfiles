@@ -1,0 +1,28 @@
+id = "brew.dev-apps"
+description = "Development applications: editors, terminals, containers, database and API clients, agent apps"
+category = "packages"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+cask = [
+  "ashtonian/tap/gitstead",
+  "beyond-compare",
+  "claude-code",
+  "codex",
+  "codex-app",
+  "cursor",
+  "cyberduck",
+  "dash",
+  "docker-desktop",
+  "font-fira-code-nerd-font",
+  "gitkraken",
+  "goland",
+  "insomnia",
+  "iterm2",
+  "lens",
+  "mqttx",
+  "postico",
+  "visual-studio-code",
+  "wireshark-app",
+]

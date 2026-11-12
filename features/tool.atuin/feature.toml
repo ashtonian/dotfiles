@@ -1,0 +1,11 @@
+id = "tool.atuin"
+description = "Atuin shell history settings"
+category = "tools"
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/atuin/config.toml",
+]
+
+[provides]
+link = [".config/atuin"]

@@ -1,0 +1,17 @@
+# Machines someone sits at.
+
+[features]
+enable = [
+  "brew.apps",
+  "brew.desktop",
+  "brew.activity-trackers",
+  "brew.mas",
+  "brew.mas.personal",
+  "backup.mackup.config",
+  "tool.neofetch",
+  "tool.taskwarrior",
+  # They reach the home cluster: OpenCode's homelab gateway, and the
+  # collector that forwards agent telemetry to it (D1, D31).
+  "agents.opencode",
+  "agents.otel-agent",
+]

@@ -1,0 +1,10 @@
+# Development machines.
+
+[features]
+enable = [
+  "brew.dev-apps",
+  "brew.vscode",
+  "brew.go-tools",
+  "agents.claude",
+  "agents.agent-mcp",
+]

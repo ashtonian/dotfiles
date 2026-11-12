@@ -96,7 +96,7 @@ cmd_configure() {
 cmd_serve() {
 	[[ -x $otelcol ]] || die 78 "collector not installed; run otel-agent install"
 	[[ -s $state/endpoint && -s $state/token ]] || die 78 "gateway not configured; run otel-agent configure"
-	[[ -r $config ]] || die 78 "missing $config; stow the otel-agent package"
+	[[ -r $config ]] || die 78 "missing $config; enable the agents.otel-agent feature and run dotfiles apply"
 	export OTEL_AGENT_GATEWAY=$(<$state/endpoint)
 	export OTEL_AGENT_TOKEN=$(<$state/token)
 	export OTEL_AGENT_HOST=${OTEL_AGENT_HOST:-$(scutil --get LocalHostName 2>/dev/null || hostname -s)}

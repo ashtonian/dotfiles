@@ -1,0 +1,21 @@
+id = "brew.go-tools"
+description = "Go tools installed with go install"
+category = "packages"
+platforms = ["darwin", "linux"]
+
+[provides]
+go = [
+  "github.com/air-verse/air",
+  "github.com/go-delve/delve/cmd/dlv",
+  "goa.design/goa/v3/cmd/goa",
+  "golang.org/x/tools/cmd/goimports",
+  "github.com/golangci/golangci-lint/v2/cmd/golangci-lint",
+  "github.com/icholy/gomajor",
+  "github.com/fatih/gomodifytags",
+  "github.com/haya14busa/goplay/cmd/goplay",
+  "golang.org/x/tools/gopls",
+  "github.com/cweill/gotests/gotests",
+  "github.com/josharian/impl",
+  "google.golang.org/protobuf/cmd/protoc-gen-go",
+  "honnef.co/go/tools/cmd/staticcheck",
+]

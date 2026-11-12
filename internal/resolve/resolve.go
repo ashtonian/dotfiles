@@ -249,6 +249,15 @@ func resolveSettings(features map[string]*manifest.Feature, profiles map[string]
 	return values, missing, nil
 }
 
+// Values returns the resolved settings' values by name.
+func (r *Result) Values() map[string]any {
+	values := make(map[string]any, len(r.Settings))
+	for name, v := range r.Settings {
+		values[name] = v.Value
+	}
+	return values
+}
+
 // Runnable returns the enabled features apply can install: Order without any
 // feature missing a required setting, or requiring one that is.
 func (r *Result) Runnable(features map[string]*manifest.Feature) []string {

@@ -3,11 +3,15 @@
 # dotfiles installer - Bootstrap a new macOS machine
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/ashtonian/dotfiles/master/install.sh | bash
+#   curl -fsSL https://raw.githubusercontent.com/ashtonian/dotfiles/master/install.sh | bash -s -- --profiles base,dev,desktop
 #
 # Or clone first:
 #   git clone https://github.com/ashtonian/dotfiles.git ~/.dotfiles
-#   ~/.dotfiles/install.sh
+#   ~/.dotfiles/install.sh --profiles base,dev,desktop
+#
+# Profiles are the files in profiles/, applied in the order given. Without
+# --profiles (or DOTFILES_PROFILES), an existing machine manifest is kept, and
+# otherwise the installer asks.
 #
 
 set -euo pipefail
@@ -18,6 +22,9 @@ set -euo pipefail
 DOTFILES_DIR="${HOME}/.dotfiles"
 DOTFILES_REPO="https://github.com/ashtonian/dotfiles.git"
 SYNC_DIR="${HOME}/.sync"
+MACHINE_FILE="$HOME/.config/dotfiles/machine.toml"
+DOTFILES_BIN="${DOTFILES_BIN:-$HOME/.local/bin/dotfiles}"
+PROFILES="${DOTFILES_PROFILES:-}"
 
 #=============================================================================
 # COLORS & OUTPUT
@@ -156,37 +163,60 @@ setup_sync_dir() {
 }
 
 #=============================================================================
-# STOW PACKAGES
+# FEATURES
 #=============================================================================
-setup_stow() {
-    if ! command -v stow &>/dev/null; then
-        info "Installing stow..."
-        brew install stow
+# sync.sh owns building the engine and applying, so a fresh install and every
+# later sync behave the same.
+install_go() {
+    if command -v go &>/dev/null; then
+        success "Go already installed"
+        return
     fi
+    info "Installing Go..."
+    brew install go
+}
 
-    # sync.sh owns linking, so a fresh install and every later relink behave
-    # the same: per-file links, never a directory linked into the repository.
-    info "Setting up stow packages..."
-    if "$DOTFILES_DIR/sync.sh" stow; then
-        success "Stow packages linked"
+choose_profiles() {
+    [[ -z "$PROFILES" ]] || return 0
+    if [[ -f "$MACHINE_FILE" ]]; then
+        success "Keeping the profiles in $MACHINE_FILE"
+        return
+    fi
+    local file
+    echo ""
+    info "Profiles in $DOTFILES_DIR/profiles (later ones override earlier ones):"
+    for file in "$DOTFILES_DIR"/profiles/*.toml; do
+        printf '  %-10s %s\n' "$(basename "$file" .toml)" "$(sed -n '1s/^# *//p' "$file")"
+    done
+    read -r -p "Profiles for this machine, comma-separated (such as base,dev,desktop): " PROFILES </dev/tty || PROFILES=""
+    if [[ -z "$PROFILES" ]]; then
+        error "No profiles chosen; rerun with --profiles <names>"
+        exit 64
+    fi
+}
+
+setup_features() {
+    "$DOTFILES_DIR/sync.sh" build
+    if [[ -n "$PROFILES" ]]; then
+        local force=()
+        [[ -f "$MACHINE_FILE" ]] && force=(--force)
+        # ${a[@]+...}: bash 3.2 rejects an empty array under set -u.
+        "$DOTFILES_BIN" init --repo "$DOTFILES_DIR" --profiles "$PROFILES" ${force[@]+"${force[@]}"}
+    fi
+    info "Applying this machine's features..."
+    if "$DOTFILES_DIR/sync.sh" apply; then
+        success "Features applied"
     else
-        warn "Some stow packages were left unchanged; see $DOTFILES_DIR/logs/sync.log"
+        warn "dotfiles apply left problems to resolve; run '$DOTFILES_BIN doctor'"
     fi
 }
 
 #=============================================================================
-# BREW BUNDLE
+# PACKAGES
 #=============================================================================
 install_packages() {
-    info "Installing packages from Brewfile..."
-    cd "$DOTFILES_DIR"
-
-    if [[ -f "Brewfile" ]]; then
-        brew bundle || warn "Some packages may have failed to install"
-        success "Packages installed"
-    else
-        warn "No Brewfile found, skipping package installation"
-    fi
+    info "Installing the enabled features' packages..."
+    "$DOTFILES_DIR/sync.sh" brewfile || warn "Some packages may have failed to install; see $DOTFILES_DIR/logs/sync.log"
     # The tools mise's configuration names, such as the default Node LTS.
     if command -v mise &>/dev/null; then
         mise install --yes || warn "mise could not install every tool; run 'mise install'"
@@ -224,7 +254,20 @@ configure_macos() {
 #=============================================================================
 # MAIN
 #=============================================================================
+usage() {
+    echo "usage: install.sh [--profiles base,dev,...]"
+}
+
 main() {
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --profiles) PROFILES="${2:-}"; shift 2 || { usage; exit 64; } ;;
+            --profiles=*) PROFILES="${1#*=}"; shift ;;
+            -h|--help) usage; return 0 ;;
+            *) usage; exit 64 ;;
+        esac
+    done
+
     echo ""
     echo "======================================"
     echo "  dotfiles installer"
@@ -235,9 +278,11 @@ main() {
     install_xcode_cli
     install_homebrew
     clone_dotfiles
+    choose_profiles
     setup_sync_dir
+    install_go
+    setup_features
     install_packages
-    setup_stow
     install_launch_agents
     configure_macos
 
