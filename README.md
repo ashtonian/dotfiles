@@ -185,6 +185,45 @@ launchctl start com.dotfiles.sync
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
 ```
 
+## Feature engine
+
+`cmd/dotfiles` is the engine the [machine features design](docs/MACHINE-FEATURES.md)
+describes: every capability is a feature under `features/<id>/`, profiles under
+`profiles/` turn groups of them on or off, and the untracked
+`~/.config/dotfiles/machine.toml` picks this machine's profiles and overrides.
+The repository's own packages move into features in the next rollout step; until
+then the engine has nothing to install and `sync.sh` keeps using stow.
+
+```sh
+go build -o ~/.local/bin/dotfiles ./cmd/dotfiles   # Go from Homebrew or mise
+
+dotfiles status            # every feature, enabled or not, and which layer decided
+dotfiles apply --dry-run   # what apply would change
+dotfiles apply             # converge this machine
+dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if any
+dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
+dotfiles adopt <path>...   # make a managed copy's local edits the repository's version
+```
+
+`apply` links each tracked file into `$HOME` on its own (never a directory),
+writes managed copies for files that must not be links (everything under
+`~/Library` on macOS), renders the generated outputs in
+`~/.config/dotfiles/generated/`, and creates one-line stubs for entry points
+installers write to. It records what it installed in
+`~/.local/state/dotfiles/applied.json`, so disabling a feature removes exactly
+what it added. It never overwrites a file it did not create: a file in the way,
+a locally edited managed copy, or an old directory link into the repository is
+reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
+edits into its tracked file. A second run with nothing changed does nothing.
+
+| Exit status | Meaning |
+| ----------- | ------- |
+| 0 | Done; for `doctor`, nothing to fix |
+| 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
+| 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict) |
+| 64 | Usage, or `adopt` named a path that is not a managed copy |
+| 70 | An I/O failure |
+
 ## Shell Configuration
 
 ### Structure

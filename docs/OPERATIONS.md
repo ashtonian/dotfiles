@@ -8,10 +8,11 @@ relocate the installer or rewrite LaunchAgent templates.
 
 | Variable | Type | Default | Scope / effect |
 | ---------- | ------ | --------- | ---------------- |
-| `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer; sync resolves the physical path |
+| `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
 | `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
-| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home; `dotfiles/applied.json` is what `dotfiles apply` installed and `dotfiles/apply.lock` serialises runs |
+| `XDG_CONFIG_HOME` (engine) | Directory path | `~/.config` | `dotfiles/machine.toml` (this machine's profiles and overrides, `--machine`) and `dotfiles/generated/` (outputs `apply` renders) |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_CONFIG_HOME` | Directory path | `~/.config` | Zsh module directory; Stow still targets the default home layout |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
@@ -251,6 +252,22 @@ state files, disable signing, or force-push to clear a failure.
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
   --file="$HOME/.dotfiles/Brewfile"
 ```
+
+## Feature engine troubleshooting
+
+Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
+
+| Symptom | Check and recovery |
+| ------- | ------------------ |
+| `a file is in the way` | A real file sits where a link goes. Compare it with the tracked file the message names, keep what you need (in the repository if it should be shared), move the file aside, and run `dotfiles apply`. |
+| `edited here since dotfiles last wrote it` | A managed copy was changed locally, by hand or by the app that rewrites it. Keep it with `dotfiles adopt <path>`, which writes it into the tracked file (sync publishes it like any tracked edit), or delete the local file and run `dotfiles apply` to take the repository's version. |
+| `not a managed copy on this machine` (exit 64) | `dotfiles adopt` names only files an enabled feature installs as a copy; linked files are edited in place and need no adopt. Flags go before the paths. |
+| `is a directory link into the repository` | An old stow folding. Run `sync.sh stow`, which replaces it with a real directory, then `dotfiles apply`. |
+| `add this line so it loads the shared configuration` | An entry point that existed before the stub. Add the named line; the engine never edits a stub once it exists. |
+| `skipped until these settings have values` | A required setting has no value. Set it in a profile or `machine.toml`; secrets are `{ secret = "op://..." }` references. |
+| Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |
+| `another dotfiles apply holds ...apply.lock` | Another run is in progress (sync, or a manual run). Wait, or raise `--lock-wait`. The lock is released when that process exits; never delete the file by hand. |
+| `state ... has version N` | The state file is from a different engine build. Rebuild `dotfiles` from the current checkout. |
 
 ## Shell and Stow troubleshooting
 
