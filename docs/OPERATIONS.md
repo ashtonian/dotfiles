@@ -26,7 +26,10 @@ relocate the installer or rewrite LaunchAgent templates.
 | `SHOW_COWSAY` | String | false | Set exactly true in `~/.zshrc.local` to enable the greeting |
 | `AWS_SHARED_CREDENTIALS_FILE` | File path | `~/.aws/credentials` | AWS helper credential destination |
 | `AWS_CONFIG_FILE` | File path | `~/.aws/config` | AWS helper region/profile config |
-| `AGENT_SHELL` | Marker | unset; Codex exports it through `[shell_environment_policy] set` in `~/.codex/config.toml` | In a non-interactive Zsh, `.zshenv` turns off `NOMATCH`, `BAD_PATTERN`, `EQUALS` and turns on `SH_WORD_SPLIT` (bash semantics for model-written commands), then unsets the marker so scripts it runs keep Zsh semantics |
+| `AGENT_SHELL` | Marker | unset; Codex sets it through `[shell_environment_policy] set` in `/etc/codex/config.toml` (`bin/dotfiles-agents`) | `.zshenv` unsets it and runs the `zsh -c` command in Homebrew bash (or `/usr/bin/bash` 4+); with neither, it turns off `NOMATCH`, `BAD_PATTERN`, `EQUALS` and turns on `SH_WORD_SPLIT` instead |
+| `CLAUDE_CODE_SHELL` | File path | Homebrew bash, from `bin/dotfiles-agents`'s managed-settings drop-in | Shell Claude Code's Bash tool runs |
+| `DOTFILES_ENV_PATH` | PATH value | set by `env.sh` | The PATH `env.sh` last composed. A nested shell whose PATH still ends with it keeps PATH unchanged, so directories a command put first stay first; do not set it by hand |
+| `DOTFILES_SYSTEM_ROOT` | Directory path | empty (`/`) | Prefix for every path `bin/dotfiles-agents` writes; for testing and packaging |
 
 OpenCode's [config tables](../stow/opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The

@@ -24,7 +24,9 @@ zinit light-mode for \
 #=============================================================================
 # CORE ZSH OPTIONS
 #=============================================================================
-setopt AUTO_CD              # cd by typing directory name
+# cd by typing a directory name; in a tool shell a word that happens to name a
+# directory would change directory instead of failing.
+[[ "${ZSH_REAL_SESSION:-0}" == 1 ]] && setopt AUTO_CD
 setopt AUTO_PUSHD           # Push directories onto stack
 setopt PUSHD_IGNORE_DUPS    # Don't push duplicates
 setopt PUSHD_SILENT         # Don't print directory stack

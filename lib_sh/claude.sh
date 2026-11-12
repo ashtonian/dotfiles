@@ -465,13 +465,15 @@ Suggest cleanup actions with risk assessment."
 }
 
 #=============================================================================
-# ALIASES (add these to your .zshrc or source this file)
+# ALIASES (real terminal sessions only)
 #=============================================================================
-# These are defined as aliases when this file is sourced
+# Agent and tool shells keep plain command names: `c`, `cr` or `co` there must
+# not start Claude. Continue is `ccont` because `cc` is the C compiler.
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]]; then
 
 # Claude CLI shortcuts - Session Management
 alias c='claude'                        # Basic start
-alias cc='claude --continue'            # Continue last session
+alias ccont='claude --continue'         # Continue last session
 alias cr='claude --resume'              # Resume picker
 alias cf='claude --continue --fork-session'  # Fork and continue
 alias co='claude --model opus'          # Use Opus model
@@ -489,3 +491,5 @@ alias csec='csecurity'                  # Security audit
 alias cfix='clint'                      # Fix linting issues
 alias cupd='cupdate'                    # Update dependencies
 alias ctest='ctests'                    # Add missing tests
+
+fi  # end ZSH_REAL_SESSION gate

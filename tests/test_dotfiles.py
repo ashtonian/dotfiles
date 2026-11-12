@@ -736,6 +736,7 @@ class SharedEnvironment(Fixture):
         for name in ('.zshenv', '.zprofile'):
             (self.home / name).symlink_to(ROOT / 'stow/zsh' / name)
         (self.home / '.bashrc').symlink_to(ROOT / 'stow/shell/.bashrc')
+        (self.home / '.bash_profile').symlink_to(ROOT / 'stow/shell/.bash_profile')
 
     def path_of(self, *argv):
         env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
@@ -769,26 +770,168 @@ class SharedEnvironment(Fixture):
     def test_bashrc_reads_the_shared_environment(self):
         self.assert_order(self.path_of('/bin/bash', '-c', '. "$HOME/.bashrc"; printf %s "$PATH"'))
 
+    def test_nested_shell_keeps_a_directory_a_command_put_first(self):
+        venv = self.path / 'venv/bin'
+        venv.mkdir(parents=True)
+        path = self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; PATH="$1:$PATH"; '
+                            '/bin/zsh -c \'print -rn -- $PATH\'', 'sh', str(venv))
+        self.assertEqual(path[0], str(venv))
+
+    def venv_first(self, shell_command, *argv):
+        """PATH as composed, then a virtualenv activated in front, then shell_command."""
+        venv = self.path / 'venv/bin'
+        venv.mkdir(parents=True, exist_ok=True)
+        return venv, self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; PATH="$1:$PATH"; shift; '
+                                  + shell_command, 'sh', str(venv), *argv)
+
+    def test_login_shells_keep_a_virtualenv_first_after_path_helper(self):
+        for shell in (['/bin/zsh', '-lc', 'print -rn -- $PATH'], ['/bin/bash', '-lc', 'printf %s "$PATH"']):
+            venv, path = self.venv_first('exec "$@"', *shell)
+            self.assertEqual(path[0], str(venv), shell[0])
+            self.assertEqual(path[1:3], [str(self.home / 'bin'), str(self.home / '.local/bin')], shell[0])
+
+    def test_shells_nested_in_a_recomposed_one_keep_a_virtualenv_first(self):
+        # A login zsh composes PATH again after path_helper; a shell it starts
+        # sources env.sh once more.
+        nested = self.path / 'nested.zsh'
+        nested.write_text('/bin/sh -c \'. "$HOME/.config/shell/env.sh"; exec /bin/zsh -c "print -rn -- \\$PATH"\'\n')
+        venv, path = self.venv_first('exec /bin/zsh -l "$1"', str(nested))
+        self.assertEqual(path[0], str(venv))
+
+    def test_editor_is_chosen_on_the_composed_path(self):
+        self.cli('nvim', 'exit 0')
+        (self.home / '.local/bin/nvim').symlink_to(self.bin / 'nvim')
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
+        p = subprocess.run(['/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; printf %s "$EDITOR"'],
+                           env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.stdout, 'nvim')
+
+    def test_bash_drops_the_agent_shell_marker(self):
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path), 'AGENT_SHELL': 'codex'}
+        p = subprocess.run(['/bin/bash', '-c', '. "$HOME/.bashrc"; printf %s "${AGENT_SHELL-unset}"'],
+                           env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.stdout, 'unset', 'a zsh this bash starts must not hand off to bash')
+
+    def test_a_reset_path_is_composed_again(self):
+        self.assert_order(self.path_of('/bin/sh', '-c', '. "$HOME/.config/shell/env.sh"; PATH=/usr/bin:/bin; '
+                                       '. "$HOME/.config/shell/env.sh"; printf %s "$PATH"'))
+
+
+def current_bash():
+    """A bash 4 or later the .zshenv hand-off would pick, or None."""
+    for candidate in ('/opt/homebrew/bin/bash', '/usr/local/bin/bash', '/usr/bin/bash'):
+        if Path(candidate).exists() and subprocess.run(
+                [candidate, '-c', '(( BASH_VERSINFO[0] >= 4 ))']).returncode == 0:
+            return candidate
+    return None
+
 
 class AgentShell(Fixture):
-    def run_zsh(self, code, marker):
-        env = dict(self.env)
-        env.pop('AGENT_SHELL', None)
+    """Codex runs `zsh -lc <command>` with AGENT_SHELL set by its system config."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        (self.home / '.config/shell').mkdir(parents=True)
+        (self.home / '.config/shell/env.sh').symlink_to(ROOT / 'stow/shell/.config/shell/env.sh')
+        (self.home / '.zshenv').symlink_to(ROOT / 'stow/zsh/.zshenv')
+
+    def run_codex_shell(self, command, *args, marker=True):
+        env = {'HOME': str(self.home), 'PATH': '/usr/bin:/bin', 'TMPDIR': str(self.path)}
         if marker:
             env['AGENT_SHELL'] = 'codex'
-        return subprocess.run(['/bin/zsh', '-f', '-c', f'source {ROOT}/stow/zsh/.zshenv; {code}'],
-                              cwd=self.path, env=env, capture_output=True, text=True, timeout=20)
+        return subprocess.run(['/bin/zsh', '-lc', command, *args], cwd=self.path, env=env,
+                              capture_output=True, text=True, timeout=20)
 
-    def test_marked_shell_runs_bash_style_commands(self):
-        p = self.run_zsh('print -r -- ==== ; print -r -- /nonexistent-*-glob; s="a b"; set -- $s; print $#;'
-                         ' print -r -- "child:$(zsh -fc \'print -r -- ${AGENT_SHELL:-unset}\')"', True)
+    @unittest.skipUnless(current_bash(), 'bash 4 or later required')
+    def test_marked_shell_runs_the_command_in_bash(self):
+        p = self.run_codex_shell('echo "$0 $*"; echo ${BASH_VERSINFO[0]}; echo ====; echo /nonexistent-*-glob;'
+                                 ' s="a b"; set -- $s; echo $#;'
+                                 ' echo "child:$(zsh -fc \'print -r -- ${AGENT_SHELL:-unset}\')"',
+                                 'name', 'x', 'y')
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(p.stdout.split(), ['====', '/nonexistent-*-glob', '2', 'child:unset'])
+        lines = p.stdout.splitlines()
+        self.assertEqual(lines[0], 'name x y')
+        self.assertGreaterEqual(int(lines[1]), 4)
+        self.assertEqual(lines[2:], ['====', '/nonexistent-*-glob', '2', 'child:unset'])
 
     def test_unmarked_shell_keeps_zsh_semantics(self):
-        p = self.run_zsh('print -r -- /nonexistent-*-glob', False)
+        p = self.run_codex_shell('print -r -- /nonexistent-*-glob', marker=False)
         self.assertNotEqual(p.returncode, 0)
         self.assertIn('no matches found', p.stderr)
+
+
+class RealSessionGate(Fixture):
+    """Launchers and command-replacing aliases exist only in real terminal sessions."""
+
+    def aliases(self, real):
+        code = (f'ZSH_REAL_SESSION={real}; source {ROOT}/lib_sh/claude.sh; '
+                f'source {ROOT}/stow/zsh/.config/zsh/50-aliases.zsh; '
+                'for a in c cc ccont cr co rm; do alias $a >/dev/null && print $a; done; true')
+        p = subprocess.run(['/bin/zsh', '-f', '-c', code], cwd=self.path, env=self.env,
+                           capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.split()
+
+    def test_tool_shells_get_no_launchers_or_replacements(self):
+        self.assertEqual(self.aliases(0), [])
+
+    def test_real_sessions_get_launchers_but_never_cc(self):
+        self.assertEqual(self.aliases(1), ['c', 'ccont', 'cr', 'co', 'rm'])
+
+
+class DotfilesAgents(Fixture):
+    def setUp(self):
+        super().setUp()
+        if not current_bash():
+            self.skipTest('bash 4 or later required')
+        self.root = self.path / 'root'
+        self.env['DOTFILES_SYSTEM_ROOT'] = str(self.root)
+        if sys.platform == 'darwin':
+            self.claude = self.root / 'Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json'
+        else:
+            self.claude = self.root / 'etc/claude-code/managed-settings.d/50-dotfiles.json'
+        self.codex = self.root / 'etc/codex/config.toml'
+
+    def agents(self, command):
+        return subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-agents'), command], cwd=self.path,
+                              env=self.env, capture_output=True, text=True, timeout=20)
+
+    def test_install_writes_both_configs_and_check_confirms_them(self):
+        self.assertEqual(self.agents('check').returncode, 1)
+        p = self.agents('install')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        shell = json.loads(self.claude.read_text())['env']['CLAUDE_CODE_SHELL']
+        self.assertEqual(subprocess.run([shell, '-c', '(( BASH_VERSINFO[0] >= 4 ))']).returncode, 0)
+        codex = self.codex.read_text()
+        self.assertIn('shell_snapshot = false', codex)
+        self.assertIn('AGENT_SHELL = "codex"', codex)
+        self.assertEqual(stat.S_IMODE(self.codex.stat().st_mode), 0o644)
+        self.assertEqual(self.agents('check').returncode, 0)
+
+    def test_check_reports_an_edited_config(self):
+        self.agents('install')
+        with self.codex.open('a') as f:
+            f.write('model = "edited"\n')
+        p = self.agents('check')
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('changed', p.stdout)
+
+    def test_a_config_it_did_not_write_is_left_alone(self):
+        self.codex.parent.mkdir(parents=True)
+        self.codex.write_text('model = "mine"\n')
+        for command in ('install', 'uninstall'):
+            with self.subTest(command=command):
+                p = self.agents(command)
+                self.assertEqual(p.returncode, 73)
+                self.assertEqual(self.codex.read_text(), 'model = "mine"\n')
+
+    def test_uninstall_removes_what_install_wrote(self):
+        self.agents('install')
+        p = self.agents('uninstall')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse(self.claude.exists())
+        self.assertFalse(self.codex.exists())
 
 
 class AgentMonitorFixture(Fixture):
