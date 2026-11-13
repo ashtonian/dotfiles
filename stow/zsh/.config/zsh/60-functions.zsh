@@ -78,3 +78,10 @@ fi
 if command -v fnm &>/dev/null; then
     eval "$(fnm env)"
 fi
+
+#=============================================================================
+# GITSTEAD (`gitstead cd <query>` + completion)
+#=============================================================================
+if command -v gitstead &>/dev/null; then
+    eval "$(gitstead shell-init zsh)"
+fi

@@ -256,12 +256,28 @@ sync_auxiliary_repos() {
 }
 sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
 
+# gh keeps its OAuth token in ~/.config/gh/hosts.yml. A folded package makes
+# ~/.config/gh a symlink into this public repo, which would put the token in
+# the working tree, so these packages are stowed file by file.
+NO_FOLDING_PACKAGES=(gh)
+
 run_stow() (
     command -v stow >/dev/null || { log "ERROR: Stow is not installed"; return 1; }
     cd "$DOTFILES_DIR/stow" || return
     local package result=0
+    local -a flags
     for package in */; do
-        run_logged stow -v -R -t "$HOME" "${package%/}" || result=1
+        package=${package%/}
+        if [[ $package == gh && -e gh/.config/gh/hosts.yml ]]; then
+            log "ERROR: stow/gh/.config/gh/hosts.yml holds a gh token inside the repo; see docs/OPERATIONS.md#shell-and-stow-troubleshooting"
+            result=1
+            continue
+        fi
+        flags=(-v -R -t "$HOME")
+        if [[ " ${NO_FOLDING_PACKAGES[*]} " == *" $package "* ]]; then
+            flags+=(--no-folding)
+        fi
+        run_logged stow "${flags[@]}" "$package" || result=1
     done
     return "$result"
 )

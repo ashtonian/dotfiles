@@ -50,7 +50,7 @@ recognize `/usr/local` Homebrew installations.
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
-Claude Code, gitten, and gateway credentials need separate setup when those
+Claude Code, gitstead, and gateway credentials need separate setup when those
 integrations are used. Configure signing and GitHub authentication as described
 under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sync.
 
@@ -227,12 +227,12 @@ See the [official OpenAI CLI reference](https://learn.chatgpt.com/docs/cli/refer
 for Codex flags. Use the underlying CLIs directly when bypassing permissions is
 not appropriate.
 
-### Agent workspaces and fleets (gitten)
+### Agent workspaces and fleets (gitstead)
 
-The `claudefleet` function forwards its arguments to `gitten fleet open fleet`.
-Install and configure [gitten](https://github.com/ashtonian/gitten) separately;
+The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`.
+Install and configure [gitstead](https://github.com/ashtonian/gitstead) separately;
 fleet definitions, agent profiles, and workspace paths live in the machine-local
-`~/.config/gitten/config.yaml` and are not supplied by this repository. Claude
+`~/.config/gitstead/config.yaml` and are not supplied by this repository. Claude
 launchers disable claude.ai connectors in `wg-*` tmux sessions.
 
 ### Coordinator (OpenCode)
@@ -318,7 +318,8 @@ This repo is designed to sync across multiple machines via LaunchAgent (every 4 
 
 5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
 
-Also run `gh auth login`, authenticate Git transport, and register the signing
+Also log in to gh with the scopes and storage in
+[Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing
 public key and its email with GitHub. The shared Git config contains this repo
 owner's personal identity; set intentional overrides for another user or work
 repository. The installer initializes Mackup without a remote or initial commit.

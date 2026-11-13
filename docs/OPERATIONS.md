@@ -71,6 +71,27 @@ match an email on the signing key that is verified on the GitHub account.
 For deliberate manual commits, use `git commit -S` and `git verify-commit HEAD`.
 After a GitHub push, inspect its Verified badge or API status too.
 
+Git uses gh for `github.com` and `gist.github.com` credentials through the
+helpers in `~/.gitconfig.local`, which the shared config includes last, so one gh
+login covers both. Copy them from `stow/git/.gitconfig.local.example` rather than
+running `gh auth setup-git`: it writes with `git config --global`, and
+`~/.gitconfig` links into this repository, so the helpers would land in the
+tracked shared config. Besides gh's defaults (`repo`, `read:org`, `gist`,
+`workflow`), this setup uses `project` for GitHub Projects, `write:gpg_key` for
+registering the signing key, and `admin:public_key` and `admin:ssh_signing_key`
+for the SSH key upload helper. Log in once with all of them:
+
+```sh
+gh auth login -h github.com --insecure-storage \
+  -s project,write:gpg_key,admin:public_key,admin:ssh_signing_key
+```
+
+`--insecure-storage` keeps the token in `~/.config/gh/hosts.yml` (mode 0600,
+outside this repo; `sync.sh` stows `gh` file by file) instead of the login
+keychain, which SSH sessions can't read while it is locked. To add a scope
+later, run `gh auth refresh -h github.com -s <scope>`, which keeps the existing
+ones. Running `gh auth login` again issues a token with only the defaults.
+
 ## LaunchAgents
 
 Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
@@ -292,6 +313,9 @@ HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
 | Plugin load error | Inspect `zinit list` and `zinit times`, then repair/update the named plugin or cache rather than deleting unrelated plugin data. |
 | Unexpected history key | Inspect `bindkey '^R'` after deferred plugins load. Atuin should own it when installed; otherwise FZF can own it. |
 | Missing Rust toolchain | Run `rustup default stable` after a fresh Rustup install. |
+| `stow/gh/.config/gh/hosts.yml holds a gh token inside the repo` | `~/.config/gh` was stowed as one symlink, so gh wrote its token into the repo. Make it a real directory and move the token out, then restow: `rm ~/.config/gh && mkdir -m 700 ~/.config/gh && mv ~/.dotfiles/stow/gh/.config/gh/hosts.yml ~/.config/gh/ && ~/.dotfiles/sync.sh stow`. Check `readlink ~/.config/gh` prints nothing and `gh auth status` still succeeds. |
+| `gh auth status`: "The token in default is invalid" over SSH | gh found no token. It is usually in the login keychain, which SSH sessions can't read while it is locked (`security show-keychain-info` fails with "User interaction is not allowed"), and git's `osxkeychain` helper reports `failed to store: -25308` for the same reason. Log in once with file storage as shown in [Git identity and signing](#git-identity-and-signing). |
+| A `gh` scope disappeared | `gh auth login` issues a new token with only the default scopes. Add scopes with `gh auth refresh -h github.com -s <scope>`, which keeps the existing ones; see [Git identity and signing](#git-identity-and-signing) for the set this setup uses. |
 
 Before publishing, run the [validation commands](../README.md#validation) and
 review `git diff`. Update configuration tables when defaults or interfaces change.
