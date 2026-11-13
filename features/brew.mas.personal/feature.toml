@@ -1,5 +1,5 @@
 id = "brew.mas.personal"
-description = "Personal Mac App Store applications: journal, notes, media, 2FA, home VPN"
+description = "Personal Mac App Store applications: journal, notes, news, tasks, 2FA, home VPN"
 category = "packages"
 platforms = ["darwin"]
 requires = ["brew.mas"]
@@ -9,8 +9,6 @@ mas = [
   { name = "1440", id = 1483764819 },
   { name = "Bear", id = 1091189122 },
   { name = "Day One", id = 1055511498 },
-  { name = "GarageBand", id = 682658836 },
-  { name = "iMovie", id = 408981434 },
   { name = "OhMyStar", id = 1218642292 },
   { name = "Raivo OTP", id = 1498497896 },
   { name = "Todoist", id = 585829637 },

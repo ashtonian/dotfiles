@@ -37,7 +37,6 @@ cask = [
   "provisionql",
   "qlmarkdown",
   "quicklook-video",
-  "ringcentral",
   "slack",
   "soundsource",
   "suspicious-package",
