@@ -21,7 +21,6 @@ vscode = [
   "erlang-ls.erlang-ls",
   "esbenp.prettier-vscode",
   "espresso3389.unixtime-converter",
-  "github.copilot-chat",
   "github.vscode-github-actions",
   "golang.go",
   "hashicorp.hcl",
