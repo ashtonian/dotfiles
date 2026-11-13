@@ -294,7 +294,11 @@ Reinstall the sync and update agents once
 (`~/.dotfiles/bin/dotfiles-install-launchagents.sh --sync-only`, then
 `--update-only`): an installed plist is a copy, and plists from before the
 rollout run `bash -l`, whose `path_helper` puts Apple's bash 3.2 and git ahead
-of Homebrew's.
+of Homebrew's. Where Go's caches are on an external volume (`go env GOCACHE`),
+the first run asks once whether `bash` may access files on a removable volume;
+allow it on the machine's screen (System Settings > Privacy & Security > Files
+and Folders lists it afterwards). Until someone answers, the job waits in its
+first Go command.
 
 Start with `git -C ~/.dotfiles status` and `logs/sync.log`. Do not delete Git
 state files, disable signing, or force-push to clear a failure.
@@ -314,6 +318,7 @@ state files, disable signing, or force-push to clear a failure.
 | Excluded tracked changes remain | Review tracked `*.local`, `.env*` or `*.secret*` paths in any directory. Sync skips merge/push while excluded tracked changes remain. |
 | Sync leaves a repository alone | The log says why: a Git index lock (another Git command is running, or one crashed and left `.git/index.lock`; check `ps` before removing it), or a tracked edit newer than `SYNC_QUIET_MINUTES`. The next run picks it up. |
 | `No network connectivity (... did not answer within ...s), skipping sync` | The HEAD request to `SYNC_CONNECTIVITY_URL` failed. Check `curl -sfI https://github.com` from a terminal; if it answers only slowly, raise `SYNC_CONNECTIVITY_TIMEOUT` in the installed plist. The next run retries. |
+| Sync never finishes; `ps` shows a Go command at 0% CPU under it | macOS is waiting for an answer to "bash would like to access files on a removable volume" because Go's caches are on an external drive. Answer it on the machine's screen, or allow `bash` under System Settings > Privacy & Security > Files and Folders. `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' | grep AUTHREQ_PROMPTING` names the waiting binary. |
 | New files are not published | By design: sync stages tracked files only (`git add -u`). Commit new files yourself. |
 | `installs machine features and this machine has no .../machine.toml` | Upstream uses the feature engine and this machine has no manifest, so sync neither merges nor pushes (merging would leave the old stow links pointing at moved files). Write `~/.config/dotfiles/machine.toml` with this machine's profiles from the list in the message, such as `profiles = ["base", "dev", "desktop"]`, then run `sync.sh`: the same run merges and applies. |
 | `installs machine features and Go is not installed to build its engine` | Sync builds the upstream engine before merging it and found no `go` on its PATH, so it neither merges nor pushes. Install Go (`brew install go`; the LaunchAgent's PATH includes `/opt/homebrew/bin`), then run `sync.sh`. |

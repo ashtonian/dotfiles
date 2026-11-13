@@ -253,13 +253,28 @@ show_help() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
+# note_volume_grant: the sync and update jobs run /bin/bash, so one Removable
+# Volumes grant to it covers Go caches on an external drive.
+note_volume_grant() {
+    local cache
+    cache=$(go env GOCACHE 2>/dev/null) || return 0
+    if [[ "$cache" == /Volumes/* ]]; then
+        log_info "One-time: allow bash to access files on a removable volume when macOS asks (Go's caches are on $(cut -d/ -f1-3 <<<"$cache"))"
+    fi
+}
+
+install_sync_agents() {
+    install_agent "com.dotfiles.sync"
+    install_agent "com.dotfiles.update"
+    note_volume_grant
+}
+
 install_all() {
     echo ""
     echo "=== Installing Dotfiles LaunchAgents ==="
     echo ""
 
-    install_agent "com.dotfiles.sync"
-    install_agent "com.dotfiles.update"
+    install_sync_agents
     install_codex_agent
     install_opencode_agent
     install_agent_monitor_agent
@@ -308,9 +323,11 @@ main() {
     case "${1:-}" in
         --sync-only)
             install_agent "com.dotfiles.sync"
+            note_volume_grant
             ;;
         --update-only)
             install_agent "com.dotfiles.update"
+            note_volume_grant
             ;;
         --codex-only)
             install_codex_agent
