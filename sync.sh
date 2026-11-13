@@ -11,6 +11,10 @@ MAX_LOG_SIZE=1048576
 # A repository with a tracked change newer than this is being edited; sync
 # leaves it for a later run instead of committing half-finished work.
 SYNC_QUIET_MINUTES="${SYNC_QUIET_MINUTES:-30}"
+# Reachability check before any network step: a HEAD request, so a slow page
+# body (github.com's is about 500 KB) never reads as no network.
+SYNC_CONNECTIVITY_URL="${SYNC_CONNECTIVITY_URL:-https://github.com}"
+SYNC_CONNECTIVITY_TIMEOUT="${SYNC_CONNECTIVITY_TIMEOUT:-15}"
 # The feature engine (cmd/dotfiles): this machine's manifest, the binary sync
 # builds from the checkout, and where apply writes the generated Brewfile.
 MACHINE_FILE="$HOME/.config/dotfiles/machine.toml"
@@ -53,8 +57,8 @@ rotate_logs() {
 }
 
 check_connectivity() {
-    if ! curl -sf -m 5 https://github.com >/dev/null 2>&1; then
-        log "WARN: No network connectivity, skipping sync"
+    if ! curl -sfI -o /dev/null --connect-timeout 5 -m "$SYNC_CONNECTIVITY_TIMEOUT" "$SYNC_CONNECTIVITY_URL" 2>/dev/null; then
+        log "WARN: No network connectivity ($SYNC_CONNECTIVITY_URL did not answer within ${SYNC_CONNECTIVITY_TIMEOUT}s), skipping sync"
         return 1
     fi
 }
