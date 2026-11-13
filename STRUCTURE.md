@@ -12,6 +12,15 @@ This file maps the checked-in implementation.
 ├── install.sh               # Bootstrap; default checkout and backup locations
 ├── config.sh                # Optional system/app preferences
 ├── sync.sh                  # Packages, backups, signed Git publication
+├── go.mod                   # The feature engine's Go module
+├── cmd/dotfiles/            # Engine command: apply, doctor, status, check, adopt
+├── internal/manifest/       # Feature, profile and machine manifests; strict parsing and validation
+├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
+├── internal/plan/           # Links, managed copies, generated outputs and stubs to install
+├── internal/apply/          # Converge on a plan; adopt, state, teardown, locking
+├── features/                # One directory per feature (filled by the migration step)
+├── profiles/                # Named feature sets (filled by the migration step)
+├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
 ├── bin/                     # Executable entry points
 ├── launchagents/            # Templates copied to ~/Library/LaunchAgents
 ├── lib_sh/                  # Libraries sourced by Zsh or config.sh

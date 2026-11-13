@@ -157,6 +157,11 @@ script  = ""                  # prints one JSON object: {"state": "ok|drift|miss
 timeout = "2s"
 ```
 
+The engine (`cmd/dotfiles`, rollout step 4) parses manifests strictly: an
+unknown key is an error, so a feature never silently does less than it says.
+`winget`, `pwsh` and `schedules`, and the `[hooks]` and `[check]` tables, arrive
+with rollout steps 6 and 7; until then the engine rejects them.
+
 Generic checks cover every `provides` type, so most features need no check
 script: packages are installed, links point at the repo, managed copies match
 their manifest hash, a scheduled job is registered and its last exit was 0, a
@@ -877,6 +882,7 @@ and its status. Decided entries record who decided.
 | D16 | Brave uses its hosted MV2 uBlock Origin; enabling it is a manual per-profile toggle listed on the status page | owner |
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
 | D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zshenv.zsh` hands a marked `zsh -lc` command to Homebrew bash; `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
+| D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
 
 ### Open
 
@@ -901,13 +907,6 @@ Recommendation: stubs. Status: open.
 or contradict current sources.
 Recommendation: delete; the generated feature catalog replaces them.
 Status: open.
-
-**D6. Language for the feature engine?**
-Options: Go (typed manifests, dependency resolution, concurrent checks,
-`html/template`, table-driven tests, no runtime dependencies); bash plus
-Python's standard library (no build step; macOS's Python 3.9 has no TOML
-parser, so manifests would be JSON).
-Recommendation: Go. Status: open.
 
 **D9. Encrypt the Mackup store at rest?**
 Preference plists can contain license keys and session tokens that gitleaks

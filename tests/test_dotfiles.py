@@ -10,7 +10,6 @@ import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
-LIVE = Path.home() / '.dotfiles'
 
 
 def cached_eval_helper():
@@ -299,7 +298,7 @@ class Sync(Fixture):
         self.assertIn('lock is available', q.stdout)
 
     def test_real_git_operation_states_are_not_staged_or_committed(self):
-        subprocess.run(['git', 'clone', '--shared', '--quiet', str(LIVE), str(self.path / 'repo')], check=True)
+        subprocess.run(['git', 'clone', '--shared', '--quiet', str(ROOT), str(self.path / 'repo')], check=True)
         repo = self.path / 'repo'
         original_index = (repo / '.git/index').read_bytes()
         for state in ('MERGE_HEAD', 'rebase-merge', 'CHERRY_PICK_HEAD', 'BISECT_LOG'):
