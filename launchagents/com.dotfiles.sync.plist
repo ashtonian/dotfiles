@@ -50,10 +50,15 @@ MANUAL COMMANDS:
     <key>Label</key>
     <string>com.dotfiles.sync</string>
 
-    <!-- Run directly: a login shell would run path_helper, which moves
-         /usr/bin ahead of Homebrew and gives the job bash 3.2 and Apple git. -->
+    <!-- /bin/bash without -l: a login shell would run path_helper, which moves
+         /usr/bin ahead of Homebrew; without it the PATH below stands, so git
+         and the other tools are Homebrew's. /bin/bash itself is the job's
+         macOS privacy identity: Go's caches on an external volume need a
+         one-time Removable Volumes grant, which macOS ties to the binary, and
+         Homebrew's bash changes path with every upgrade. -->
     <key>ProgramArguments</key>
     <array>
+        <string>/bin/bash</string>
         <string>$HOME/.dotfiles/sync.sh</string>
         <string>sync</string>
     </array>
