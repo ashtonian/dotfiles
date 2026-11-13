@@ -290,7 +290,7 @@ Initial catalog, grouped by category. Each row is one toggle.
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
 | tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.aws-profile`, `tool.gpg-signing` |
-| security | `security.listeners-loopback` (opencode, agent-monitor gate bind to loopback or the Tailscale address) |
+| security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
 
 ## Mackup
 
@@ -860,6 +860,7 @@ and its status. Decided entries record who decided.
 |---|---|---|
 | D0.1 | Every capability is a per-machine toggle with fine granularity (each Oh My Zsh plugin, each extension, each scheduled step) | owner |
 | D0.2 | Updates and sync run automatically on every machine; a local status page shows feature and automation health | owner |
+| D4 | No Tailscale. opencode listens on loopback only (`OPENCODE_HOSTNAME` opts in to another address); the agent-monitor gate stays the opt-in LAN listener for the cluster proxy, token-checked, with its address set by `AGENT_MONITOR_GATE_HOST` | owner |
 | D7 | Mackup runs only in copy mode through the engine; link mode is never used, backup never modifies an original, and restore is per app with snapshot and rollback | owner |
 | D8 | Mackup's store is a private git repository with one directory per machine | owner |
 | D10 | Mackup backs up every app it supports wherever the app's files exist; profiles turn off apps a role does not use, and credential files are removed by generated overrides | owner |
@@ -901,11 +902,6 @@ Options: system config (`shell_snapshot = false`, `AGENT_SHELL`) plus a
 hand-off back to zsh. Trade-off: `chsh` changes `$SHELL` for tmux, ssh and
 editors, and breaks logins if Homebrew bash disappears.
 Recommendation: system config plus hand-off. Status: open.
-
-**D4. Where do network services listen?**
-opencode and the agent-monitor gate serve plain HTTP.
-Options: loopback plus the Tailscale address; LAN with TLS in front.
-Recommendation: loopback plus Tailscale. Status: open.
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,

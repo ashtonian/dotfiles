@@ -17,23 +17,46 @@
 # raises a prompt that, unanswered, stalls other apps' access checks behind it
 # (OrbStack sat nine hours on one). The copy here keeps one path, and releases
 # signed by the same Developer ID keep matching the one grant.
+#
+# EXIT STATUS: 69 (EX_UNAVAILABLE) when <tool> is not a Homebrew release.
 set -euo pipefail
+zmodload zsh/system
 
 tool=${1:?usage: stable-exec <tool> <args...>}
 shift
+prefix=${${HOMEBREW_PREFIX:-/opt/homebrew}:A} # resolved, to compare with the resolved release
+link=$prefix/bin/$tool
 stable=$HOME/.local/libexec/$tool-stable
-src=${${:-/opt/homebrew/bin/$tool}:A:h:h} # the versioned Cellar or Caskroom release
 
+if [[ ! -x $link ]]; then
+	print -u2 "stable-exec: $link is missing; install $tool with Homebrew"
+	exit 69
+fi
+src=${link:A:h:h} # the versioned Cellar or Caskroom release
+# Anything else (a missing link resolves to the prefix itself) would clone the
+# whole Homebrew tree.
+if [[ $src != $prefix/(Cellar|Caskroom)/*/* || ! -x $src/bin/$tool ]]; then
+	print -u2 "stable-exec: $link resolves to $src, which is not a Homebrew release of $tool"
+	exit 69
+fi
+
+mkdir -p ${stable:h}
+# One swap at a time: KeepAlive restarts and manual runs can overlap. zsystem
+# flock opens the file without creating it.
+: >> $stable.lock
+zsystem flock -t 60 -f lock_fd $stable.lock
 if [[ ! -x $stable/bin/$tool ]] || ! cmp -s $src/bin/$tool $stable/bin/$tool; then
 	tmp=$stable.new.$$
-	rm -rf $tmp
-	mkdir -p ${stable:h}
+	trap 'rm -rf -- $tmp' EXIT
+	rm -rf -- $tmp
 	cp -Rc $src $tmp # an APFS clone: same volume, no data copied
 	codesign --verify --strict $tmp/bin/$tool
-	rm -rf $stable.old
+	rm -rf -- $stable.old
 	[[ -e $stable ]] && mv $stable $stable.old
 	mv $tmp $stable
-	rm -rf $stable.old
+	rm -rf -- $stable.old
+	trap - EXIT
 fi
+zsystem flock -u $lock_fd
 
 exec $stable/bin/$tool "$@"

@@ -4,7 +4,9 @@ from pathlib import Path
 import shutil
 import stat
 import subprocess
+import sys
 import tempfile
+import time
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -166,6 +168,17 @@ class Helpers(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('publisher.extension', (self.path / 'vscode_extensions_list.md').read_text())
 
+    def test_terraform_rebuild_needs_a_whole_yes(self):
+        audit = self.path / 'tf-audit'
+        self.env['DOTFILES_TEST_AUDIT'] = str(audit)
+        self.cli('terraform', 'printf "%s\\n" "$1" >> "$DOTFILES_TEST_AUDIT"')
+        for answer, calls in (('not yet', []), ('no', []), ('yes', ['destroy', 'apply']), ('Y', ['destroy', 'apply'])):
+            with self.subTest(answer=answer):
+                audit.unlink(missing_ok=True)
+                p = self.zsh('tf_destroy_apply', input=answer + '\n')
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertEqual(audit.read_text().split() if audit.exists() else [], calls)
+
     def test_brewfile_selection_and_invalid_inputs(self):
         (self.path / 'Brewfile-one').write_text('brew "one"\n')
         (self.path / 'Brewfile-two').write_text('brew "two"\n')
@@ -242,17 +255,18 @@ class Helpers(Fixture):
         self.assertIn('identitiesonly no', p.stdout)
         self.assertNotIn('controlpath /', p.stdout)
 
-    def test_bootstrap_uses_no_invented_identity_or_initial_commit(self):
-        for name in ('dracula-iterm', 'colorls', 'alfred-dracula', 'mackup'):
+    def test_bootstrap_creates_no_commit_identity_or_backup_repository(self):
+        for name in ('dracula-iterm', 'colorls', 'alfred-dracula'):
             (self.path / 'sync' / name).mkdir(parents=True)
         self.cli('git', 'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
         audit = self.path / 'git-audit'
         self.env['DOTFILES_TEST_AUDIT'] = str(audit)
         p = self.bash('SYNC_DIR="$1"; setup_sync_dir', str(self.path / 'sync'), source='install.sh')
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn('init', audit.read_text())
-        self.assertNotIn('commit', audit.read_text())
-        self.assertNotIn('user.email', audit.read_text())
+        calls = audit.read_text() if audit.exists() else ''
+        for forbidden in ('init', 'commit', 'user.email'):
+            self.assertNotIn(forbidden, calls)
+        self.assertFalse((self.path / 'sync' / 'mackup').exists())
 
 
 class Sync(Fixture):
@@ -300,31 +314,23 @@ class Sync(Fixture):
         self.assertIn('install --no-upgrade', audit.read_text())
         self.assertIn('AUTO_UPDATE=1', audit.read_text())
 
-    def test_mackup_uses_temporary_config_and_preserves_symlink(self):
-        config = self.path / 'mackup-source.cfg'
-        original = '[storage]\nengine = file_system\npath = .sync\ndirectory = shared\n'
-        config.write_text(original)
-        linked = self.path / 'mackup.cfg'
-        linked.symlink_to(config)
+    def test_sync_never_runs_mackup(self):
         audit = self.path / 'mackup-audit'
-        self.env.update(MACKUP_CONFIG_FILE=str(linked), DOTFILES_TEST_AUDIT=str(audit))
-        file = self.bin / 'mackup'
-        file.write_text('''#!/usr/bin/env python3
-import configparser, json, os, pathlib, sys
-config_file = sys.argv[1].split('=', 1)[1]
-config = configparser.ConfigParser()
-config.read(config_file)
-pathlib.Path(os.environ['DOTFILES_TEST_AUDIT']).write_text(json.dumps({'file':config_file,'storage':dict(config['storage'])}))
-''')
-        file.chmod(0o755)
-        p = self.bash('stable_host() { echo FixtureHost; }; run_mackup_backup')
-        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
-        data = json.loads(audit.read_text())
-        self.assertEqual(data['storage']['path'], self.env['SYNC_DIR'])
-        self.assertEqual(data['storage']['directory'], 'mackup/FixtureHost')
-        self.assertFalse(Path(data['file']).exists())
-        self.assertTrue(linked.is_symlink())
-        self.assertEqual(config.read_text(), original)
+        home = self.path / 'home'
+        home.mkdir()
+        self.env.update(HOME=str(home), DOTFILES_TEST_AUDIT=str(audit))
+        self.cli('mackup', 'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
+        self.cli('curl', 'exit 0')
+        self.cli('brew', 'exit 0')
+        for command in ('sync', 'all'):
+            subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), command], cwd=self.path, env=self.env,
+                           capture_output=True, text=True, timeout=60)
+        self.assertFalse(audit.exists())
+        p = subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), 'mackup'], cwd=self.path, env=self.env,
+                           capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('Usage', p.stdout)
+        self.assertNotIn('mackup', p.stdout)
 
     def mock_sync(self, failure=''):
         self.env['DOTFILES_TEST_FAILURE'] = failure
@@ -367,6 +373,8 @@ pathlib.Path(os.environ['DOTFILES_TEST_AUDIT']).write_text(json.dumps({'file':co
         p = self.mock_sync()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         audit = (self.path / 'git-audit').read_text()
+        self.assertIn('git add -u -- . ', audit)
+        self.assertNotIn('git add -A', audit)
         self.assertIn('git commit -S ', audit)
         self.assertIn('git verify-commit ', audit)
         self.assertIn('git merge --no-edit --gpg-sign', audit)
@@ -378,6 +386,246 @@ pathlib.Path(os.environ['DOTFILES_TEST_AUDIT']).write_text(json.dumps({'file':co
         self.assertNotEqual(p.returncode, 0)
         self.assertIn('bad_email', p.stdout)
         self.assertIn('user.email', p.stdout)
+
+
+def age(path, minutes=120):
+    then = time.time() - minutes * 60
+    os.utime(path, (then, then))
+
+
+class SyncGit(Fixture):
+    """sync_git_repo against a real repository signed with a throwaway SSH key."""
+
+    def setUp(self):
+        super().setUp()
+        (self.path / 'logs').mkdir()
+        home = self.path / 'home'
+        home.mkdir()
+        self.env.update(HOME=str(home), GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+        self.env.pop('SYNC_QUIET_MINUTES', None)
+        key = self.path / 'signing'
+        subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', 'fixture', '-f', str(key)],
+                       check=True, env=self.env)
+        signers = self.path / 'allowed_signers'
+        signers.write_text('fixture@example.com ' + (self.path / 'signing.pub').read_text())
+        self.repo = self.path / 'repo'
+        subprocess.run(['git', 'init', '-q', '-b', 'master', str(self.repo)], check=True, env=self.env)
+        for name, value in {'user.name': 'Fixture', 'user.email': 'fixture@example.com',
+                            'user.signingkey': str(key), 'gpg.format': 'ssh', 'gpg.program': '/usr/bin/true',
+                            'gpg.ssh.allowedSignersFile': str(signers), 'commit.gpgsign': 'true'}.items():
+            self.git('config', name, value)
+        (self.repo / 'sub').mkdir()
+        for name in ('tracked', 'sub/app.local'):
+            (self.repo / name).write_text('one\n')
+        self.git('add', 'tracked', 'sub/app.local')
+        self.git('commit', '-q', '-m', 'initial')
+
+    def git(self, *args):
+        return subprocess.run(['git', '-C', str(self.repo), *args], env=self.env, check=True,
+                              capture_output=True, text=True).stdout
+
+    def edit(self, name, minutes_ago=120):
+        (self.repo / name).write_text('two\n')
+        if minutes_ago:
+            age(self.repo / name, minutes_ago)
+
+    def sync(self):
+        return self.bash('sync_git_repo "$1"', str(self.repo))
+
+    def test_publishes_tracked_edits_and_never_new_files(self):
+        self.edit('tracked')
+        self.edit('sub/app.local')
+        (self.repo / 'new-file').write_text('dropped here by a tool\n')
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(self.git('log', '-1', '--format=%s').startswith('auto: sync'))
+        self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(), ['tracked'])
+        self.assertIn('?? new-file', self.git('status', '--porcelain'))
+        self.assertIn('1 untracked file', p.stdout)
+
+    def test_recent_edit_is_left_for_a_later_run(self):
+        self.edit('tracked', minutes_ago=0)
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('changed in the last 30 minutes', p.stdout)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
+
+    def test_index_lock_is_left_for_a_later_run(self):
+        self.edit('tracked')
+        (self.repo / '.git/index.lock').write_text('')
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('index lock', p.stdout)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
+
+
+@unittest.skipUnless(shutil.which('stow'), 'GNU Stow required')
+class Stow(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        (self.home / '.config').mkdir(parents=True)
+        self.repo = self.path / 'repo'
+        self.env.update(HOME=str(self.home), DOTFILES_DIR=str(self.repo),
+                        GIT_CONFIG_GLOBAL=os.devnull, GIT_CONFIG_NOSYSTEM='1')
+        self.env.pop('XDG_STATE_HOME', None)
+        files = {'.gitignore': 'logs/\nstow/gh/.config/gh/hosts.yml\nstow/zsh/.zcompdump\n',
+                 'stow/gh/.config/gh/config.yml': 'git_protocol: ssh\n',
+                 'stow/zsh/.zshrc': '# fixture\n'}
+        for name, text in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text(text)
+        (self.repo / 'logs').mkdir()
+        git = ['git', '-C', str(self.repo)]
+        subprocess.run(['git', 'init', '-q', str(self.repo)], check=True, env=self.env)
+        subprocess.run([*git, 'add', '-A'], check=True, env=self.env)
+        subprocess.run([*git, '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com',
+                        '-c', 'commit.gpgsign=false', 'commit', '-q', '-m', 'initial'], check=True, env=self.env)
+
+    def legacy_stow(self, *packages):
+        # Stow's default folding: ~/.config/gh becomes one link into the repository.
+        subprocess.run(['stow', '-d', str(self.repo / 'stow'), '-t', str(self.home), *packages],
+                       check=True, env=self.env, capture_output=True)
+
+    def run_stow(self):
+        return self.bash('run_stow')
+
+    def test_unfolds_links_and_moves_tool_files_out_of_the_repository(self):
+        self.legacy_stow('gh', 'zsh')
+        self.assertTrue((self.home / '.config/gh').is_symlink())
+        (self.home / '.config/gh/hosts.yml').write_text('oauth_token: fixture\n')
+        self.assertTrue((self.repo / 'stow/gh/.config/gh/hosts.yml').exists())
+        (self.repo / 'stow/zsh/.zsh_pending').write_text('# not committed yet\n')
+
+        p = self.run_stow()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        gh = self.home / '.config/gh'
+        self.assertFalse(gh.is_symlink())
+        self.assertTrue((gh / 'config.yml').is_symlink())
+        self.assertEqual((gh / 'config.yml').resolve(), (self.repo / 'stow/gh/.config/gh/config.yml').resolve())
+        self.assertFalse((gh / 'hosts.yml').is_symlink())
+        self.assertEqual((gh / 'hosts.yml').read_text(), 'oauth_token: fixture\n')
+        self.assertFalse((self.repo / 'stow/gh/.config/gh/hosts.yml').exists())
+        self.assertTrue((self.home / '.zsh_pending').is_symlink())
+        self.assertTrue((self.repo / 'stow/zsh/.zsh_pending').exists())
+        self.assertIn('Untracked files in stow packages', p.stdout)
+        self.assertEqual(stat.S_IMODE((self.home / '.ssh').stat().st_mode), 0o700)
+
+        again = self.run_stow()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertNotIn('Moved machine-local', again.stdout)
+        self.assertEqual((gh / 'hosts.yml').read_text(), 'oauth_token: fixture\n')
+
+    def test_conflict_leaves_the_package_and_its_files_as_they_were(self):
+        (self.home / '.zshrc').write_text('# mine\n')
+        (self.repo / 'stow/zsh/.zcompdump').write_text('cache\n')
+        p = self.run_stow()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse((self.home / '.zshrc').is_symlink())
+        self.assertEqual((self.home / '.zshrc').read_text(), '# mine\n')
+        self.assertEqual((self.repo / 'stow/zsh/.zcompdump').read_text(), 'cache\n')
+        self.assertTrue((self.home / '.config/gh/config.yml').is_symlink())
+
+
+class Install(Fixture):
+    def test_piped_install_runs_and_links_through_sync(self):
+        home = self.path / 'home'
+        dotfiles = home / '.dotfiles'
+        (dotfiles / '.git').mkdir(parents=True)
+        for theme in ('dracula-iterm', 'colorls', 'alfred-dracula'):
+            (home / '.sync' / theme).mkdir(parents=True)
+        audit = self.path / 'audit'
+        sync = dotfiles / 'sync.sh'
+        sync.write_text('#!/bin/sh\nprintf "sync.sh %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\n')
+        sync.chmod(0o755)
+        for tool in ('sudo', 'xcode-select', 'brew', 'git', 'stow'):
+            self.cli(tool, f'printf "{tool} %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
+        env = dict(self.env, HOME=str(home), DOTFILES_TEST_AUDIT=str(audit))
+        # Piped like `curl ... | bash`, with no terminal for the prompts.
+        p = subprocess.run(['/bin/bash'], input=(ROOT / 'install.sh').read_text(), cwd=self.path, env=env,
+                           capture_output=True, text=True, timeout=60, start_new_session=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('Installation complete', p.stdout)
+        self.assertIn('sync.sh stow', audit.read_text())
+        self.assertNotIn('mackup restore', p.stdout)
+
+
+@unittest.skipUnless(sys.platform == 'darwin', 'APFS clones and codesign are macOS-only')
+class StableExec(Fixture):
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.home.mkdir()
+        self.prefix = self.path / 'homebrew'
+        (self.prefix / 'bin').mkdir(parents=True)
+        self.env.update(HOME=str(self.home), HOMEBREW_PREFIX=str(self.prefix))
+        self.cli('codesign', 'exit "${DOTFILES_TEST_CODESIGN:-0}"')
+        self.libexec = self.home / '.local/libexec'
+
+    def executable(self, path):
+        path.parent.mkdir(parents=True)
+        path.write_text('#!/bin/sh\necho "ran $*"\n')
+        path.chmod(0o755)
+
+    def release(self):
+        self.executable(self.prefix / 'Cellar/fixture/1.0/bin/fixture')
+        (self.prefix / 'bin/fixture').symlink_to('../Cellar/fixture/1.0/bin/fixture')
+
+    def run_stable(self, *args):
+        return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/stable-exec'), *args], cwd=self.path,
+                              env=self.env, capture_output=True, text=True, timeout=20)
+
+    def test_missing_tool_is_unavailable_and_copies_nothing(self):
+        p = self.run_stable('fixture')
+        self.assertEqual(p.returncode, 69, p.stderr)
+        self.assertFalse(self.libexec.exists())
+
+    def test_link_outside_a_release_is_refused(self):
+        self.executable(self.prefix / 'opt/fixture/bin/fixture')
+        (self.prefix / 'bin/fixture').symlink_to(self.prefix / 'opt/fixture/bin/fixture')
+        p = self.run_stable('fixture')
+        self.assertEqual(p.returncode, 69, p.stderr)
+        self.assertFalse(self.libexec.exists())
+
+    def test_release_runs_from_the_stable_copy(self):
+        self.release()
+        p = self.run_stable('fixture', 'a', 'b')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), 'ran a b')
+        self.assertTrue((self.libexec / 'fixture-stable/bin/fixture').exists())
+
+    def test_failed_signature_check_leaves_no_partial_copy(self):
+        self.release()
+        self.env['DOTFILES_TEST_CODESIGN'] = '1'
+        p = self.run_stable('fixture')
+        self.assertNotEqual(p.returncode, 0)
+        self.assertFalse((self.libexec / 'fixture-stable').exists())
+        self.assertEqual([c.name for c in self.libexec.iterdir() if '.new.' in c.name], [])
+
+
+class OpencodeServer(Fixture):
+    def run_server(self, **overrides):
+        home = self.path / 'home'
+        password = home / '.local/share/opencode/homelab/server-password'
+        password.parent.mkdir(parents=True, exist_ok=True)
+        password.write_text('fixture')
+        bin_dir = self.path / 'server-bin'
+        bin_dir.mkdir(exist_ok=True)
+        shutil.copy(ROOT / 'bin/opencode-server', bin_dir)
+        (bin_dir / 'stable-exec').write_text('#!/bin/sh\nprintf "%s\\n" "$@"\n')
+        (bin_dir / 'stable-exec').chmod(0o755)
+        env = dict(self.env, HOME=str(home))
+        env.pop('OPENCODE_HOSTNAME', None)
+        env.update(overrides)
+        p = subprocess.run(['/bin/zsh', '-f', str(bin_dir / 'opencode-server')], cwd=self.path, env=env,
+                           capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        args = p.stdout.split()
+        return args[args.index('--hostname') + 1]
+
+    def test_listens_on_loopback_unless_told_otherwise(self):
+        self.assertEqual(self.run_server(), '127.0.0.1')
+        self.assertEqual(self.run_server(OPENCODE_HOSTNAME='192.0.2.10'), '192.0.2.10')
 
 
 MOCK_GIT = r'''
@@ -598,6 +846,21 @@ class AgentMonitor(AgentMonitorFixture):
         p = self.run_monitor('serve')
         self.assertEqual(p.returncode, 78)
         self.assertIn('run agent-monitor install', p.stderr)
+
+    def test_gate_listens_on_the_configured_address(self):
+        self.install_node('#!/bin/sh\nprintf "%s\\n" "host=$GATE_LISTEN_HOST" "port=$GATE_PORT"\n')
+        token = self.monitor / 'config/gate-token'
+        token.parent.mkdir(parents=True)
+        token.write_text('x' * 64)
+        self.env.pop('AGENT_MONITOR_GATE_HOST', None)
+        for override, host in ((None, '0.0.0.0'), ('192.0.2.10', '192.0.2.10')):
+            with self.subTest(host=host):
+                if override:
+                    self.env['AGENT_MONITOR_GATE_HOST'] = override
+                p = self.run_monitor('gate')
+                self.assertEqual(p.returncode, 0, p.stderr)
+                lines = dict(line.split('=', 1) for line in p.stdout.splitlines())
+                self.assertEqual(lines, {'host': host, 'port': '4821'})
 
     def test_unknown_command_is_a_usage_error(self):
         p = self.run_monitor('bogus')

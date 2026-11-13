@@ -7,9 +7,11 @@
 #   opencode-server                  (run by the com.ashtonian.opencode LaunchAgent)
 #
 # Serves the OpenCode API and web UI on $OPENCODE_HOSTNAME:$OPENCODE_PORT
-# (default 0.0.0.0:4096) behind HTTP basic auth: user `opencode`, password from
+# (default 127.0.0.1:4096) behind HTTP basic auth: user `opencode`, password from
 # ~/.local/share/opencode/homelab/server-password. That directory sits outside
 # this public repo and also holds the LLM gateway URL and key opencode.jsonc reads.
+# The server speaks plain HTTP, so any other address sends that password in the
+# clear; set OPENCODE_HOSTNAME only for a network you trust.
 #
 # ONE-TIME SETUP: see stow/opencode/README.md.
 set -euo pipefail
@@ -22,5 +24,5 @@ fi
 export OPENCODE_SERVER_PASSWORD=$(<$password_file)
 
 exec ${0:A:h}/stable-exec opencode serve \
-	--hostname ${OPENCODE_HOSTNAME:-0.0.0.0} \
+	--hostname ${OPENCODE_HOSTNAME:-127.0.0.1} \
 	--port ${OPENCODE_PORT:-4096}

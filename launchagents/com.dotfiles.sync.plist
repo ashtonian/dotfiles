@@ -11,8 +11,8 @@ DESCRIPTION:
 
 WHAT IT DOES:
     1. Checks for network connectivity
-    2. Installs missing packages and backs up host app settings
-    3. Signs local commits and merges; scans outgoing dotfiles for secrets
+    2. Installs missing packages
+    3. Signs commits of tracked files and merges; scans outgoing dotfiles for secrets
     4. Verifies outgoing signatures, pushes, and checks GitHub verification
 
 FREQUENCY:
@@ -50,13 +50,12 @@ MANUAL COMMANDS:
     <key>Label</key>
     <string>com.dotfiles.sync</string>
 
-    <!-- Command to run -->
+    <!-- Run directly: a login shell would run path_helper, which moves
+         /usr/bin ahead of Homebrew and gives the job bash 3.2 and Apple git. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
-        <string>-l</string>
-        <string>-c</string>
-        <string>$HOME/.dotfiles/sync.sh sync</string>
+        <string>$HOME/.dotfiles/sync.sh</string>
+        <string>sync</string>
     </array>
 
     <!-- Run every 4 hours (14400 seconds) -->
@@ -78,7 +77,7 @@ MANUAL COMMANDS:
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
         <key>HOME</key>
         <string>$HOME</string>
         <key>DOTFILES_DIR</key>

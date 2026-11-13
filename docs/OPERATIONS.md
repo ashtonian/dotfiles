@@ -9,8 +9,9 @@ relocate the installer or rewrite LaunchAgent templates.
 | Variable | Type | Default | Scope / effect |
 | ---------- | ------ | --------- | ---------------- |
 | `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer; sync resolves the physical path |
-| `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos and app backups |
-| `MACKUP_CONFIG_FILE` | File path | `~/.mackup.cfg` | Base config for the temporary host-specific backup configuration |
+| `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
+| `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_CONFIG_HOME` | Directory path | `~/.config` | Zsh module directory; Stow still targets the default home layout |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup |
@@ -195,87 +196,28 @@ and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
 
 ## App backups
 
-Mackup's shared config uses filesystem storage at `~/.sync/mackup`. Sync gives
-Mackup a temporary config with the selected `SYNC_DIR` and
-`mackup/<LocalHostName>` directory, runs `backup --force`, and deletes the temp
-config. The stowed config and original app files remain in place.
+Sync does not run Mackup. The shared `.mackup.cfg` selects every detected app
+except an ignore list, which would copy credential files such as
+`.codex/auth.json`, `.kube/config` and `.npmrc` into the backup repository.
+Automatic backups return behind the guards in
+[the Mackup design](MACHINE-FEATURES.md#mackup).
 
-All supported, detected apps are included except those listed in
-`[applications_to_ignore]`. App preferences can contain tokens even when the
-files are not called credentials. Review exclusions and backed-up contents.
+Existing backups in `~/.sync/mackup` stay where they are, and sync still
+publishes that repository like any other repository under `SYNC_DIR`.
 
-### Configure a private backup remote
+Do not run Mackup by hand in a way that changes original files:
 
-The installer initializes `~/.sync/mackup` without a commit, invented identity,
-or remote. Local backup works before remote sync is configured.
+| Command | Why not |
+| ------- | ------- |
+| `mackup link install`, `mackup link`, `mackup link uninstall` | Moves files into the store and leaves symlinks behind; current macOS apps refuse to read or save symlinked preferences, so settings reset |
+| `mackup restore` without an app name | Restores every app at once; each restore deletes the original before copying, so a copy that fails partway (macOS often refuses access to app containers) loses the original |
+| `mackup backup` on Mackup older than 0.9.0 | Older versions run link mode for `backup`; check `mackup --version` |
 
-For an existing backup, clone its private repository into `~/.sync/mackup` before
-running the installer. For a new backup, create an empty private remote and
-complete signing setup first. Then substitute its actual URL below:
-
-```sh
-git -C ~/.sync/mackup remote add origin 'PRIVATE_BACKUP_REPOSITORY_URL'
-~/.dotfiles/sync.sh mackup
-git -C ~/.sync/mackup status --short
-```
-
-Review contents and exclusions, then commit any pending changes. A loaded sync
-job may already have made a signed local commit; skip the commit step when the
-working tree is clean, and verify the existing commit before publishing:
-
-```sh
-git -C ~/.sync/mackup add -A
-git -C ~/.sync/mackup diff --cached --stat
-git -C ~/.sync/mackup commit -S -m 'Start app configuration backups'
-git -C ~/.sync/mackup verify-commit HEAD
-git -C ~/.sync/mackup push --set-upstream origin HEAD
-```
-
-Check GitHub verification after the push. Automatic sync requires a same-named
-origin tracking branch. Keep this remote private; only dotfiles gets Gitleaks
-scans in `sync.sh`.
-
-### Restore app settings
-
-Plain `mackup restore` reads the shared unpartitioned directory, not the host
-directory used by `sync.sh`.
-
-1. Fetch the private backup repo and choose an existing source-host directory.
-   Its name does not need to match the destination Mac.
-2. Copy the shared config so its exclusions are retained, then edit the copy:
-
-   ```sh
-   cp "$HOME/.mackup.cfg" "$HOME/.mackup.restore.cfg"
-   vi "$HOME/.mackup.restore.cfg"
-   ```
-
-3. Set the storage section to the selected source. Use the actual backup root
-   if it differs from `~/.sync`:
-
-   ```ini
-   [storage]
-   engine = file_system
-   path = .sync
-   directory = mackup/SOURCE_LOCAL_HOST_NAME
-   ```
-
-4. Quit the affected apps and preview the restore:
-
-   ```sh
-   mackup --config-file="$HOME/.mackup.restore.cfg" --dry-run restore
-   ```
-
-5. Preserve any destination settings needed, then restore interactively:
-
-   ```sh
-   mackup --config-file="$HOME/.mackup.restore.cfg" restore
-   ```
-
-Edit the matching app-selection section of `.mackup.cfg` to change what is
-backed up. `mackup list` lists supported names; `mackup show APP` shows paths.
-Adding `[applications_to_sync]` makes an explicit allowlist. A named command
-such as `mackup backup APP` overrides app selection/exclusions, so review that
-app's paths first. Avoid `mackup link` for this copy-based workflow.
+To restore one app's settings from an existing backup by hand: quit the app,
+copy its current files somewhere safe, then run
+`mackup --config-file=<config naming the source host> restore <app>`. Restored
+files come back as mode 0600, so re-apply the modes of anything executable,
+such as scripts under `~/Library/Scripts`.
 
 ## Sync failures
 
@@ -294,7 +236,9 @@ state files, disable signing, or force-push to clear a failure.
 | GitHub verification fails after push | Publication already occurred. Inspect the reason and GitHub status; repair only affected commits within authorized history scope. |
 | Merge conflict | Automation aborts the merge. Resolve and sign the integration deliberately. Dotfiles has no conflict preference; auxiliary repos use local-preferred conflicting hunks (`-X ours`). |
 | Push rejected | Check permissions and remote changes. Sync tries at most three times with fetch and signed merge; it never force-pushes. |
-| Excluded tracked changes remain | Review tracked *.local, .env*, or *.secret* paths. Sync skips merge/push while excluded tracked changes remain. |
+| Excluded tracked changes remain | Review tracked `*.local`, `.env*` or `*.secret*` paths in any directory. Sync skips merge/push while excluded tracked changes remain. |
+| Sync leaves a repository alone | The log says why: a Git index lock (another Git command is running, or one crashed and left `.git/index.lock`; check `ps` before removing it), or a tracked edit newer than `SYNC_QUIET_MINUTES`. The next run picks it up. |
+| New files are not published | By design: sync stages tracked files only (`git add -u`). Commit new files yourself. |
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
 | Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. |
@@ -308,12 +252,14 @@ HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
 
 | Symptom | Check and recovery |
 | --------- | -------------------- |
-| Stow conflict | Preview with explicit `--dir` and `--target` as shown in the README. Compare and back up the conflicting file before moving it aside, then restow. Restow does not overwrite it. |
+| Stow conflict | Preview with explicit `--dir` and `--target` as shown in the README. Compare and back up the conflicting file before moving it aside, then run `sync.sh stow`. A package with a conflict is left exactly as it was. |
+| Machine-local file left in `stow-hold` | `sync.sh stow` found a gitignored file inside a package, but a real file already sits at its home location. Compare the two (the log names both), keep the right one at the home path, and delete the held copy under `~/.local/state/dotfiles/stow-hold/`. |
+| Untracked files in stow packages | The log lists them after `sync.sh stow`. They are linked but never published. Commit them (`git add` and a signed commit) or delete them. |
 | Slow first shell | First-run downloads are expected. Use repeated `time zsh -ic exit` for warm config load and `zinit times` in a real terminal for deferred plugins; config-load time is not full first-prompt latency. |
 | Plugin load error | Inspect `zinit list` and `zinit times`, then repair/update the named plugin or cache rather than deleting unrelated plugin data. |
 | Unexpected history key | Inspect `bindkey '^R'` after deferred plugins load. Atuin should own it when installed; otherwise FZF can own it. |
 | Missing Rust toolchain | Run `rustup default stable` after a fresh Rustup install. |
-| `stow/gh/.config/gh/hosts.yml holds a gh token inside the repo` | `~/.config/gh` was stowed as one symlink, so gh wrote its token into the repo. Make it a real directory and move the token out, then restow: `rm ~/.config/gh && mkdir -m 700 ~/.config/gh && mv ~/.dotfiles/stow/gh/.config/gh/hosts.yml ~/.config/gh/ && ~/.dotfiles/sync.sh stow`. Check `readlink ~/.config/gh` prints nothing and `gh auth status` still succeeds. |
+| `~/.config/gh` is a link into the repository (`readlink ~/.config/gh` prints a path) | An older stow folded the package, so gh wrote its token into `stow/gh/.config/gh/hosts.yml`. Run `~/.dotfiles/sync.sh stow`: it relinks gh file by file and moves `hosts.yml`, which is gitignored, to `~/.config/gh/`. Check `readlink ~/.config/gh` prints nothing and `gh auth status` still succeeds. |
 | `gh auth status`: "The token in default is invalid" over SSH | gh found no token. It is usually in the login keychain, which SSH sessions can't read while it is locked (`security show-keychain-info` fails with "User interaction is not allowed"), and git's `osxkeychain` helper reports `failed to store: -25308` for the same reason. Log in once with file storage as shown in [Git identity and signing](#git-identity-and-signing). |
 | A `gh` scope disappeared | `gh auth login` issues a new token with only the default scopes. Add scopes with `gh auth refresh -h github.com -s <scope>`, which keeps the existing ones; see [Git identity and signing](#git-identity-and-signing) for the set this setup uses. |
 

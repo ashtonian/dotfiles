@@ -42,7 +42,7 @@ recognize `/usr/local` Homebrew installations.
 | Dependency | Required for |
 | ------------ | -------------- |
 | Git, GnuPG, usable signing key | Repository sync and signed commits |
-| Homebrew, Stow, Mackup, Python 3 | Packages, links, backups, and AWS profile helpers |
+| Homebrew, Stow, Python 3 | Packages, links, and AWS profile helpers |
 | Gitleaks | Scanning dotfiles before automatic publication |
 | GitHub CLI (gh), authenticated for each destination | Checking GitHub commit verification after a push |
 | Mac App Store sign-in | Brewfile mas entries |
@@ -59,9 +59,9 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | Component | Description |
 | ----------- | ------------- |
 | **Homebrew** | Package manager + all packages from Brewfile |
-| **Stow packages** | All 13 packages in stow/; see [package inventory](STRUCTURE.md#stow-packages) |
+| **Stow packages** | Every package in stow/, linked one file at a time; see [package inventory](STRUCTURE.md#stow-packages) |
 | **Zinit** | Zsh plugin manager with deferred loading |
-| **Mackup** | App config backup (copy mode, not symlinks) |
+| **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
 | **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every 6 hours, eligible Codex/OpenCode/agent dashboard services |
 
 ## Architecture
@@ -83,7 +83,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 └── sync.sh                     # Sync automation
 
 ~/.sync/                        # Auxiliary repos (synced separately)
-├── mackup/                     # App config backups (git repo)
+├── mackup/                     # Earlier Mackup backups (git repo); sync no longer writes here
 ├── dracula-iterm/              # iTerm theme
 ├── colorls/                    # Colorls theme
 └── alfred-dracula/             # Alfred theme
@@ -109,6 +109,8 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 - Terminal.app preferences → Mackup (macOS manages it)
 
 **Rule of thumb:** If you open the file in an editor, use stow. If an app generates/modifies it, use mackup.
+Never link an app-managed file under `~/Library` with stow: current macOS apps
+refuse to read or save a symlinked preference file.
 
 ## Sync System
 
@@ -116,11 +118,14 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 
 | Location | Tool | Frequency |
 | ---------- | ------ | ----------- |
-| `~/.dotfiles` | git | Every 4 hours |
-| `~/.sync/mackup` | git | Every 4 hours |
-| Other `~/.sync/*` repos | git | Every 4 hours |
+| `~/.dotfiles` | git, tracked files only | Every 4 hours |
+| `~/.sync/*` repos | git, tracked files only | Every 4 hours |
 | Missing packages | brew bundle install `--no-upgrade` | Every sync |
-| App configs | `mackup backup` | Every sync |
+
+Sync publishes edits to files the repository already tracks. A new file is
+never published until you commit it yourself. A repository with a Git index
+lock, or with a tracked edit newer than `SYNC_QUIET_MINUTES`, is left alone
+until a later run, so half-finished work is not committed.
 
 ### Manual Sync Commands
 
@@ -132,11 +137,17 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
 ~/.dotfiles/sync.sh brewfile  # Install missing packages
-~/.dotfiles/sync.sh mackup    # Backup app configs
-~/.dotfiles/sync.sh stow      # Relink stow packages
+~/.dotfiles/sync.sh stow      # Relink stow packages, one link per file
 ~/.dotfiles/sync.sh all       # Full sync + stow
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
+
+| Variable | Type | Default | Description |
+| -------- | ---- | ------- | ----------- |
+| `DOTFILES_DIR` | path | `~/.dotfiles` | Repository sync and stow operate on |
+| `SYNC_DIR` | path | `~/.sync` | Directory whose Git repositories sync also publishes |
+| `SYNC_QUIET_MINUTES` | minutes | `30` | A tracked edit newer than this makes sync skip the repository for this run |
+| `XDG_STATE_HOME` | path | `~/.local/state` | `dotfiles/stow-hold/` under it keeps machine-local files that could not be moved home |
 
 Full sync commits and pushes eligible changes. A busy lock or unavailable network
 is logged and skipped successfully; other operation failures return nonzero.
@@ -322,14 +333,12 @@ Also log in to gh with the scopes and storage in
 [Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing
 public key and its email with GitHub. The shared Git config contains this repo
 owner's personal identity; set intentional overrides for another user or work
-repository. The installer initializes Mackup without a remote or initial commit.
-Follow [private backup setup](docs/OPERATIONS.md#configure-a-private-backup-remote)
-before expecting cross-machine app backup publication.
+repository.
 
 ### How multi-machine sync works
 
 - **Brewfile**: The shared `Brewfile` is curated manually. Sync installs missing packages with `--no-upgrade` and disables Homebrew auto-update for this operation. Weekly updates own upgrades. Use `Brewfile.local` for machine-specific packages.
-- **Mackup**: Each machine backs up to `~/.sync/mackup/<hostname>/` so configs don't collide.
+- **Stow**: `sync.sh stow` links one file at a time (`--no-folding`), so no directory in `$HOME` becomes a link into the repository and a tool writing next to its config never writes into the repository. Gitignored files found inside a package (written there through an old directory link, such as gh's `hosts.yml`) are moved to their place in `$HOME` before the package is relinked. Untracked files that are not ignored are linked, listed in the log, and left for you to commit or remove.
 - **Git sync**: Repositories with an unfinished merge, rebase, cherry-pick or bisect are skipped. Sync requires a configured Git identity and signing key, creates signed commits and merges, and verifies signatures locally. Source conflicts abort the merge; backup repositories retain their local-wins merge policy. Detached HEADs and branches without a matching `origin` tracking branch are skipped.
 - **Publishing**: Gitleaks scans staged dotfiles and outgoing commits with redacted output; auxiliary repos are not scanned. Missing tools, scan failures, signing failures and merge failures stop publication. GitHub verification is checked after the push and does not undo publication on failure; bad_email requires correcting the signing identity.
 - **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
@@ -338,38 +347,21 @@ before expecting cross-machine app backup publication.
 
 ## Mackup: App Config Backup
 
-Mackup backup and restore copy files. Automated backups are isolated by
-`scutil --get LocalHostName` (fallback `hostname -s`). No `mode = copy` setting is
-needed; copy operations are the default.
+Sync does not run Mackup. Its configuration here would copy credential files
+(`.codex/auth.json`, `.kube/config`, `.npmrc` and others) into the backup
+repository, so automatic backups stay off until they return behind the guards
+described in [the Mackup design](docs/MACHINE-FEATURES.md#mackup).
 
-```sh
-# Back up into the host directory used by automation
-~/.dotfiles/sync.sh mackup
+Until then:
 
-# Inspect supported apps and preview the shared config's manual backup
-mackup list
-mackup backup --dry-run
-```
-
-Plain `mackup backup` and `mackup restore` use the unpartitioned `~/.sync/mackup/`
-directory, which differs from automated host backups. Use the
-[restore procedure](docs/OPERATIONS.md#restore-app-settings) to select a source
-host explicitly.
-
-The config includes all supported, detected apps except its
-`[applications_to_ignore]` list. Review backup contents before publishing to a
-private remote; app preferences can contain credentials.
-
-### Add More Apps
-
-Edit `~/.mackup.cfg`:
-
-```ini
-[applications_to_sync]
-# An explicit allowlist replaces the default selection.
-# Use app names from mackup list; retain appropriate exclusions.
-my-new-app
-```
+- Never run `mackup link install`, `mackup link` or `mackup link uninstall`.
+  Link mode moves your files into the store and leaves symlinks behind, and
+  current macOS apps refuse to read or save symlinked preferences.
+- Never run `mackup restore` without naming one app. Restore deletes the
+  original before copying, resets every restored file to mode 0600, and
+  replaces a dotfiles link with a copy.
+- Mackup older than 0.9.0 runs link mode for a plain `mackup backup`; check
+  `mackup --version` first.
 
 ## Key Bindings
 
@@ -401,11 +393,12 @@ zinit list
 # Check what would happen
 stow --dir="$HOME/.dotfiles/stow" --target="$HOME" --simulate --verbose zsh
 
-# Restow after comparing and backing up conflicting files
-stow --dir="$HOME/.dotfiles/stow" --target="$HOME" --restow zsh
+# Relink every package after comparing and backing up conflicting files
+~/.dotfiles/sync.sh stow
 ```
 
-Restow does not overwrite conflicting regular files. Editing an existing linked
+Stow does not overwrite conflicting regular files; a package with a conflict is
+left exactly as it was, and the log names the file. Editing an existing linked
 file does not require restowing. See [failure recovery](docs/OPERATIONS.md#shell-and-stow-troubleshooting).
 
 ### Sync Issues
@@ -418,16 +411,6 @@ tail -50 ~/.dotfiles/logs/sync.log
 ~/.dotfiles/sync.sh sync 2>&1
 ```
 
-### Mackup Issues
-
-```sh
-# Inspect storage and the app's managed paths
-cat ~/.mackup.cfg
-mackup show iterm2
-
-# Test backup
-mackup backup --dry-run
-```
 
 ## Adding New Dotfiles
 
@@ -440,22 +423,13 @@ mkdir -p ~/.dotfiles/stow/myapp
 # 2. Move existing config
 mv ~/.myapprc ~/.dotfiles/stow/myapp/.myapprc
 
-# 3. Stow it
-cd ~/.dotfiles/stow && stow -v -t ~ myapp
+# 3. Link it, one link per file
+~/.dotfiles/sync.sh stow
+
+# 4. Commit it: sync never publishes new files
+git -C ~/.dotfiles add stow/myapp && git -C ~/.dotfiles commit -S -m "myapp: add config"
 ```
 
-### Via Mackup (for app-managed configs)
-
-```sh
-# 1. Check if app is supported
-mackup list | grep myapp
-
-# 2. Edit app selection/exclusions in the matching config section
-vi ~/.mackup.cfg
-
-# 3. Use the normal host-specific backup
-~/.dotfiles/sync.sh mackup
-```
 
 ## Package and AWS Helpers
 
