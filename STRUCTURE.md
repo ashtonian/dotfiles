@@ -69,17 +69,19 @@ before moving or adopting files.
 | `.zshenv` | Every Zsh: sources `env.sh`; bash-like globbing and word splitting for Codex command shells (`AGENT_SHELL`) |
 | `.zprofile` | Login shells: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; optional OrbStack integration |
 | `.zshrc` | Interactive shells: classify real terminal vs zsh `-ic`; source sorted modules, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
-| `00-init.zsh` | Bootstrap Zinit and annexes, set shell options |
+| `00-init.zsh` | Bootstrap Zinit, define `_dotfiles_cached_eval` (tool init scripts cached per binary release), set shell options |
 | `20-history.zsh` | Shared history, 50,000-entry limits, duplicate/space handling |
-| `30-plugins.zsh` | Theme, highlighting, autosuggestions, completions, compinit; deferred plugins and selected OMZ snippets |
-| `40-keybindings.zsh` | Emacs keys, navigation/history keys, then Atuin initialization when installed |
-| `50-aliases.zsh` | Convenience aliases; command-replacing and safety aliases gated to real sessions |
-| `60-functions.zsh` | Libraries, cached Helm completion, git-extras completion, zoxide, direnv, fnm |
+| `30-plugins.zsh` | Theme, completions, compinit (full security check once a day, `-C` otherwise); deferred autosuggestions, plugins and selected OMZ snippets; syntax highlighting last |
+| `40-keybindings.zsh` | Emacs keys, navigation/history keys, then cached Atuin initialization when installed |
+| `50-aliases.zsh` | Convenience aliases; command-replacing and safety aliases gated to real sessions; eza listings as `ll`/`la`/`lt`; git aliases re-applied after the OMZ git plugin |
+| `60-functions.zsh` | Libraries, cached Helm completion, git-extras completion, cached zoxide (real sessions), direnv and mise (real sessions) |
 | `70-greeting.zsh` | Define optional greeting; called after local overrides |
 
 Zinit's wait plugins run after the first prompt, so `zsh -ic exit` does not
-exercise every deferred plugin. Zoxide initializes synchronously in
-`60-functions.zsh`; FZF is deferred. Atuin, when installed, initializes after the
+exercise every deferred plugin, and it is not a real session, so it skips zoxide,
+mise activation and the command-replacing aliases. Zoxide initializes
+synchronously in `60-functions.zsh` in real sessions; FZF, autosuggestions and
+syntax highlighting are deferred. Atuin, when installed, initializes after the
 base keybindings and sets `FZF_CTRL_R_COMMAND=''` so FZF keeps its `Ctrl+R` binding.
 `SHOW_COWSAY=true` enables the greeting only in a real terminal with cowsay,
 fortune, and lolcat installed.

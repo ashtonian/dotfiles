@@ -64,5 +64,5 @@ fi
 # Atuin owns history keys; deferred FZF initialization must leave Ctrl+R intact.
 if command -v atuin &>/dev/null; then
     FZF_CTRL_R_COMMAND=''
-    eval "$(atuin init zsh)"
+    _dotfiles_cached_eval atuin-init atuin init zsh
 fi

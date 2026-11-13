@@ -14,8 +14,9 @@ relocate the installer or rewrite LaunchAgent templates.
 | `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_CONFIG_HOME` | Directory path | `~/.config` | Zsh module directory; Stow still targets the default home layout |
-| `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup |
-| `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion |
+| `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
+| `MISE_DATA_DIR` | Directory path | `$XDG_DATA_HOME/mise` | mise's installed tools and `shims/`, which `env.sh` puts on PATH |
+| `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads, kept beside the Go and npm caches on E2TB (npm's is `cache=` in `~/.npmrc`) |

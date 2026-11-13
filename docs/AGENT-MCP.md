@@ -48,7 +48,7 @@ gopls only in Go code.
 ## External Dependencies
 
 - `~/.claude/mcp` with its pinned installs; the runbook there lists every version and the upgrade steps.
-- `uv` (Serena), Go and gopls (`~/go/bin`), and fnm's default Node (Playwright, dbhub, the LSP servers).
+- `uv` (Serena), Go and gopls (`~/go/bin`), and mise's default Node, through its shims (Playwright, dbhub, the LSP servers).
 - The keychain items `claude-mcp-grafana` (`url`, `token`) and, optionally, `claude-mcp-context7` (`api-key`).
 - `~/.local/bin` on `PATH`: `~/.config/shell/env.sh` puts it there for shells, and the Codex and OpenCode LaunchAgents set it in their `PATH`.
 

@@ -46,7 +46,7 @@ of them, so the service runs on the defaults.
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
 | `AGENT_MONITOR_GATE_HOST` | Address | `0.0.0.0` | LAN gate bind address; set it to one interface's address to keep the gate off the others |
 | `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in home-ops-private `k8s/dev/agent-monitor` |
-| `FNM_DIR` | Directory path | `~/Library/Application Support/fnm` | Where the pinned Node.js release is installed |
+| `MISE_DATA_DIR` | Directory path | `~/.local/share/mise` | Where mise installs the pinned Node.js release (`installs/node/<version>`) |
 | `CODEX_HOME` | Directory path | `~/.codex` | Codex home for hooks and history |
 
 Pinned in the script; change them there and rerun `install`:
@@ -78,7 +78,7 @@ once an original is deleted, so expect several GB. Without `--data-dir`, a later
 | ------------ | ---------- |
 | GitHub (`hoangsonww/Claude-Code-Agent-Monitor`) | Release checkout at install time |
 | npm registry | Server and client dependencies at install time |
-| `fnm` (Brewfile) | Installs the pinned Node.js |
+| `mise` (Brewfile) | Installs the pinned Node.js |
 | `git`, `curl` | Checkout; `status` health check |
 | `claude`, `codex` on the LaunchAgent PATH | Run page sessions only |
 
@@ -153,8 +153,8 @@ Troubleshooting:
   whether `node` may access a removable volume. Click **Allow**. The prompt
   blocks other apps' privacy checks while it is pending. Then `kickstart -k`.
   The grant belongs to
-  `~/Library/Application Support/fnm/node-versions/v24.22.0/installation/bin/node`,
-  so a new `NODE_VERSION` asks once more. If you denied it, re-enable it in
+  `~/.local/share/mise/installs/node/24.22.0/bin/node`, so a new `NODE_VERSION`
+  asks once more, and so does the first install after the move from fnm. If you denied it, re-enable it in
   System Settings → Privacy & Security → Files & Folders → node →
   Removable Volumes.
 - **Exit status 78 in `launchctl print`.** Node.js or the checkout is missing:
