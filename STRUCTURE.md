@@ -169,8 +169,8 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 
 | Label | Schedule / service | Logs |
 | ------- | -------------------- | ------ |
-| com.dotfiles.sync | Every 14,400 seconds and at load; runs `sync.sh` with `/bin/bash`, not a login shell, so the plist's PATH stands and macOS's privacy grants attach to a binary Homebrew never moves | `logs/sync.log`, `/tmp/dotfiles-sync.{out,err}` |
-| com.dotfiles.update | Friday 09:00 local time; runs `dotfiles-update.sh` with `/bin/bash`, as the sync agent does | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
+| com.dotfiles.sync | Every 14,400 seconds and at load; runs `sync.sh` directly, not through a login shell, so the plist's PATH stands and Homebrew's bash is the job's one macOS privacy identity | `logs/sync.log`, `/tmp/dotfiles-sync.{out,err}` |
+| com.dotfiles.update | Friday 09:00 local time; runs `dotfiles-update.sh` directly, as the sync agent does | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
 | com.ashtonian.codex-remote-control | Always on; default Unix socket; soft file limit 65,536 | `~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log` |
 | com.ashtonian.opencode | Always on; HTTP server; default `127.0.0.1:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |

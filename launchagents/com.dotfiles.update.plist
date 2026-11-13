@@ -48,15 +48,14 @@ MANUAL COMMANDS:
     <key>Label</key>
     <string>com.dotfiles.update</string>
 
-    <!-- /bin/bash without -l: a login shell would run path_helper, which moves
-         /usr/bin ahead of Homebrew; without it the PATH below stands, so git
-         and the other tools are Homebrew's. /bin/bash itself is the job's
-         macOS privacy identity: Go's caches on an external volume need a
-         one-time Removable Volumes grant, which macOS ties to the binary, and
-         Homebrew's bash changes path with every upgrade. -->
+    <!-- Run directly, not through a login shell: path_helper would move /usr/bin
+         ahead of the PATH below. The script's bash (Homebrew's) is then the
+         job's macOS privacy identity, which every step inherits: Go's caches
+         on an external volume need one Removable Volumes grant to it. Under
+         /bin/bash, an Apple binary, macOS asks for each tool instead (brew's
+         ruby, go), and those change with every Homebrew and Go update. -->
     <key>ProgramArguments</key>
     <array>
-        <string>/bin/bash</string>
         <string>$HOME/.dotfiles/bin/dotfiles-update.sh</string>
         <string>--all</string>
     </array>

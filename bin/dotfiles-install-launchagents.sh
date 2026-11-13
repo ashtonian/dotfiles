@@ -253,8 +253,9 @@ show_help() {
     awk 'NR > 1 && /^#/ { sub(/^# ?/, ""); print; next } NR > 1 { exit }' "$0"
 }
 
-# note_volume_grant: the sync and update jobs run /bin/bash, so one Removable
-# Volumes grant to it covers Go caches on an external drive.
+# note_volume_grant: the sync and update jobs run Homebrew's bash, which macOS
+# holds responsible for every step, so one Removable Volumes grant to it covers
+# Go caches on an external drive.
 note_volume_grant() {
     local cache
     cache=$(go env GOCACHE 2>/dev/null) || return 0
