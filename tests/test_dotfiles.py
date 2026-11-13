@@ -318,6 +318,21 @@ class Sync(Fixture):
         self.assertEqual(q.returncode, 0, q.stderr)
         self.assertIn('lock is available', q.stdout)
 
+    def test_a_daemon_a_step_starts_does_not_keep_the_lock(self):
+        home = self.path / 'home'
+        (home / '.config/dotfiles/generated').mkdir(parents=True)
+        (home / '.config/dotfiles/generated/Brewfile').write_text('brew "git"\n')
+        pidfile = self.path / 'daemon.pid'
+        # Like `op daemon` or gpg-agent: started by a step, outliving the run.
+        self.cli('brew', f'sleep 300 </dev/null >/dev/null 2>&1 &\necho $! > {pidfile}\nexit 0')
+        self.addCleanup(lambda: pidfile.exists() and subprocess.run(['kill', pidfile.read_text().strip()]))
+        env = dict(self.env, HOME=str(home))
+        p = subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), 'brewfile'], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(pidfile.exists(), 'the step started its daemon')
+        q = subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), 'check'], env=env, capture_output=True, text=True, timeout=30)
+        self.assertIn('lock is available', q.stdout, 'the daemon must not hold the sync lock')
+
     def test_real_git_operation_states_are_not_staged_or_committed(self):
         subprocess.run(['git', 'clone', '--shared', '--quiet', str(ROOT), str(self.path / 'repo')], check=True)
         repo = self.path / 'repo'

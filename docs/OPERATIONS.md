@@ -305,7 +305,7 @@ state files, disable signing, or force-push to clear a failure.
 
 | Symptom | Check and recovery |
 | --------- | -------------------- |
-| Another sync is running | Run `sync.sh check` and inspect the active process. `logs/sync.flock` normally persists after exit. Removing it does not release a live lock and can allow overlap. |
+| Another sync is running | Run `sync.sh check` and inspect the active process. `logs/sync.flock` normally persists after exit. Removing it does not release a live lock and can allow overlap. If it persists across runs, `lsof ~/.dotfiles/logs/sync.flock` names the holder: a sync in progress is `sync.sh` under launchd; anything else (such as `op daemon`) is a leftover from before sync stopped handing the lock to its steps, so end it and the next run proceeds. |
 | No network connectivity | Sync checks <https://github.com> with a five-second timeout. Restore connectivity, then retry. |
 | Git operation in progress | Finish or deliberately abort the merge, rebase, cherry-pick, revert, or bisect; then rerun sync. |
 | Detached HEAD / missing tracking branch | Check out the intended branch and set its same-named origin upstream after fetching. |

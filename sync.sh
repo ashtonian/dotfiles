@@ -347,13 +347,9 @@ apply_features() {
     return 1
 }
 
-main() {
-    mkdir -p "$LOG_DIR" "$SYNC_DIR"
+# run_mode MODE: one sync run's work.
+run_mode() {
     local status=0
-    acquire_lock || status=$?
-    [[ $status -ne 75 ]] || return 0
-    [[ $status -eq 0 ]] || return "$status"
-    rotate_logs
     case "${1:-sync}" in
         check) log "INFO: Sync lock is available" ;;
         sync|all)
@@ -374,6 +370,21 @@ main() {
         brewfile) sync_brewfile || status=$? ;;
         *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|brewfile|all|check}\n' "$0"; return 1 ;;
     esac
+    return "$status"
+}
+
+main() {
+    mkdir -p "$LOG_DIR" "$SYNC_DIR"
+    local status=0
+    acquire_lock || status=$?
+    [[ $status -ne 75 ]] || return 0
+    [[ $status -eq 0 ]] || return "$status"
+    rotate_logs
+    # The work runs in a subshell without the lock's descriptor, while this
+    # shell holds the lock until it returns. Otherwise a daemon a step starts
+    # (op, gpg-agent, an ssh control master) inherits the descriptor and keeps
+    # the lock after the run, and every later sync finds another one running.
+    ( exec 9>&-; run_mode "$@" ) || status=$?
     return "$status"
 }
 
