@@ -1,5 +1,5 @@
 id = "brew.desktop"
-description = "Personal desktop applications: games, personal finance, media, messaging, VPN and cloud accounts"
+description = "Personal desktop applications: games, media, messaging, VPN and cloud accounts"
 category = "packages"
 platforms = ["darwin"]
 requires = ["brew.base"]
@@ -12,11 +12,9 @@ cask = [
   "logitech-g-hub",
   "maestral",
   "nordvpn",
-  "quicken",
   "signal",
   "spotify",
   "steam",
   "tor-browser",
-  "tunnelblick",
   "vox",
 ]

@@ -8,6 +8,7 @@ requires = ["brew.base"]
 cask = [
   "ashtonian/tap/gitstead",
   "beyond-compare",
+  "bruno",
   "claude-code",
   "codex",
   "codex-app",
@@ -18,7 +19,6 @@ cask = [
   "font-fira-code-nerd-font",
   "gitkraken",
   "goland",
-  "insomnia",
   "iterm2",
   "lens",
   "mqttx",

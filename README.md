@@ -247,7 +247,7 @@ removed.
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, personal finance, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
