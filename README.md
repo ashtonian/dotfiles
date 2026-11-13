@@ -238,6 +238,30 @@ See the [official OpenAI CLI reference](https://learn.chatgpt.com/docs/cli/refer
 for Codex flags. Use the underlying CLIs directly when bypassing permissions is
 not appropriate.
 
+The short launchers in `lib_sh/claude.sh` (`c`, `ccont` for `claude --continue`,
+`cr`, `cf`, `co` and the rest) exist only in real terminal sessions, as do
+zoxide's `cd`, its `z`/`j` aliases and `AUTO_CD`. Agent and tool shells keep the
+plain commands, so a model-written `cd build` cannot jump to another tree and
+`cc` stays the C compiler.
+
+### Agent shells
+
+Claude Code and Codex run model-written commands in bash, not zsh. Install the
+system configs once per machine (they need sudo):
+
+```sh
+~/.dotfiles/bin/dotfiles-agents install   # write both files
+~/.dotfiles/bin/dotfiles-agents check     # compare them with the repository; exit 1 on drift
+```
+
+| File | Effect |
+| ---- | ------ |
+| `/Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json` (`/etc/claude-code/...` on Linux) | Sets `CLAUDE_CODE_SHELL` to Homebrew bash. Managed settings outrank user settings and merge `env` per variable |
+| `/etc/codex/config.toml` | Codex's system config layer: turns shell snapshots off and sets `AGENT_SHELL` in every command shell. Codex always starts the passwd login shell (`zsh -lc <command>`), and `~/.zshenv` hands a marked command to bash |
+
+`dotfiles-agents` never overwrites a file it did not write (exit 73), and
+`~/.codex/config.toml` can still override any Codex key for one user.
+
 ### Agent workspaces and fleets (gitstead)
 
 The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`.
@@ -328,6 +352,8 @@ This repo is designed to sync across multiple machines via LaunchAgent (every 4 
 4. **Machine-specific SSH hosts** — create `~/.ssh/config.local`
 
 5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
+
+6. **Agent shells**: `~/.dotfiles/bin/dotfiles-agents install` (see [Agent shells](#agent-shells))
 
 Also log in to gh with the scopes and storage in
 [Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing

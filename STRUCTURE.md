@@ -129,6 +129,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-install-launchagents.sh](bin/dotfiles-install-launchagents.sh) | Copy templates, substitute $HOME, load/unload jobs, show status |
 | [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew and Zinit, invoke full sync |
+| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |

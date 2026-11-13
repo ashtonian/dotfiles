@@ -1,0 +1,147 @@
+#!/usr/bin/env bash
+#===============================================================================
+# dotfiles-agents - system configs that make Claude Code and Codex use bash
+#===============================================================================
+#
+# USAGE:
+#   dotfiles-agents install     write both files (asks for sudo when needed)
+#   dotfiles-agents check       compare the installed files with what install writes
+#   dotfiles-agents uninstall   remove both files
+#
+# Claude Code: a managed-settings drop-in sets CLAUDE_CODE_SHELL to a current
+# bash. Managed settings outrank user settings and merge `env` per variable,
+# and Claude Code never writes the file itself.
+# Codex: it always runs the passwd login shell, with no setting to change it.
+# Its system config layer turns shell snapshots off and marks every command
+# shell with AGENT_SHELL; ~/.zshenv then hands the command to bash.
+#
+# EXIT STATUS: 0 ok; 1 check found a missing or changed file; 64 usage;
+# 69 no bash 4 or later, or an unsupported OS; 73 a file this script did not
+# write is in the way; 74 a file could not be written.
+set -euo pipefail
+
+root=${DOTFILES_SYSTEM_ROOT:-} # prefix for every system path; empty means /
+case "$(uname -s)" in
+    Darwin) claude_dir="$root/Library/Application Support/ClaudeCode/managed-settings.d" ;;
+    Linux) claude_dir="$root/etc/claude-code/managed-settings.d" ;;
+    *) printf 'dotfiles-agents: unsupported OS %s\n' "$(uname -s)" >&2; exit 69 ;;
+esac
+claude_file="$claude_dir/50-dotfiles.json"
+codex_file="$root/etc/codex/config.toml"
+marker='Managed by ~/.dotfiles (bin/dotfiles-agents)'
+
+die() { printf 'dotfiles-agents: %s\n' "$2" >&2; exit "$1"; }
+
+# A bash new enough for model-written commands. macOS's /bin/bash is 3.2.
+agent_bash() {
+    local candidate
+    for candidate in "${HOMEBREW_PREFIX:-/opt/homebrew}/bin/bash" /home/linuxbrew/.linuxbrew/bin/bash /usr/bin/bash; do
+        [[ -x "$candidate" ]] || continue
+        if "$candidate" -c '(( BASH_VERSINFO[0] >= 4 ))' 2>/dev/null; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done
+    return 1
+}
+
+render_claude() {
+    printf '{\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
+}
+
+render_codex() {
+    cat <<EOF
+# $marker; edits here are replaced.
+# ~/.codex/config.toml can still override any key for one user.
+
+[features]
+# A snapshot re-runs the login shell after ~/.zshenv has handed the command
+# to bash, so snapshots stay off.
+shell_snapshot = false
+
+[shell_environment_policy]
+# ~/.zshenv runs a command shell that carries this marker as bash.
+set = { AGENT_SHELL = "codex" }
+EOF
+}
+
+# as_owner <path> <command...>: run directly when the path's parent is
+# writable, otherwise through sudo.
+as_owner() {
+    local parent
+    parent=$(dirname "$1")
+    shift
+    while [[ ! -e "$parent" ]]; do parent=$(dirname "$parent"); done
+    if [[ -w "$parent" ]]; then "$@"; else sudo "$@"; fi
+}
+
+ours() { # ours <file>: the file is absent, or this script wrote it
+    [[ ! -e "$1" ]] && return 0
+    case "$1" in
+        "$claude_file") return 0 ;; # its name is ours alone
+        *) grep -qF "$marker" "$1" ;;
+    esac
+}
+
+write() { # write <file> <content>
+    local file="$1" content="$2" tmp
+    ours "$file" || die 73 "$file was not written by dotfiles-agents; move it aside and run install again"
+    if [[ -f "$file" && "$(cat "$file")" == "${content%$'\n'}" ]]; then
+        printf 'ok         %s\n' "$file"
+        return 0
+    fi
+    tmp=$(mktemp)
+    printf '%s' "$content" > "$tmp"
+    if ! { as_owner "$file" install -d -m 0755 "$(dirname "$file")" &&
+        as_owner "$file" install -m 0644 "$tmp" "$file"; }; then
+        rm -f -- "$tmp"
+        die 74 "could not write $file"
+    fi
+    rm -f -- "$tmp"
+    printf 'installed  %s\n' "$file"
+}
+
+check_one() { # check_one <file> <content>
+    if [[ ! -f "$1" ]]; then
+        printf 'missing    %s\n' "$1"
+        return 1
+    fi
+    if [[ "$(cat "$1")" != "${2%$'\n'}" ]]; then
+        printf 'changed    %s\n' "$1"
+        return 1
+    fi
+    printf 'ok         %s\n' "$1"
+}
+
+remove() {
+    [[ -e "$1" ]] || return 0
+    ours "$1" || die 73 "$1 was not written by dotfiles-agents; leaving it"
+    as_owner "$1" rm -f -- "$1"
+    printf 'removed    %s\n' "$1"
+}
+
+main() {
+    local bash_path claude codex status=0
+    case "${1:-}" in
+        install | check)
+            bash_path=$(agent_bash) || die 69 "no bash 4 or later found; install it with Homebrew"
+            claude=$(render_claude "$bash_path")$'\n'
+            codex=$(render_codex)$'\n'
+            if [[ $1 == install ]]; then
+                write "$claude_file" "$claude"
+                write "$codex_file" "$codex"
+            else
+                check_one "$claude_file" "$claude" || status=1
+                check_one "$codex_file" "$codex" || status=1
+            fi
+            ;;
+        uninstall)
+            remove "$claude_file"
+            remove "$codex_file"
+            ;;
+        *) die 64 "usage: dotfiles-agents install|check|uninstall" ;;
+    esac
+    return "$status"
+}
+
+main "$@"

@@ -58,9 +58,9 @@ alias -- -='cd -'
 # Zoxide muscle-memory aliases. zoxide is initialized in 60-functions.zsh via
 # `zoxide init zsh --cmd cd`, which defines `cd` (a smart superset of the
 # builtin: `cd /abs/path`, `cd -`, `cd ~` all still work) and `cdi` (interactive
-# picker). Do NOT `alias cd=z` here -- `z` only exists after init runs, which
-# breaks `cd` in non-interactive shells. These aliases just keep old habits.
-if command -v zoxide &>/dev/null; then
+# picker), in real sessions only. Do NOT `alias cd=z` here -- `z` only exists
+# after init runs. These aliases just keep old habits.
+if [[ "${ZSH_REAL_SESSION:-0}" == 1 ]] && command -v zoxide &>/dev/null; then
     alias z='cd'     # `z foo` -> smart jump
     alias zi='cdi'   # interactive picker
     alias j='cd'     # autojump muscle memory

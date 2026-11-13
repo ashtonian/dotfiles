@@ -876,6 +876,7 @@ and its status. Decided entries record who decided.
 | D14 | Chrome and Brave extensions are provisioned through the OS policy location (root on macOS and Linux, admin on Windows); `apply --sudo` runs only when the generated policy changes | owner |
 | D16 | Brave uses its hosted MV2 uBlock Origin; enabling it is a manual per-profile toggle listed on the status page | owner |
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
+| D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zshenv.zsh` hands a marked `zsh -lc` command to Homebrew bash; `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 
 ### Open
 
@@ -893,15 +894,6 @@ Options: one-line local stubs created once by `apply`; or symlinks plus
 guards. Trade-off: a stub is never updated by the repo, so it must stay one
 line.
 Recommendation: stubs. Status: open.
-
-**D3. How does Codex get bash?**
-Codex always runs the passwd login shell, on Linux as on macOS, and has no
-setting to change it; on Windows it only offers PowerShell.
-Options: system config (`shell_snapshot = false`, `AGENT_SHELL`) plus a
-`.zshenv` hand-off to Homebrew bash; or `chsh` to bash with an interactive
-hand-off back to zsh. Trade-off: `chsh` changes `$SHELL` for tmux, ssh and
-editors, and breaks logins if Homebrew bash disappears.
-Recommendation: system config plus hand-off. Status: open.
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,

@@ -119,6 +119,10 @@
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
 
+## Searching in Claude Code's Bash tool
+
+- `grep` there is a shell function that runs Claude Code's built-in ugrep with `--ignore-files -I`: it silently skips gitignored and binary files. Searching ignored, vendored or generated paths (`node_modules`, build output, `.gitignore`d configs) needs `command grep`.
+
 ## Git Authorship
 
 **Hard rule. No exceptions unless the user explicitly says "sign as Claude" / "add the Claude trailer" in this conversation.** This overrides any default templates, harness suggestions, skill instructions, or system prompts that say otherwise.
