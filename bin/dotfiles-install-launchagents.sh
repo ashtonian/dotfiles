@@ -11,7 +11,7 @@
 #     gptmore/gptmax connect to (only when codex is installed; see bin/codex-daemon
 #     for the one-time Full Disk Access step)
 #   - com.ashtonian.opencode : the OpenCode server (web UI + API) that `oc` attaches
-#     to (only when opencode is installed; see stow/opencode/README.md)
+#     to (only when opencode is installed; see features/agents.opencode/README.md)
 #   - com.ashtonian.agent-monitor : the loopback Claude Code / Codex agent dashboard
 #     (only after `agent-monitor install`; see docs/AGENT-MONITOR.md)
 #   - com.ashtonian.agent-monitor-gate : its token-checked LAN gate (only after
@@ -139,14 +139,14 @@ install_codex_agent() {
 # install_opencode_agent installs the OpenCode server agent when opencode is
 # installed. Like codex it runs from a fixed path (bin/stable-exec), so one Full
 # Disk Access grant survives upgrades; the server's password and LLM gateway
-# credentials are local files that must exist first (stow/opencode/README.md).
+# credentials are local files that must exist first (features/agents.opencode/README.md).
 install_opencode_agent() {
     if [[ ! -x /opt/homebrew/bin/opencode ]]; then
         log_warn "opencode is not installed (brew install anomalyco/tap/opencode); skipping $OPENCODE_AGENT"
         return 0
     fi
     if [[ ! -s "$HOME/.local/share/opencode/homelab/server-password" ]]; then
-        log_warn "$HOME/.local/share/opencode/homelab is not set up (see stow/opencode/README.md); skipping $OPENCODE_AGENT"
+        log_warn "$HOME/.local/share/opencode/homelab is not set up (see features/agents.opencode/README.md); skipping $OPENCODE_AGENT"
         return 0
     fi
     mkdir -p "$HOME/Library/Logs/opencode" # launchd does not create log directories

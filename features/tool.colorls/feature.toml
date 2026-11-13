@@ -1,0 +1,12 @@
+id = "tool.colorls"
+description = "colorls Dracula theme"
+category = "tools"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/colorls/dark_colors.yaml",
+]
+
+[provides]
+link = [".config/colorls"]

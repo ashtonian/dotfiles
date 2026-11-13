@@ -1,0 +1,8 @@
+# The work machine: base and dev, plus what every machine someone sits at gets.
+# Personal features come only from desktop, which this machine does not use.
+
+[features]
+enable = [
+  "brew.apps",
+  "brew.mas",
+]

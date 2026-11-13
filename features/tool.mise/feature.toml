@@ -1,0 +1,11 @@
+id = "tool.mise"
+description = "Shared mise defaults; `mise use -g` writes the machine-local config.toml"
+category = "tools"
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/mise/conf.d/dotfiles.toml",
+]
+
+[provides]
+link = [".config/mise/conf.d/dotfiles.toml"]

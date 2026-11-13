@@ -1,0 +1,13 @@
+id = "brew.activity-trackers"
+description = "RescueTime and WakaTime: editor activity reported to personal accounts, so never on the work machine"
+category = "packages"
+# Its VS Code extensions and the RescueTime app need macOS.
+platforms = ["darwin"]
+
+[provides]
+brew = ["wakatime-cli"]
+cask = ["rescuetime"]
+vscode = [
+  "rescuetime.rescuetime",
+  "wakatime.vscode-wakatime",
+]

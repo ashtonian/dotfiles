@@ -1,0 +1,29 @@
+id = "shell.zsh"
+description = "zsh: modules, plugins, completions, aliases and functions"
+category = "shell"
+platforms = ["darwin", "linux"]
+requires = ["shell.env"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/zsh/00-init.zsh",
+  ".config/zsh/20-history.zsh",
+  ".config/zsh/30-plugins.zsh",
+  ".config/zsh/40-keybindings.zsh",
+  ".config/zsh/50-aliases.zsh",
+  ".config/zsh/60-functions.zsh",
+  ".config/zsh/10-path.zsh",
+  ".config/zsh/70-greeting.zsh",
+  ".zprofile",
+  ".zshenv",
+  ".zshrc",
+]
+
+[provides]
+link = [".config/zsh"]
+stub = [
+  { path = ".zshenv", line = '[[ -r "$HOME/.config/zsh/zshenv.zsh" ]] && source "$HOME/.config/zsh/zshenv.zsh"' },
+  { path = ".zprofile", line = '[[ -r "$HOME/.config/zsh/zprofile.zsh" ]] && source "$HOME/.config/zsh/zprofile.zsh"' },
+  { path = ".zshrc", line = '[[ -r "$HOME/.config/zsh/zshrc.zsh" ]] && source "$HOME/.config/zsh/zshrc.zsh"' },
+  { path = ".zlogin", line = '[[ -r "$HOME/.config/zsh/zlogin.zsh" ]] && source "$HOME/.config/zsh/zlogin.zsh"' },
+]

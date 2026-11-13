@@ -2,12 +2,12 @@
 
 Historical software, extension, and terminal notes. These entries are not a
 current installation guide or a list of maintained recommendations; old links
-and package names may no longer resolve. Use the [Brewfile](Brewfile) for the
+and package names may no longer resolve. The `brew.*` [features](STRUCTURE.md#features) hold the
 shared package selection and the [README](README.md) for supported setup.
 
 ## OSX
 
-see Brewfile
+See the `brew.*` [features](STRUCTURE.md#features).
 
 ## VSCODE
 
@@ -134,7 +134,7 @@ Builtins: System commands ie Logout, Sleep ect.. | Clipboard manager
 * add <kbd>⌘</kbd><kbd>z</kbd> | Action: Send Hex Codes > `0x1f`
 * add <kbd>⇧</kbd><kbd>⌘</kbd><kbd>Z</kbd> Action: Send Hex Codes > `0x18 0x1f`
   * Typically not bound in bash, zsh or readline, so we can set it to a unused hexcode which we can then fix in zsh. [Stack overflow](http://stackoverflow.com/questions/6205157/iterm2-how-to-get-jump-to-beginning-end-of-line-in-bash-shell#answer-29403520):
-  * The maintained bindings live in the [Zsh keybinding module](stow/zsh/.config/zsh/40-keybindings.zsh); use the [shell structure](STRUCTURE.md#shell-loading) for the current load order.
+  * The maintained bindings live in the [Zsh keybinding module](features/shell.zsh/home/.config/zsh/40-keybindings.zsh); use the [shell structure](STRUCTURE.md#shell-loading) for the current load order.
 
 #### Text
 

@@ -6,13 +6,14 @@ com.dotfiles.update.plist - Weekly System Update LaunchAgent
 ================================================================================
 
 DESCRIPTION:
-    Automatically updates Homebrew packages, Zinit plugins, and syncs dotfiles.
+    Automatically updates Homebrew packages, mise's tools, Zinit plugins, and syncs dotfiles.
     Runs every Friday at 9:00 AM.
 
 WHAT IT DOES:
     1. Updates Homebrew, upgrades packages, cleans up, and runs brew doctor
-    2. Fast-forwards Zinit core and updates all plugins
-    3. Runs sync.sh sync (packages, app backups, signed repository sync)
+    2. Installs the tools mise's configuration names and lacks (mise install)
+    3. Fast-forwards Zinit core and updates all plugins
+    4. Runs sync.sh sync (signed repository sync, dotfiles apply, missing packages)
 
 LOGS:
     - stdout: /tmp/dotfiles-update.out

@@ -5,8 +5,10 @@ and the local status page. It replaces the flat "every package on every
 machine" model with features that each machine enables or disables
 independently.
 
-Status: draft on branch `plan/machine-features`. Nothing here is implemented
-yet; the [rollout](#rollout) section orders the work.
+Status: [rollout](#rollout) steps 1 to 5b are built (`cmd/dotfiles`, the sync
+bridge and the migration to features); steps 6 to 11 are not. The sections
+describe the target design. Where they cover something a later step builds,
+they say so, and the engine's README sections describe what runs today.
 
 ## Goals
 
@@ -35,7 +37,7 @@ Features declare the platforms they support (`platforms = ["darwin", "linux",
 engine and one backend per OS:
 
 | Concern | macOS | Linux | Windows |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Linking | Per-file symlinks | Per-file symlinks | Per-file symlinks when a test link succeeds at apply time (Developer Mode or the symlink privilege); managed copies otherwise |
 | Scheduler | launchd LaunchAgents | systemd user timers with `Persistent=true` and `RandomizedDelaySec`; `loginctl enable-linger` on servers; a user crontab with a lock and catch-up stamp where there is no systemd | Task Scheduler: `Register-ScheduledTask -LogonType Interactive`, `-StartWhenAvailable`, `-MultipleInstances IgnoreNew` |
 | Packages | Homebrew formulae, casks and `mas` | Homebrew formulae (Tier 1 needs glibc 2.39 or later), flatpak for desktop apps, apt or dnf only for system prerequisites | WinGet configuration (`winget configure`) |
@@ -43,7 +45,7 @@ engine and one backend per OS:
 | Login shell entry points | zsh stubs | zsh or bash stubs | PowerShell profile stub at `$PROFILE.CurrentUserAllHosts` (resolved, not hard-coded, since Documents may be redirected), execution policy `RemoteSigned` for the current user |
 | Claude Code managed settings | `/Library/Application Support/ClaudeCode/managed-settings.d/` | `/etc/claude-code/managed-settings.d/` | `C:\Program Files\ClaudeCode\managed-settings.d\`. A registry policy under `HKLM\SOFTWARE\Policies\ClaudeCode` outranks the files and hides them unless it sets `managedSourcesBehavior: "merge"`; `doctor` checks |
 | Claude Code shell | `CLAUDE_CODE_SHELL`, Homebrew bash | `CLAUDE_CODE_SHELL`, bash | Git Bash through `CLAUDE_CODE_GIT_BASH_PATH`; the PowerShell tool stays available |
-| Codex shell | The passwd login shell; the `zshenv.zsh` hand-off (D3) | The passwd login shell; the same hand-off when it is zsh | PowerShell (`pwsh`, then Windows PowerShell); no shell snapshot |
+| Codex shell | The passwd login shell; the `zlogin.zsh` hand-off (D3) | The passwd login shell; the same hand-off when it is zsh | PowerShell (`pwsh`, then Windows PowerShell); no shell snapshot |
 | Codex system config | `/etc/codex/config.toml` | `/etc/codex/config.toml` | `%ProgramData%\OpenAI\Codex\config.toml` (from Codex's source; not in its docs) |
 | App settings backup | Mackup catalog | Mackup catalog | D28 |
 | State and status page | `~/.local/state/dotfiles/` | `$XDG_STATE_HOME/dotfiles/` | `%LOCALAPPDATA%\dotfiles\` |
@@ -63,13 +65,16 @@ Linking rules, on every OS:
 - Hard links and junctions are never used: editors that save through a rename,
   and git checkouts, silently break them.
 
-The engine does its own linking on all three OSes, so GNU stow is not used
-after the [migration](#rollout).
+The engine does its own linking on all three OSes; GNU stow is gone since the
+[migration](#rollout). A directory stow had folded into one link is unfolded
+the first time `apply` installs or retires a path under it: the untracked files
+tools wrote through the link move to their place in `$HOME`, tracked files stay
+in the repository, and the emptied directories there are removed.
 
 ## Concepts
 
 | Term | Where it lives | Tracked | Purpose |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Feature | `features/<id>/feature.toml` plus payload files | yes | The unit of toggling: what to install, link, schedule and check |
 | Profile | `profiles/<name>.toml` | yes | A named set of feature decisions and setting values (`base`, `dev`, `desktop`, `server`, `work`, `studio`) |
 | Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's profiles, feature overrides and setting overrides |
@@ -107,8 +112,11 @@ disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
 ```
 
-`dotfiles feature enable|disable <id>` edits this file and runs `apply` for
-that feature.
+`dotfiles init --profiles base,dev,...` writes this file (`install.sh` runs it
+from `--profiles`). `apply` and `doctor` refuse to run without it: with no
+profiles, nothing would be enabled, and `apply` would remove everything the
+profiles install. `dotfiles feature enable|disable <id>` edits this file and
+runs `apply` for that feature.
 
 A setting of type `secret` holds an `op://` reference, never a value. The
 reference reveals nothing, so it can sit in a tracked profile:
@@ -130,9 +138,18 @@ platforms   = ["darwin", "linux", "windows"]
 default     = true
 requires    = ["shell.core"]
 conflicts   = []
+retire      = []              # paths under ~ an older layout linked; apply removes them while they still link into the repo
 
 [provides]
+tap    = []                   # Homebrew taps
 brew   = ["zoxide"]           # Brewfile entries (macOS, Linux)
+cask   = []                   # macOS applications
+mas    = []                   # Mac App Store apps: { name = "...", id = 123 }
+vscode = []                   # VS Code extension ids, in the generated Brewfile
+go     = []                   # `go install` packages, in the generated Brewfile
+stub   = []                   # entry points created once: { path = ".zshrc", line = "..." }
+gitconfig  = ""               # git fragment, included by ~/.config/git/config
+ssh_config = ""               # ssh fragment, included by ~/.ssh/dotfiles.conf
 winget = ["ajeetdsouza.zoxide"] # WinGet configuration entries (Windows)
 zshrc  = "zshrc.zsh"          # interactive zsh fragment, real sessions only
 pwsh   = "profile.ps1"        # interactive PowerShell fragment (Windows)
@@ -142,10 +159,14 @@ link   = []                   # files linked one by one (managed copies where li
 copy   = []                   # files always installed as managed copies
 schedules = []                # job definitions, rendered per OS scheduler
 
+[provides.brew_link]          # a formula's Brewfile `link:` option
+# zoxide = false
+
 [settings.cd_override]
 type    = "bool"
 default = true
 doc     = "Replace cd with zoxide's cd in real interactive sessions only"
+env     = ""                  # export the value under this name in the generated env.sh (not for secrets); an inherited value wins
 
 [hooks]
 apply    = ""                 # idempotent converge script, settings passed as env
@@ -183,14 +204,14 @@ and `dotfiles prune --packages` removes them on request.
 startup parses a manifest.
 
 | Output | Consumer | Contents |
-|---|---|---|
-| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Union of enabled features' `brew`, `cask`, `mas`, `flatpak`, `cargo`, `go` and `vscode` entries, sorted and commented with the feature that wants each |
+| --- | --- | --- |
+| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Enabled features' `tap`, `brew`, `cask`, `mas`, `flatpak`, `vscode` and `go` entries, grouped by kind in feature order, each once, commented with the feature that wants it (`cargo` comes with its features) |
 | `generated/configuration.winget` | sync, `winget configure` (Windows) | Enabled features' `winget` entries as `Microsoft.WinGet.DSC/WinGetPackage` resources |
 | `generated/profile.ps1` | the PowerShell profile stub (Windows) | Enabled `pwsh` fragments in feature order |
 | `generated/env.sh` | `~/.config/shell/env.sh` | Enabled `env` fragments in feature order; POSIX, builtins only |
 | `generated/zshrc.zsh` | `~/.zshrc` stub | Enabled `zshrc` fragments in feature order |
 | `generated/gitconfig` | `~/.config/git/config` include | Profile and feature git fragments |
-| `generated/ssh_config` | `~/.ssh/config` include | Profile and feature ssh fragments |
+| `generated/ssh_config` | `~/.ssh/dotfiles.conf` include | Profile and feature ssh fragments |
 | `generated/backup-apps.json` | settings backup (see [Mackup](#mackup)) | Enabled `backup.mackup.*` apps with their paths, credentials removed |
 
 ## Entry points
@@ -200,20 +221,21 @@ by `apply`. Installers that append to them (OrbStack, conda, Claude Code's
 installer, `git config --global`) change only the stub.
 
 | Stub | Loads |
-|---|---|
+| --- | --- |
 | `~/.zshenv` | `~/.config/zsh/zshenv.zsh` |
 | `~/.zprofile` | `~/.config/zsh/zprofile.zsh` |
+| `~/.zlogin` | `~/.config/zsh/zlogin.zsh`, where a marked Codex login shell hands off to bash (D3) after the other entry points and their appended lines have run |
 | `~/.zshrc` | `~/.config/zsh/zshrc.zsh`, then `generated/zshrc.zsh` |
-| `~/.bashrc`, `~/.bash_profile` | `~/.config/shell/env.sh` |
-| `~/.gitconfig` | read by git after `~/.config/git/config`; `git config --global` writes here |
-| `~/.ssh/config` | its own lines first (local wins), then `Include` of `generated/ssh_config`, then the shared base |
+| `~/.bashrc` | `~/.config/shell/env.sh` |
+| `~/.bash_profile` | `~/.config/shell/env.sh`, then `~/.profile` if it exists (distributions point it at `~/.bashrc`), else `~/.bashrc` |
+| `~/.gitconfig` | read by git after `~/.config/git/config`; `git config --global` writes here. An existing one is kept as it is |
+| `~/.ssh/config` | `Include dotfiles.conf` before any `Host` or `Match` line, which loads `~/.ssh/config.local`, then `generated/ssh_config`, then the shared defaults under `Match final`. ssh keeps the first value it finds and applies `Match final` last, so lines installers append after the Include win over the defaults |
 | `$PROFILE.CurrentUserAllHosts` (Windows) | the tracked PowerShell profile, then `generated/profile.ps1` |
 
 On Windows, `%USERPROFILE%\.gitconfig` and `%USERPROFILE%\.ssh\config` follow
-the same rules. `apply` creates `~/.claude`, `~/.local/bin`, `~/.local/share`
-and `~/.ssh` before it links anything, and links file by file (see
-[Platforms](#platforms)), so no directory in `$HOME` becomes a link into the
-repo.
+the same rules. `apply` creates each link's missing parent directories,
+private (0700), and links file by file (see [Platforms](#platforms)), so no
+directory in `$HOME` becomes a link into the repo.
 
 ## Automation
 
@@ -223,7 +245,7 @@ feature, runs independently, records its result in the state directory, and
 never stops the steps after it.
 
 | Feature | Default schedule | Step |
-|---|---|---|
+| --- | --- | --- |
 | `sync.pull` | every 4 h, at load | Fetch and merge the repo; stop on conflict and notify |
 | `sync.apply` | after every pull that changed something | `dotfiles apply` |
 | `sync.packages` | after apply, only when a generated package file changed or the last install failed | `brew bundle install --no-upgrade` under `umask 022`; `winget configure` on Windows |
@@ -280,10 +302,17 @@ Sections:
 
 ## Feature catalog
 
-Initial catalog, grouped by category. Each row is one toggle.
+The target catalog, grouped by category; each row is one toggle. Rollout step
+5b built the coarser features the later steps split into these: `shell.env`,
+`shell.zsh`, `git`, `git.keychain`, `ssh`, `tool.gh`, `tool.atuin`, `tool.htop`,
+`tool.colorls`, `tool.mise`, `tool.neofetch`, `tool.taskwarrior`,
+`agents.claude`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
+`backup.mackup.config`, and the packages `brew.base`, `brew.macos`,
+`brew.apps`, `brew.desktop`, `brew.activity-trackers`, `brew.mas`,
+`brew.mas.personal`, `brew.dev-apps`, `brew.vscode` and `brew.go-tools`.
 
 | Category | Features |
-|---|---|
+| --- | --- |
 | shell | `shell.core`, `shell.prompt.dracula`, `shell.plugins.autosuggest`, `shell.plugins.syntax-highlighting`, `shell.plugins.autopair`, `shell.plugins.fzf`, `shell.plugins.you-should-use`, `shell.zoxide`, `shell.atuin`, `shell.direnv`, `shell.mise`, `shell.modern-aliases`, `shell.safety-aliases`, `shell.greeting`, `shell.claude-launchers`, `shell.gitstead` |
 | shell.omz | `shell.omz.git`, `shell.omz.git-auto-fetch`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.node`, `shell.omz.npm`, `shell.omz.ruby`, `shell.omz.rake`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.vscode`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.iterm2`, `shell.omz.gpg-agent` |
 | agents | `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
@@ -324,7 +353,7 @@ Verified on 2026-11-11 against Mackup 0.11.2's source (`application.py`,
 under [Running Mackup safely](#running-mackup-safely).
 
 | Trap | Evidence | Guard |
-|---|---|---|
+| --- | --- | --- |
 | Before 0.9.0, `mackup backup` was link mode: it moved originals into the store and replaced them with symlinks | Data-loss reports [#1859](https://github.com/lra/mackup/issues/1859), [#1913](https://github.com/lra/mackup/issues/1913), [#1944](https://github.com/lra/mackup/issues/1944); copy mode arrived in [PR #2085](https://github.com/lra/mackup/pull/2085), merged 2025-10-18. Nix 24.11 and 25.05 still ship 0.8.41, and one AUR package ships 0.8.24 | Version gate |
 | Link mode breaks macOS preferences: since macOS 13.4 and 14, apps and `defaults` refuse to read or save a symlinked preference file, so settings reset | README warning ([#2035](https://github.com/lra/mackup/issues/2035)); [#1924](https://github.com/lra/mackup/issues/1924), [#1916](https://github.com/lra/mackup/issues/1916); open: [#1564](https://github.com/lra/mackup/issues/1564), [#1890](https://github.com/lra/mackup/issues/1890), [#1858](https://github.com/lra/mackup/issues/1858) (a storage move breaks every link), [#2067](https://github.com/lra/mackup/issues/2067) and [#2117](https://github.com/lra/mackup/issues/2117) (link leftovers break copy mode) | Command allowlist; link-residue check |
 | Copy-mode restore deletes the original first | `copy_files_from_mackup_folder` calls `utils.delete` on the home path (`shutil.rmtree` for a directory) and then copies; a `PermissionError` during the copy is printed and skipped, so the original is already gone. 14 stock definitions write into `Library/Containers` or `Library/Group Containers`, and [#2109](https://github.com/lra/mackup/issues/2109) shows macOS refusing access to an Apple preference file | Restore snapshot and rollback; container apps off by default |
@@ -449,7 +478,7 @@ testing what works on the machine, not by OS name, so a headless Linux host
 without a Secret Service session falls back cleanly.
 
 | Step | Mechanism |
-|---|---|
+| --- | --- |
 | Declare | A feature setting of type `secret` holds an `op://<vault>/<item>/<field>` reference, never a value |
 | Sync | `dotfiles secrets sync` runs `op read` for each reference of the enabled features and writes the value to the store as `dotfiles/<feature>/<field>`. It runs interactively, so 1Password's desktop-app unlock applies (Touch ID on macOS, Windows Hello on Windows, PolKit system authentication on Linux) |
 | Use | Features and scheduled jobs read only the store, so a 3 a.m. job never waits on a 1Password prompt |
@@ -491,7 +520,7 @@ Requirements:
 ### Mechanisms
 
 | Browser | Mechanism | Root | Removal |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Firefox | `org.mozilla.firefox` user defaults domain: `EnterprisePoliciesEnabled = true` and a generated `ExtensionSettings` dictionary keyed by add-on GUID. Survives app updates and leaves the app signature intact | no | Two phases: rewrite the entry as `blocked` (Firefox uninstalls it at next start), then drop it once no profile's `extensions.json` lists it. Dropping an entry alone only makes the add-on user-removable |
 | Chrome, Brave | `/Library/Managed Preferences/com.google.Chrome.plist` and `com.brave.Browser.plist`, owned `root:wheel` 0644, generated whole and installed only when its hash changes, then `killall cfprefsd`. `ExtensionSettings` entries use `normal_installed` with the Web Store update URL | yes | Remove the entry; the browser uninstalls the extension at next start. Delete the file when nothing is left |
 | Safari | Host apps through `mas`; enabling has no supported command line outside supervised MDM | `mas install` needs root | Manual; shown on the status page |
@@ -501,7 +530,7 @@ each OS's own location (checked 2026-11-11 against Chromium, brave-core and
 Firefox source):
 
 | Browser | Windows | Linux |
-|---|---|---|
+| --- | --- | --- |
 | Chrome | `HKLM\SOFTWARE\Policies\Google\Chrome`, written with admin rights only when the generated policy changes | `/etc/opt/chrome/policies/managed/dotfiles.json` (root); the Flathub build reads the host path |
 | Brave | `HKLM\SOFTWARE\Policies\BraveSoftware\Brave` (Home editions included) | `/etc/brave/policies/managed/dotfiles.json`; the Flathub build reads it; the Snap build probably cannot (rollout gate) |
 | Chromium | not targeted | `/etc/chromium/policies/managed/`; Ubuntu's snap reads `/etc/chromium-browser/policies/` instead; the Flathub build needs a policy extension directory |
@@ -588,7 +617,7 @@ manifests in `bpc_updates`. Identity is checked cryptographically, never by
 name:
 
 | | Firefox | Chromium |
-|---|---|---|
+| --- | --- | --- |
 | ID | `magnolia@12.34`, signed by Mozilla's add-on CA (only the owning account can obtain a signature for that ID) | `lkbebcjgcmobigpeffafkodonchffocl`, equal to the CRX3 header ID and the SHA-256 of its public key |
 | Update manifest | `bpc_updates` `updates.json` | `bpc_updates` `updates.xml` |
 | Scripted install | Yes, silent, through `ExtensionSettings` with an `install_url`; auto-updates, each update signature-checked | No silent install without MDM; policy allowlists the ID, the client downloads and verifies the crx, the user installs it once per profile, then it auto-updates |
@@ -629,7 +658,7 @@ does not recognise. Those extensions need the app's API path exempted at the
 ingress first, as is already done for several apps.
 
 | App | Extension (Chrome ID / Firefox GUID) | Needs | Route | Verdict |
-|---|---|---|---|---|
+| --- | --- | --- | --- | --- |
 | wallabag | wallabagger `gbmgphmejlcoihgedabhgjdkcahacjlj` / `{7a7b1d36-d7a4-481b-92c6-9f5427cb9eb1}` | URL, OAuth client id and secret, username, password | 2: "Load from file" `wallabag.json` | Alternative to Readeck (D25) |
 | Readeck | Readeck `jnmcpmfimecibicbojhopfkcbmkafhee` / `readeck@readeck.com` | URL; sign-in is OAuth approved in the browser | 3, no secret | Add |
 | Karakeep | Karakeep `kgcjekpmcjjogibpjebkhaanilehneje` / `addon@karakeep.app` | URL, API key | 3 | Add |
@@ -665,7 +694,7 @@ Settings files for route 2 are rendered with
 ### Search engine and start page
 
 | Browser | Search engine | Home and new tab | Notes |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | Firefox | Every OS. `SearchEngines` policy: add the SearXNG engine with its search and suggestion URL templates and make it `Default`. Available in all Firefox releases since 139 | `Homepage` policy for the start page; New Tab Override (managed) for the new-tab page, since the `NewTabPage` policy is on/off only | Scripted through the defaults domain |
 | Chrome, Brave | Linux: `DefaultSearchProvider*` policies. macOS and Windows: not scriptable on an unmanaged machine | Linux: `HomepageLocation`, `NewTabPageLocation`, `RestoreOnStartup*`. macOS and Windows: not scriptable | These are sensitive policies that Chromium ignores on macOS and Windows unless the machine is managed; Linux honours them. The initial-preferences file applies only when a profile is first created. On macOS and Windows they are set by hand and listed as a manual step |
 
@@ -675,7 +704,7 @@ Chrome Web Store removed every Manifest V2 listing on 2026-08-31, so several
 extensions now differ between Chromium browsers and Firefox.
 
 | Extension | Chrome / Brave | Firefox |
-|---|---|---|
+| --- | --- | --- |
 | uBlock Origin | Chrome: uBlock Origin Lite `ddkjiahejlhfcafbddmgiahcphecmpfh`; Brave: its hosted MV2 build (manual toggle) | `uBlock0@raymondhill.net` |
 | Privacy Badger | `pkehgijcmpdhfbdbbnkijodmdjhbjlgp` | `jid1-MnnxcxisBPnSXQ@jetpack` |
 | Decentraleyes | `ldpochfccmkkmhdbclfhpagapcfdljkj` | `jid1-BoFifL9Vbdl2zQ@jetpack` |
@@ -715,12 +744,12 @@ app extensions).
 Approved (D24). Extension features are off by default, so nothing reaches a
 machine unless one of its profiles enables it:
 
-- **`personal` and `work`:** uBlock Origin (Lite on Chrome, Brave's hosted
+- **`desktop` and `work`:** uBlock Origin (Lite on Chrome, Brave's hosted
   build on Brave), Privacy Badger, Decentraleyes, ClearURLs, Dark Reader,
   Vimium, Just Read, Don't F*** With Paste, Extensity, RegExp Download
   Organizer, Refined GitHub, Material Icons for GitHub, contributors-on-github
   and View Image.
-- **`personal` only:** Bypass Paywalls Clean, Old Reddit Redirect, Reddit
+- **`desktop` only:** Bypass Paywalls Clean, Old Reddit Redirect, Reddit
   Enhancement Suite, Toolkit for YNAB and RescueTime; Enhanced GitHub and
   Octotree, which want a GitHub token to work on private repositories; and the
   self-hosted WakaTime (pointed at Wakapi), LibRedirect, Mini Mealie,
@@ -738,7 +767,7 @@ installs, so it never fights or overrides the employer's configuration.
 `stop`, `status`.
 
 | Setting | Type | Default | Description |
-|---|---|---|---|
+| --- | --- | --- | --- |
 | `toggl.api_key` | secret | none, required | Toggl 2.0 API key |
 | `toggl.organization_id` | secret | none, required | Organization in the timer endpoint paths |
 | `toggl.workspace_id` | secret | from `GET /users/me/settings` when unset | Workspace for new entries |
@@ -756,7 +785,7 @@ Each machine has its own key; GitHub verifies a commit only when the signing
 key is registered on the account and its UID email matches the commit email.
 
 | Check | Result when it fails |
-|---|---|
+| --- | --- |
 | A secret key matching `user.signingkey` exists and expires in more than 30 days | error |
 | The key's UID email equals `git config user.email` | error |
 | The key is listed at `https://github.com/<user>.gpg` | error; `sync.publish` refuses to push |
@@ -770,7 +799,7 @@ page lists it as a manual step until done.
 ## Agents
 
 | Feature | Mechanism |
-|---|---|
+| --- | --- |
 | `agents.claude.bash` | A `dotfiles.json` drop-in in the OS's managed-settings directory (see [Platforms](#platforms)) sets `CLAUDE_CODE_SHELL` to bash on macOS and Linux, and `CLAUDE_CODE_GIT_BASH_PATH` on Windows. Installed once with admin rights as a copy of the tracked file, which `apply` keeps in sync |
 | `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so |
 | `shell.core` | Interactive-only behaviour (zoxide `cd`, aliases, `AUTO_CD`) loads only in real terminal sessions |
@@ -804,8 +833,9 @@ and asdf.
   tasks, so mise applies it only after `mise trust`. Each profile lists its
   own project roots in `trusted_config_paths` (personal and work separately);
   repositories elsewhere stay untrusted, for agents too.
-- **Pinned version.** mise ships often (24 releases in the 30 days to
-  2026-11-11), so the base profile pins `mise.version`. `apply` installs that
+- **Pinned version** (rollout step 6; until then Homebrew's mise is used). mise
+  ships often (24 releases in the 30 days to 2026-11-11), so the base profile
+  pins `mise.version`. `apply` installs that
   release from GitHub after checking it against the release's
   `SHASUMS256.txt` and that file's minisign signature, on every OS. Each week,
   `update.mise` on the context's canary machine (`mise.canary`, studio by
@@ -813,9 +843,10 @@ and asdf.
   tool versions of the projects under the trusted roots; when that passes, it
   commits the new pin, and other machines follow on their next pull. A failure
   shows on the status page and the pin stays.
-- **Migration.** Node versions installed by fnm are reinstalled through mise;
-  `fnm` and `asdf` leave the package lists, and `env.sh` drops `FNM_DIR` and
-  the fnm default alias.
+- **Migration.** `fnm` and `asdf` leave the package lists, and `env.sh` drops
+  `FNM_DIR` and the fnm default alias. mise installs the shared default Node LTS
+  (`node = "lts"`) through `mise install`, which `install.sh` and the weekly
+  `dotfiles-update.sh` run; versions a project pins install on first use there.
 
 ## Implementation
 
@@ -828,16 +859,18 @@ backend per OS, selected with build tags.
 
 Bootstrap:
 
-- macOS and Linux: `install.sh` (bash 3.2 compatible) installs the Command
-  Line Tools on macOS, then Homebrew and Go, builds `dotfiles` into
-  `~/.local/bin`, writes `machine.toml` from `--profiles`, and runs
-  `dotfiles apply`.
+- macOS: `install.sh` (bash 3.2 compatible) installs the Command Line Tools,
+  then Homebrew and Go, builds `dotfiles` into `~/.local/bin`, writes
+  `machine.toml` from `--profiles`, and runs `dotfiles apply` through
+  `sync.sh`. Linux follows once `sync.sh`'s macOS calls (`lockf`, `stat -f`,
+  `scutil`) have their Linux counterparts.
 - Windows: `install.ps1` (Windows PowerShell 5.1 compatible) installs Git for
   Windows and Go with WinGet, builds `dotfiles.exe` into
   `%LOCALAPPDATA%\dotfiles\bin`, writes `machine.toml`, and runs
   `dotfiles apply`.
 
-`apply` rebuilds the binary when its sources change. Shell fragments stay POSIX
+`sync.sh` rebuilds the binary when its sources are newer than it (the
+scheduler takes this over in step 6). Shell fragments stay POSIX
 sh (env), zsh (interactive) and PowerShell (Windows interactive). Existing
 scripts move into the features that own them.
 
@@ -847,12 +880,12 @@ scripts move into the features that own them.
   generated output, table-driven.
 - An integration test that bootstraps into an empty fake `HOME` and runs
   `apply` twice: the second run changes nothing, and nothing untracked links
-  into the repo. It runs on macOS, Ubuntu and Windows CI runners; the Windows
-  job runs once with symlinks allowed and once without, to cover managed
-  copies.
+  into the repo. It runs on macOS and Ubuntu CI runners; step 7 adds a
+  Windows job that runs once with symlinks allowed and once without, to cover
+  managed copies.
 - Agent shell tests with the real Claude Code and Codex command lines.
-- `docs/FEATURES.md` is generated from the manifests; CI fails when it is
-  stale.
+- `docs/FEATURES.md` is generated from the manifests and CI fails when it is
+  stale (step 11).
 
 ## Decisions
 
@@ -862,9 +895,11 @@ and its status. Decided entries record who decided.
 ### Decided
 
 | ID | Decision | Decided by |
-|---|---|---|
+| --- | --- | --- |
 | D0.1 | Every capability is a per-machine toggle with fine granularity (each Oh My Zsh plugin, each extension, each scheduled step) | owner |
 | D0.2 | Updates and sync run automatically on every machine; a local status page shows feature and automation health | owner |
+| D1 | Role profiles `base`, `dev`, `desktop`, `server` and `work`, plus host profiles that hold only host facts such as volume paths (`studio`). studio runs `base, dev, desktop, studio`; the Mac mini `base, dev, desktop, server`; the work machine `base, dev, work`. Personal-only features are enabled by `desktop`, which the work machine does not use | owner |
+| D2 | Entry points (`~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.bashrc`, `~/.bash_profile`, `~/.gitconfig`, `~/.ssh/config`) are one-line local stubs `apply` creates once; the shared files they load are linked per file under `~/.config` and `~/.ssh` | owner |
 | D4 | No Tailscale. opencode listens on loopback only (`OPENCODE_HOSTNAME` opts in to another address); the agent-monitor gate stays the opt-in LAN listener for the cluster proxy, token-checked, with its address set by `AGENT_MONITOR_GATE_HOST` | owner |
 | D7 | Mackup runs only in copy mode through the engine; link mode is never used, backup never modifies an original, and restore is per app with snapshot and rollback | owner |
 | D8 | Mackup's store is a private git repository with one directory per machine | owner |
@@ -872,7 +907,7 @@ and its status. Decided entries record who decided.
 | D17 | Toggl's organization and workspace IDs are secrets, like its key; all three come from 1Password | owner |
 | D18 | Targets are macOS, Windows and Linux | owner |
 | D20 | mise manages Go, Node, Python and other language versions per directory on all three OSes, replacing fnm and asdf (see [Language versions](#language-versions)) | owner |
-| D24 | Extensions approved from the catalog (see [Initial catalog](#initial-catalog)); personal-only ones are enabled by the `personal` profile, never by `work` | owner |
+| D24 | Extensions approved from the catalog (see [Initial catalog](#initial-catalog)); personal-only ones are enabled by the `desktop` profile (D1), never by `work` | owner |
 | D25 | No save-a-page extension except ArchiveBox; Readeck, Karakeep, wallabag and Linkwarden are skipped | owner |
 | D30 | Mackup's own `backup` and `restore` do the copying, wrapped by the engine's guards (see [Running Mackup safely](#running-mackup-safely)) | owner |
 | D0.3 | Browser extensions, including their settings and keys, are scripted; keys come from a 1Password vault | owner |
@@ -881,25 +916,10 @@ and its status. Decided entries record who decided.
 | D14 | Chrome and Brave extensions are provisioned through the OS policy location (root on macOS and Linux, admin on Windows); `apply --sudo` runs only when the generated policy changes | owner |
 | D16 | Brave uses its hosted MV2 uBlock Origin; enabling it is a manual per-profile toggle listed on the status page | owner |
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
-| D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zshenv.zsh` hands a marked `zsh -lc` command to Homebrew bash; `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
+| D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zlogin.zsh` hands a marked `zsh -lc` command to Homebrew bash (`zshenv.zsh` a plain `zsh -c` one); `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 | D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
 
 ### Open
-
-**D1. Which profiles exist?**
-Profiles are named feature sets; machines pick several.
-Options: role-based (`base`, `dev`, `desktop`, `server`, `work`) plus host
-profiles for host facts (`studio`), or host-only profiles.
-Recommendation: role-based plus host profiles; host profiles hold only facts
-such as volume paths. Status: open.
-
-**D2. Entry points as local stubs, or symlinks into the repo?**
-Installers and `git config --global` write into these files; a symlink sends
-the write into the public repo.
-Options: one-line local stubs created once by `apply`; or symlinks plus
-guards. Trade-off: a stub is never updated by the repo, so it must stay one
-line.
-Recommendation: stubs. Status: open.
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,
@@ -932,6 +952,7 @@ Proposed: a vault named `dotfiles`, one item per service, fields `url`,
 
 **D13. How do machines without a person present resolve secrets?**
 Options:
+
 - Interactive `dotfiles secrets sync` into the OS secret store, with scheduled
   jobs reading only the store. The 1Password desktop-app unlock lasts at most 12
   hours and ends when the app locks, so it suits interactive runs only.
@@ -1038,8 +1059,10 @@ Each step is a pull request with its tests and docs.
    - **5b, migration.** Split the Brewfile and the stow packages into features
      and profiles; replace stow with the engine's linking (unfolding stow's
      directory links and moving the untracked files tools wrote through them
-     home); move host-only values into host profiles and existing `*.local`
-     files into the machine manifest and stubs. `config.sh` and the
+     home, along with the untracked files still left in the old tree that
+     `$HOME` links to); move host-only values into host profiles. The
+     machine-local `~/.gitconfig.local`, `~/.ssh/config.local`, `~/.zshrc.local`
+     and `Brewfile.local` stay as they are. `config.sh` and the
      LaunchAgents move with step 6, which brings the hooks and schedules they
      need.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and

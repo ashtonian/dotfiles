@@ -1,0 +1,11 @@
+id = "tool.gh"
+description = "GitHub CLI settings (a managed copy: gh rewrites it)"
+category = "tools"
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/gh/config.yml",
+]
+
+[provides]
+copy = [".config/gh/config.yml"]

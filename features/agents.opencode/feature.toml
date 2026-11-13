@@ -1,0 +1,16 @@
+id = "agents.opencode"
+description = "OpenCode coordinator config, agents and delegate plugin (see README.md here)"
+category = "agents"
+
+# Where the stow package used to link these files.
+retire = [
+  ".config/opencode/agents/coordinator.md",
+  ".config/opencode/opencode.jsonc",
+  ".config/opencode/plugins/delegate.ts",
+]
+
+[provides]
+# One link per file. OpenCode installs the plugin's dependencies beside them in
+# ~/.config/opencode/node_modules, and Bun resolves a linked plugin's imports
+# from the link's location, so they are found there.
+link = [".config/opencode"]

@@ -10,31 +10,45 @@ relocate the installer or rewrite LaunchAgent templates.
 | ---------- | ------ | --------- | ---------------- |
 | `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
-| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply` |
+| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh` builds and runs the same path |
+| `DOTFILES_PROFILES` | Comma-separated names | unset | `install.sh`: the profiles to write, as `--profiles` does; without either it keeps an existing manifest or asks |
 | `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
-| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/stow-hold/` keeps machine-local files `sync.sh stow` could not move home; `dotfiles/applied.json` is what `dotfiles apply` installed and `dotfiles/apply.lock` serialises runs |
-| `XDG_CONFIG_HOME` (engine) | Directory path | `~/.config` | `dotfiles/machine.toml` (this machine's profiles and overrides, `--machine`) and `dotfiles/generated/` (outputs `apply` renders) |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/applied.json` is what `dotfiles apply` installed and `dotfiles/apply.lock` serialises runs |
+| `XDG_CONFIG_HOME` | Directory path | `~/.config` | Not followed: the engine, sync and the installer always use `~/.config` (the stubs and the shared git and ssh configs name it), with `~/.config/dotfiles/machine.toml` as this machine's manifest and `~/.config/dotfiles/generated/` for the generated outputs. `zshrc.zsh` loads its modules from its own directory. git reads `$XDG_CONFIG_HOME/git/config`, so `dotfiles doctor` reports a value other than `~/.config` |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
-| `XDG_CONFIG_HOME` | Directory path | `~/.config` | Zsh module directory; Stow still targets the default home layout |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
 | `MISE_DATA_DIR` | Directory path | `$XDG_DATA_HOME/mise` | mise's installed tools and `shims/`, which `env.sh` puts on PATH |
 | `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
-| `PLAYWRIGHT_BROWSERS_PATH` | Directory path | `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads, kept beside the Go and npm caches on E2TB (npm's is `cache=` in `~/.npmrc`) |
+| `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
-| `EDITOR` / `VISUAL` | Command | nvim if installed, else vim / `$EDITOR` | Core editor defaults from `.zshenv` |
+| `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
 | `PAGER` | Command | less | Core pager default |
 | `LANG` | Locale string | en_US.UTF-8 | Existing value is preserved |
 | `SHOW_COWSAY` | String | false | Set exactly true in `~/.zshrc.local` to enable the greeting |
 | `AWS_SHARED_CREDENTIALS_FILE` | File path | `~/.aws/credentials` | AWS helper credential destination |
 | `AWS_CONFIG_FILE` | File path | `~/.aws/config` | AWS helper region/profile config |
-| `AGENT_SHELL` | Marker | unset; Codex sets it through `[shell_environment_policy] set` in `/etc/codex/config.toml` (`bin/dotfiles-agents`) | `.zshenv` unsets it and runs the `zsh -c` command in Homebrew bash (or `/usr/bin/bash` 4+); with neither, it turns off `NOMATCH`, `BAD_PATTERN`, `EQUALS` and turns on `SH_WORD_SPLIT` instead |
+| `AGENT_SHELL` | Marker | unset; Codex sets it through `[shell_environment_policy] set` in `/etc/codex/config.toml` (`bin/dotfiles-agents`) | A marked `zsh -lc` hands off in `zlogin.zsh`, after the other entry points ran; a marked plain `zsh -c` in `zshenv.zsh`. Either unsets it and runs the command in Homebrew bash (or `/usr/bin/bash` 4+); with neither, it turns off `NOMATCH`, `BAD_PATTERN`, `EQUALS` and turns on `SH_WORD_SPLIT` instead. `env.sh` unsets it in any other shell, so a zsh a bash command starts stays zsh |
 | `CLAUDE_CODE_SHELL` | File path | Homebrew bash, from `bin/dotfiles-agents`'s managed-settings drop-in | Shell Claude Code's Bash tool runs |
 | `DOTFILES_ENV_PATH` | PATH value | set by `env.sh` | The PATH `env.sh` last composed. A nested shell whose PATH still ends with it keeps PATH unchanged, so directories a command put first stay first; do not set it by hand |
 | `DOTFILES_SYSTEM_ROOT` | Directory path | empty (`/`) | Prefix for every path `bin/dotfiles-agents` writes; for testing and packaging |
 
-OpenCode's [config tables](../stow/opencode/README.md#config) cover its bind
+The `dotfiles` engine's flags:
+
+| Flag | Type | Default | Scope / effect |
+| ---- | ---- | ------- | -------------- |
+| `--home` | Directory path | `$HOME` | All commands: the home directory to manage |
+| `--repo` | Directory path | `$DOTFILES_DIR`, else `~/.dotfiles` | All commands: the checkout whose `features/` and `profiles/` are read |
+| `--machine` | File path | `~/.config/dotfiles/machine.toml` | All commands: this machine's manifest |
+| `--profiles` | Comma-separated names | none (required) | `init`: the profiles to write, in order |
+| `--force` | Boolean | `false` | `init`: replace an existing manifest |
+| `--dry-run` | Boolean | `false` | `apply`: report what would change, change nothing (`doctor` always does this) |
+| `--lock-wait` | Duration | `1m` | `apply`, `adopt`: how long to wait for another run's `apply.lock` |
+| `--git-timeout` | Duration | `30s` | `apply`, `doctor`: how long `git ls-files` may take; apply needs the tracked-file list so unfolding never moves a tracked file |
+| `--json` | Boolean | `false` | `status`: print JSON |
+
+OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
 agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), and the agent
 telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config).
@@ -48,7 +62,7 @@ The shared Git config contains the repository owner's identity. Override it
 intentionally for another user or a work-specific repository. The installer
 does not create a signing key or register one with GitHub.
 
-Use [the local template](../stow/git/.gitconfig.local.example), merging settings
+Use [the local template](../features/git/gitconfig.local.example), merging settings
 into an existing `~/.gitconfig.local` rather than overwriting it:
 
 ```ini
@@ -78,26 +92,28 @@ match an email on the signing key that is verified on the GitHub account.
 For deliberate manual commits, use `git commit -S` and `git verify-commit HEAD`.
 After a GitHub push, inspect its Verified badge or API status too.
 
-Git uses gh for `github.com` and `gist.github.com` credentials through the
-helpers in `~/.gitconfig.local`, which the shared config includes last, so one gh
-login covers both. Copy them from `stow/git/.gitconfig.local.example` rather than
-running `gh auth setup-git`: it writes with `git config --global`, and
-`~/.gitconfig` links into this repository, so the helpers would land in the
-tracked shared config. Besides gh's defaults (`repo`, `read:org`, `gist`,
-`workflow`), this setup uses `project` for GitHub Projects, `write:gpg_key` for
-registering the signing key, and `admin:public_key` and `admin:ssh_signing_key`
-for the SSH key upload helper. Log in once with all of them:
+Git uses gh for `github.com` and `gist.github.com` credentials, so one gh login
+covers both. `gh auth setup-git` writes the helpers with `git config --global`,
+which lands in `~/.gitconfig`: this machine's own file, read after the shared
+`~/.config/git/config`. [The local template](../features/git/gitconfig.local.example)
+shows the same helpers for `~/.gitconfig.local` instead. Besides gh's defaults
+(`repo`, `read:org`, `gist`, `workflow`), this setup uses `project` for GitHub
+Projects, `write:gpg_key` for registering the signing key, and `admin:public_key`
+and `admin:ssh_signing_key` for the SSH key upload helper. Log in once with all
+of them:
 
 ```sh
 gh auth login -h github.com --insecure-storage \
   -s project,write:gpg_key,admin:public_key,admin:ssh_signing_key
+gh auth setup-git -h github.com
 ```
 
 `--insecure-storage` keeps the token in `~/.config/gh/hosts.yml` (mode 0600,
-outside this repo; `sync.sh` stows `gh` file by file) instead of the login
-keychain, which SSH sessions can't read while it is locked. To add a scope
-later, run `gh auth refresh -h github.com -s <scope>`, which keeps the existing
-ones. Running `gh auth login` again issues a token with only the defaults.
+outside this repo; the engine installs gh's settings file by file, so
+`~/.config/gh` is a real directory) instead of the login keychain, which SSH
+sessions can't read while it is locked. To add a scope later, run
+`gh auth refresh -h github.com -s <scope>`, which keeps the existing ones.
+Running `gh auth login` again issues a token with only the defaults.
 
 ## LaunchAgents
 
@@ -196,7 +212,7 @@ For Too many open files errors, inspect the loaded job's maxfiles value. The
 template sets a soft limit of 65,536. Apply plist changes with `--codex-only`;
 `kickstart -k` alone keeps the previously loaded settings. If sessions repeatedly
 drop, inspect the log and `launchctl list` for duplicate jobs before removing a
-specific stale job. OpenCode has separate [operations instructions](../stow/opencode/README.md#operations),
+specific stale job. OpenCode has separate [operations instructions](../features/agents.opencode/README.md#operations),
 and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
 [telemetry collector](AGENT-TELEMETRY.md#operations).
 
@@ -225,7 +241,58 @@ copy its current files somewhere safe, then run
 files come back as mode 0600, so re-apply the modes of anything executable,
 such as scripts under `~/Library/Scripts`.
 
-## Sync failures
+## Moving an existing machine to the feature engine
+
+A machine set up before the engine has stow's links in `$HOME`, some of them
+whole directories folded into the repository. The first `dotfiles apply`
+converts them; nothing needs removing by hand.
+
+Before the migration reaches the machine:
+
+1. Write its manifest with the profiles from the README's machine table, for
+   example on the Mac mini:
+
+   ```sh
+   mkdir -p ~/.config/dotfiles
+   printf 'profiles = ["base", "dev", "desktop", "server"]\n' > ~/.config/dotfiles/machine.toml
+   ```
+
+2. Check `go version` is at least the `go` line in `go.mod`; `brew install go`
+   or `brew upgrade go` otherwise. Sync builds the engine with `GOTOOLCHAIN=local`
+   and refuses to merge the migration until both are in place, so the machine
+   keeps working on the old layout until then.
+
+3. Where fnm provided Node, install mise's default Node now (`brew install mise`,
+   then `mise install`): `env.sh` puts mise's shims on PATH instead of fnm's
+   Node, so agents and LaunchAgents that run `node` or `npx` need it. The weekly
+   update runs `mise install` from then on.
+
+Then, on a machine with the sync LaunchAgent, the next sync merges, builds and
+applies in one run. On a machine without it, run the same steps by hand:
+
+```sh
+git -C ~/.dotfiles pull --ff-only
+~/.dotfiles/sync.sh apply      # builds ~/.local/bin/dotfiles, then dotfiles apply
+dotfiles doctor                # exit 0 when nothing is left
+```
+
+The first apply prints `unfold` for each folded directory, `move-home` for each
+untracked file a tool wrote through one (gh's `hosts.yml`, opencode's
+`node_modules`), `relink` and `retire` for stow's file links, and `stub` for the
+entry points (`~/.zlogin` is new). Then check what the old links carried:
+
+```sh
+git -C ~/.dotfiles status --short --ignored   # nothing left under stow/
+git config --show-origin --get user.signingkey  # from ~/.gitconfig.local
+ssh -G github.com >/dev/null && echo ssh ok
+zsh -lic 'echo shell ok'
+```
+
+Reinstall the sync and update agents once
+(`~/.dotfiles/bin/dotfiles-install-launchagents.sh --sync-only`, then
+`--update-only`): an installed plist is a copy, and plists from before the
+rollout run `bash -l`, whose `path_helper` puts Apple's bash 3.2 and git ahead
+of Homebrew's.
 
 Start with `git -C ~/.dotfiles status` and `logs/sync.log`. Do not delete Git
 state files, disable signing, or force-push to clear a failure.
@@ -252,11 +319,11 @@ state files, disable signing, or force-push to clear a failure.
 | `dotfiles apply left problems to resolve` | The log above lists them; see [Feature engine troubleshooting](#feature-engine-troubleshooting). Sync carries on with packages and the other repositories. |
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
-| Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. |
+| Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, `mise install`, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--mise`, `--zinit` or `--sync`. |
 
 ```sh
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
-  --file="$HOME/.dotfiles/Brewfile"
+  --file="$HOME/.config/dotfiles/generated/Brewfile"
 ```
 
 ## Feature engine troubleshooting
@@ -268,25 +335,28 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | `a file is in the way` | A real file sits where a link goes. Compare it with the tracked file the message names, keep what you need (in the repository if it should be shared), move the file aside, and run `dotfiles apply`. |
 | `edited here since dotfiles last wrote it` | A managed copy was changed locally, by hand or by the app that rewrites it. Keep it with `dotfiles adopt <path>`, which writes it into the tracked file (sync publishes it like any tracked edit), or delete the local file and run `dotfiles apply` to take the repository's version. |
 | `not a managed copy on this machine` (exit 64) | `dotfiles adopt` names only files an enabled feature installs as a copy; linked files are edited in place and need no adopt. Flags go before the paths. |
-| `is a directory link into the repository` | An old stow folding. Run `sync.sh stow`, which replaces it with a real directory, then `dotfiles apply`. |
+| `move this line before the first Host or Match line` | `~/.ssh/config` existed before the stub and its `Include dotfiles.conf` comes after a `Host` or `Match` line, where it applies only inside that block. Move it above the first one. |
+| `left in the retired stow tree and not installed any more` | An untracked file is still under `stow/` and nothing in `$HOME` links to it. It is yours: move it where it belongs (often the same path under `$HOME`), or delete it. `/stow/` is gitignored, so it is never published. |
+| `XDG_CONFIG_HOME: it is ..., but dotfiles installs into ~/.config` | git and other tools read their config from `$XDG_CONFIG_HOME`, so they miss the shared files. Unset it (usually in `~/.zshrc.local`) or set it to `~/.config`. |
 | `add this line so it loads the shared configuration` | An entry point that existed before the stub. Add the named line; the engine never edits a stub once it exists. |
+| `.bashrc: add this line` on Linux | The distribution's `~/.bashrc` from `/etc/skel` existed first. Add the line at the top, above its `case $- in` (or `[ -z "$PS1" ] && return`) guard, which returns early in non-interactive shells. Login bash loads `env.sh` through `~/.bash_profile` either way. |
 | `skipped until these settings have values` | A required setting has no value. Set it in a profile or `machine.toml`; secrets are `{ secret = "op://..." }` references. |
+| `no machine manifest at ...` (exit 2) | This machine has no `~/.config/dotfiles/machine.toml`. Run `dotfiles init --profiles <names>` with this machine's profiles (see the README's machine table); apply refuses to guess, since no profiles would remove everything they install. |
+| `a link to ... is in the way` | A link that points outside the repository sits where a link, copy or stub goes. Check what it points at, remove it if it is stale, and run `dotfiles apply`. |
+| `unfold` and `move-home` in the output | Expected once per machine: a directory the old stow layout had linked into the repository becomes a real directory, and the untracked files tools wrote through it (such as gh's `hosts.yml`) move into it. Tracked files are never moved. A leftover `<dir>.dotfiles-unfold-<pid>` directory means a run died mid-unfold: compare it with `<dir>`, move any missing file into `<dir>`, then delete it. |
 | Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |
 | `another dotfiles apply holds ...apply.lock` | Another run is in progress (sync, or a manual run). Wait, or raise `--lock-wait`. The lock is released when that process exits; never delete the file by hand. |
 | `state ... has version N` | The state file is from a different engine build. Rebuild `dotfiles` from the current checkout. |
 
-## Shell and Stow troubleshooting
+## Shell troubleshooting
 
 | Symptom | Check and recovery |
 | --------- | -------------------- |
-| Stow conflict | Preview with explicit `--dir` and `--target` as shown in the README. Compare and back up the conflicting file before moving it aside, then run `sync.sh stow`. A package with a conflict is left exactly as it was. |
-| Machine-local file left in `stow-hold` | `sync.sh stow` found a gitignored file inside a package, but a real file already sits at its home location. Compare the two (the log names both), keep the right one at the home path, and delete the held copy under `~/.local/state/dotfiles/stow-hold/`. |
-| Untracked files in stow packages | The log lists them after `sync.sh stow`. They are linked but never published. Commit them (`git add` and a signed commit) or delete them. |
+| Shell starts without its config | `~/.zshrc`, `~/.zshenv`, `~/.zprofile` and `~/.zlogin` must be the one-line stubs and `~/.config/zsh/*.zsh` links into `features/shell.zsh/home/`. Run `dotfiles doctor`; if it says a stub is missing its line, add the line it names. |
 | Slow first shell | First-run downloads are expected. Use repeated `time zsh -ic exit` for warm config load and `zinit times` in a real terminal for deferred plugins; config-load time is not full first-prompt latency. |
 | Plugin load error | Inspect `zinit list` and `zinit times`, then repair/update the named plugin or cache rather than deleting unrelated plugin data. |
 | Unexpected history key | Inspect `bindkey '^R'` after deferred plugins load. Atuin should own it when installed; otherwise FZF can own it. |
 | Missing Rust toolchain | Run `rustup default stable` after a fresh Rustup install. |
-| `~/.config/gh` is a link into the repository (`readlink ~/.config/gh` prints a path) | An older stow folded the package, so gh wrote its token into `stow/gh/.config/gh/hosts.yml`. Run `~/.dotfiles/sync.sh stow`: it relinks gh file by file and moves `hosts.yml`, which is gitignored, to `~/.config/gh/`. Check `readlink ~/.config/gh` prints nothing and `gh auth status` still succeeds. |
 | `gh auth status`: "The token in default is invalid" over SSH | gh found no token. It is usually in the login keychain, which SSH sessions can't read while it is locked (`security show-keychain-info` fails with "User interaction is not allowed"), and git's `osxkeychain` helper reports `failed to store: -25308` for the same reason. Log in once with file storage as shown in [Git identity and signing](#git-identity-and-signing). |
 | A `gh` scope disappeared | `gh auth login` issues a new token with only the default scopes. Add scopes with `gh auth refresh -h github.com -s <scope>`, which keeps the existing ones; see [Git identity and signing](#git-identity-and-signing) for the set this setup uses. |
 

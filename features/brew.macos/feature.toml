@@ -1,0 +1,10 @@
+id = "brew.macos"
+description = "macOS-only command-line packages (GPG pinentry, Dock editing)"
+category = "packages"
+platforms = ["darwin"]
+
+[provides]
+brew = [
+  "dockutil",
+  "pinentry-mac",
+]

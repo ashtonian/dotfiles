@@ -43,6 +43,7 @@ of them, so the service runs on the defaults.
 | Variable | Type | Default | Description |
 | ---------- | ------ | --------- | ------------- |
 | `AGENT_MONITOR_HOME` | Directory path | `~/.local/share/agent-monitor` | Release checkout (`app/`), settings (`config/.env`) and the data link (`data`). The LaunchAgent template and installer assume the default |
+| `AGENT_MONITOR_DATA_DIR` | Directory path | unset (`<home>/store`); studio: `/Volumes/E2TB/agent-monitor` | Where `install` points the data link when `--data-dir` is not given. Setting `paths.agent_monitor_data` (feature `shell.env`), exported by the generated `env.sh` |
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
 | `AGENT_MONITOR_GATE_HOST` | Address | `0.0.0.0` | LAN gate bind address; set it to one interface's address to keep the gate off the others |
 | `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in home-ops-private `k8s/dev/agent-monitor` |
@@ -67,7 +68,9 @@ settings, such as sweep intervals, snapshot retention and alert rules, go in
 lists every key.
 
 `install --data-dir DIR` chooses the data directory (default
-`/Volumes/E2TB/agent-monitor`, mode 0700). It holds `dashboard.db` and the
+`$AGENT_MONITOR_DATA_DIR`, else `<home>/store`; mode 0700). The `studio` profile
+sets `paths.agent_monitor_data`, which the generated `env.sh` exports as
+`AGENT_MONITOR_DATA_DIR`, to `/Volumes/E2TB/agent-monitor`. It holds `dashboard.db` and the
 transcript snapshots. Snapshots are plain copies of live transcripts, gzipped
 once an original is deleted, so expect several GB. Without `--data-dir`, a later
 `install` keeps the existing link.
@@ -78,7 +81,7 @@ once an original is deleted, so expect several GB. Without `--data-dir`, a later
 | ------------ | ---------- |
 | GitHub (`hoangsonww/Claude-Code-Agent-Monitor`) | Release checkout at install time |
 | npm registry | Server and client dependencies at install time |
-| `mise` (Brewfile) | Installs the pinned Node.js |
+| `mise` (feature `brew.base`) | Installs the pinned Node.js |
 | `git`, `curl` | Checkout; `status` health check |
 | `claude`, `codex` on the LaunchAgent PATH | Run page sessions only |
 

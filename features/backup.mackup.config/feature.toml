@@ -1,0 +1,12 @@
+id = "backup.mackup.config"
+description = "The Mackup configuration manual runs read (sync no longer runs Mackup)"
+category = "backup"
+platforms = ["darwin", "linux"]
+
+# Where the stow package used to link these files.
+retire = [
+  ".mackup.cfg",
+]
+
+[provides]
+link = [".mackup.cfg"]

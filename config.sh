@@ -23,10 +23,6 @@ bot "Configuring brew taps, casks & apps + mas apps + zsh config."
 #######################################################################################################################################
 
 # TODO: exit if no brew
-# ```sh
-# brew bundle dump -f
-# cat Brewfile| pbcopy
-# ```
 
 # running "Turn off brew analytics."
 # brew analytics off
@@ -37,9 +33,8 @@ bot "Configuring brew taps, casks & apps + mas apps + zsh config."
 # brew update
 # ok
 
-running "Install brew bundle."
-cd $DOTDIR
-brew bundle
+running "Install the enabled features' packages."
+"$DOTDIR/sync.sh" brewfile
 ok
 
 # running "Cleanup homebrew."
@@ -821,7 +816,7 @@ ok
 # defaults write com.apple.dock wvous-bl-modifier -int 0
 # ok
 
-## Dockutil dependency installed in with brewfile
+## dockutil comes from the brew.macos feature
 running "Make dock empty."
 dockutil --remove all --allhomes
 ok

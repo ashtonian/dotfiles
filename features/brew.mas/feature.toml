@@ -1,0 +1,27 @@
+id = "brew.mas"
+description = "Mac App Store applications for any desk, the work machine included; needs an App Store sign-in"
+category = "packages"
+platforms = ["darwin"]
+
+[provides]
+# The CLI that installs them.
+brew = ["mas"]
+mas = [
+  { name = "1Password for Safari", id = 1569813296 },
+  { name = "Blackmagic Disk Speed Test", id = 425264550 },
+  { name = "Dark Reader for Safari", id = 1438243180 },
+  { name = "Horo", id = 1437226581 },
+  { name = "Keynote", id = 409183694 },
+  { name = "Monosnap", id = 540348655 },
+  { name = "Notion Web Clipper", id = 1559269364 },
+  { name = "Numbers", id = 409203825 },
+  { name = "Okta Verify", id = 490179405 },
+  { name = "Pages", id = 409201541 },
+  { name = "Parallels Desktop", id = 1085114709 },
+  { name = "StopTheMadness", id = 1376402589 },
+  { name = "Toggl Track", id = 1291898086 },
+  { name = "UTM", id = 1538878817 },
+  { name = "Vimari", id = 1480933944 },
+  { name = "Xcode", id = 497799835 },
+  { name = "Yoink", id = 457622435 },
+]

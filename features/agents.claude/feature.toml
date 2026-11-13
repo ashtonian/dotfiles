@@ -1,0 +1,11 @@
+id = "agents.claude"
+description = "Claude Code instructions for every project"
+category = "agents"
+
+# Where the stow package used to link these files.
+retire = [
+  ".claude/CLAUDE.md",
+]
+
+[provides]
+link = [".claude/CLAUDE.md"]

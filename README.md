@@ -1,7 +1,8 @@
 # dotfiles
 
-Personal macOS configuration: modular Zsh, Stow-managed files, Homebrew tooling,
-signed Git sync, app backups, and local coding-agent services.
+Personal macOS configuration: modular Zsh, per-machine features installed by
+the `dotfiles` engine, Homebrew tooling, signed Git sync, app backups, and local
+coding-agent services.
 
 See [Operations](docs/OPERATIONS.md) for configuration, signing, backup restore,
 and failure recovery; [Structure](STRUCTURE.md) maps the implementation. The
@@ -16,15 +17,17 @@ installation before using Git to clone the repository.
 ```sh
 git clone https://github.com/ashtonian/dotfiles.git ~/.dotfiles
 cd ~/.dotfiles
-less install.sh
-less Brewfile
-~/.dotfiles/install.sh
+less install.sh profiles/*.toml
+~/.dotfiles/install.sh --profiles base,dev,desktop
 ```
 
-Review the installer and Brewfile first: this is a broad personal app collection,
-including paid apps. The installer requests sudo, offers passwordless sudo,
-installs shared packages, attempts every Stow package, and loads LaunchAgents.
-The sync agent runs immediately at load. Package and Stow failures can be
+Pick the [profiles](#profiles-and-machines) this machine runs; without
+`--profiles` the installer asks. Review the profiles' package features first:
+`desktop` is a broad personal app collection, including paid apps. The
+installer requests sudo, offers passwordless sudo, installs Go, builds the
+`dotfiles` engine, writes `~/.config/dotfiles/machine.toml`, applies the
+enabled features, installs their packages, and loads LaunchAgents. The sync
+agent runs immediately at load. Apply problems and package failures are
 warnings, so inspect the output before relying on the completion message.
 
 The final prompt offers `config.sh`, which applies broad system/app preferences,
@@ -42,10 +45,10 @@ recognize `/usr/local` Homebrew installations.
 | Dependency | Required for |
 | ------------ | -------------- |
 | Git, GnuPG, usable signing key | Repository sync and signed commits |
-| Homebrew, Stow, Python 3 | Packages, links, and AWS profile helpers |
+| Homebrew, Go (version in `go.mod`), Python 3 | Packages, building the `dotfiles` engine, and AWS profile helpers |
 | Gitleaks | Scanning dotfiles before automatic publication |
 | GitHub CLI (gh), authenticated for each destination | Checking GitHub commit verification after a push |
-| Mac App Store sign-in | Brewfile mas entries |
+| Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
@@ -58,26 +61,26 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 
 | Component | Description |
 | ----------- | ------------- |
-| **Homebrew** | Package manager + all packages from Brewfile |
-| **Stow packages** | Every package in stow/, linked one file at a time; see [package inventory](STRUCTURE.md#stow-packages) |
+| **Homebrew** | Package manager + the enabled package features' Brewfile entries |
+| **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every 6 hours, eligible Codex/OpenCode/agent dashboard services |
+| **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every hour, eligible Codex/OpenCode/agent dashboard services |
 
 ## Architecture
 
 ```text
 ~/.dotfiles/                    # This repo - synced via git
-├── stow/                       # Symlinked to ~ (dotfiles)
-│   ├── zsh/                    # Shell config
-│   ├── git/                    # Git config
-│   ├── ssh/                    # SSH config
-│   ├── atuin/                  # Shell history
-│   └── mackup/                 # Mackup config
+├── features/<id>/              # One capability each: feature.toml, home/ (files linked into ~)
+│   ├── shell.env/, shell.zsh/  # Shared environment; zsh modules and entry files
+│   ├── git/, ssh/              # Shared git and ssh settings
+│   ├── tool.*/, agents.*/      # Tool and coding-agent configs
+│   └── brew.*/                 # Package lists, split by role
+├── profiles/                   # Named feature sets: base, dev, desktop, server, work, studio
+├── cmd/dotfiles/, internal/    # The feature engine (Go)
 ├── lib_sh/                     # Shell libraries
 ├── bin/                        # Scripts
 ├── launchagents/               # Automation plists
-├── Brewfile                    # Curated package list
 ├── install.sh                  # Bootstrap script
 ├── config.sh                   # macOS preferences
 └── sync.sh                     # Sync automation
@@ -89,9 +92,9 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 └── alfred-dracula/             # Alfred theme
 ```
 
-## Stow vs Mackup: When to Use What
+## Features vs Mackup: When to Use What
 
-| Use **Stow** for: | Use **Mackup** for: |
+| Use a **feature** for: | Use **Mackup** for: |
 | ------------------- | --------------------- |
 | Dotfiles (`.zshrc`, `.gitconfig`) | App preferences (plists) |
 | Config dirs (`~/.config/zsh/`) | App data (`~/Library/...`) |
@@ -101,16 +104,17 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 
 **Examples:**
 
-- `.zshrc` → Stow (you edit it, want version control)
-- `.gitconfig` → Stow (you edit it)
+- `~/.config/zsh/*.zsh` → feature `shell.zsh` (you edit it, want version control)
+- `~/.config/git/config` → feature `git` (you edit it)
 - `com.googlecode.iterm2.plist` → Mackup (iTerm manages it)
 - `Alfred.alfredpreferences` → Mackup (Alfred manages it)
-- `~/.ssh/config` → Stow (you edit it)
+- `~/.ssh/dotfiles.conf` → feature `ssh` (you edit it)
 - Terminal.app preferences → Mackup (macOS manages it)
 
-**Rule of thumb:** If you open the file in an editor, use stow. If an app generates/modifies it, use mackup.
-Never link an app-managed file under `~/Library` with stow: current macOS apps
-refuse to read or save a symlinked preference file.
+**Rule of thumb:** If you open the file in an editor, make it part of a feature.
+If an app generates or modifies it, use Mackup, or a feature's managed `copy`.
+The engine never links a file under `~/Library` (current macOS apps refuse to
+read or save a symlinked preference file); it installs a managed copy instead.
 
 ## Sync System
 
@@ -146,19 +150,19 @@ pushes, and the checkout stays as it is.
 # Individual operations
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
-~/.dotfiles/sync.sh brewfile  # Install missing packages
-~/.dotfiles/sync.sh apply     # Build the engine if needed and run dotfiles apply
-~/.dotfiles/sync.sh stow      # Stow layout: relink packages, one link per file (engine layout: apply)
-~/.dotfiles/sync.sh all       # Full sync, and stow in the stow layout
+~/.dotfiles/sync.sh brewfile  # Install the enabled features' missing packages
+~/.dotfiles/sync.sh build     # Rebuild ~/.local/bin/dotfiles if its sources changed
+~/.dotfiles/sync.sh apply     # Build if needed, then dotfiles apply
+~/.dotfiles/sync.sh all       # Same as sync
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
 
 | Variable | Type | Default | Description |
 | -------- | ---- | ------- | ----------- |
-| `DOTFILES_DIR` | path | `~/.dotfiles` | Repository sync and stow operate on |
+| `DOTFILES_DIR` | path | `~/.dotfiles` | Repository sync and the engine operate on |
 | `SYNC_DIR` | path | `~/.sync` | Directory whose Git repositories sync also publishes |
 | `SYNC_QUIET_MINUTES` | minutes | `30` | A tracked edit newer than this makes sync skip the repository for this run |
-| `XDG_STATE_HOME` | path | `~/.local/state` | `dotfiles/stow-hold/` under it keeps machine-local files that could not be moved home |
+| `DOTFILES_BIN` | path | `~/.local/bin/dotfiles` | The engine binary sync builds and runs |
 
 Full sync commits and pushes eligible changes. A busy lock or unavailable network
 is logged and skipped successfully; other operation failures return nonzero.
@@ -180,7 +184,7 @@ launchctl start com.dotfiles.sync
 # Codex app-server only (privacy setup: docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --codex-only
 
-# OpenCode server only (local setup first, see stow/opencode/README.md)
+# OpenCode server only (local setup first, see features/agents.opencode/README.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
 
 # Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
@@ -189,7 +193,7 @@ launchctl start com.dotfiles.sync
 # Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
 
-# Go build cache trim only (entries unused for 48 h, every 6 h; see docs/OPERATIONS.md)
+# Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
 # Uninstall
@@ -200,39 +204,78 @@ launchctl start com.dotfiles.sync
 
 `cmd/dotfiles` is the engine the [machine features design](docs/MACHINE-FEATURES.md)
 describes: every capability is a feature under `features/<id>/`, profiles under
-`profiles/` turn groups of them on or off, and the untracked
-`~/.config/dotfiles/machine.toml` picks this machine's profiles and overrides.
-The repository's own packages move into features in the next rollout step; until
-then the engine has nothing to install and `sync.sh` keeps using stow.
+`profiles/` turn groups of them on, and the untracked
+`~/.config/dotfiles/machine.toml` lists this machine's profiles and overrides.
+Sync builds the binary into `~/.local/bin/dotfiles` and runs `dotfiles apply`
+after every merge.
 
 ```sh
-go build -o ~/.local/bin/dotfiles ./cmd/dotfiles   # Go from Homebrew or mise
-
+dotfiles init --profiles base,dev,desktop   # write this machine's manifest (once)
 dotfiles status            # every feature, enabled or not, and which layer decided
 dotfiles apply --dry-run   # what apply would change
 dotfiles apply             # converge this machine
 dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if any
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
-dotfiles adopt <path>...   # make a managed copy's local edits the repository's version
+dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
-writes managed copies for files that must not be links (everything under
-`~/Library` on macOS), renders the generated outputs in
-`~/.config/dotfiles/generated/`, and creates one-line stubs for entry points
-installers write to. It records what it installed in
-`~/.local/state/dotfiles/applied.json`, so disabling a feature removes exactly
-what it added. It never overwrites a file it did not create: a file in the way,
-a locally edited managed copy, or an old directory link into the repository is
+writes managed copies for files a tool rewrites (gh, htop and Taskwarrior
+settings, and everything under `~/Library` on macOS), renders the generated
+outputs in `~/.config/dotfiles/generated/` (the Brewfile, and the env, zsh, git
+and ssh fragments), and creates one-line stubs for entry points installers
+write to. It records what it installed in `~/.local/state/dotfiles/applied.json`,
+so disabling a feature removes exactly what it added. It never overwrites a
+file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
-edits into its tracked file. A second run with nothing changed does nothing.
+edits into its tracked file, which sync then publishes like any tracked edit. A
+second run with nothing changed does nothing.
+Without `machine.toml` it refuses to run, since no profile would apply and it
+would remove everything the profiles install.
+
+Old stow links are converted on the first apply: a directory stow had folded
+into one link becomes a real directory, the untracked files tools wrote through
+that link (such as gh's `hosts.yml`) move to their place in `$HOME`, and links
+to paths no feature installs any more are removed. An untracked file still in
+the retired `stow/` tree that `$HOME` links to moves home too; one nothing
+links to is reported, never deleted, except Finder's `.DS_Store`, which is
+removed.
+
+### Profiles and machines
+
+| Profile | Enables |
+| ------- | ------- |
+| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
+| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, personal finance, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
+| `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
+| `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
+
+| Machine | Profiles |
+| ------- | -------- |
+| studio | `base, dev, desktop, studio` |
+| Mac mini | `base, dev, desktop, server` |
+| Work machine | `base, dev, work` |
+
+Override one feature or setting for one machine in `machine.toml`:
+
+```toml
+profiles = ["base", "dev", "desktop", "server"]
+
+[features]
+disable = ["tool.taskwarrior"]
+
+[settings]
+"paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+```
 
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
 | 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
 | 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict) |
-| 64 | Usage, or `adopt` named a path that is not a managed copy |
+| 64 | Usage |
 | 70 | An I/O failure |
 
 ## Shell Configuration
@@ -251,9 +294,24 @@ edits into its tracked file. A second run with nothing changed does nothing.
 ```
 
 PATH and the core environment (Homebrew, Go, language toolchains, editor,
-pager, locale) are defined once in `~/.config/shell/env.sh` (stow package
-`shell`). `~/.zshenv` sources it for every zsh and `~/.bashrc` for bash, which
-covers Claude Code's Bash tool. A nested shell keeps the PATH its parent built.
+pager, locale) are defined once in `~/.config/shell/env.sh` (feature
+`shell.env`), followed by the enabled features' generated `env.sh`.
+`~/.zshenv` sources it for every zsh, `~/.bash_profile` for login bash and
+`~/.bashrc` for interactive bash, which covers
+Claude Code's Bash tool. A nested shell keeps the PATH its parent built.
+
+`~/.zshenv`, `~/.zprofile`, `~/.zshrc` and `~/.zlogin` are one-line local stubs
+that source `zshenv.zsh`, `zprofile.zsh`, `zshrc.zsh` and `zlogin.zsh` in
+`~/.config/zsh/`, so an installer that appends to `~/.zshrc` changes only this
+machine. Local zsh modules go beside the shared ones with a number, such as
+`~/.config/zsh/80-local.zsh`; `zshrc.zsh` loads only numbered modules.
+`~/.gitconfig` is the machine's own file (an existing one is kept): shared
+settings are in `~/.config/git/config`, which includes the generated fragments
+and then `~/.gitconfig.local`, and `git config --global` writes to
+`~/.gitconfig`, which git reads last. `~/.ssh/config` starts with
+`Include dotfiles.conf`, which reads `~/.ssh/config.local` first and applies the
+shared defaults last (`Match final`), so hosts installers append to
+`~/.ssh/config` keep their own settings.
 
 Real sessions differ from tool shells: `ls`, `du`, `ping` and `top` stay the
 real commands everywhere (their replacements take different flags); eza
@@ -267,7 +325,7 @@ after the OMZ git plugin loads, so `gc` stays `git commit`.
 directory, from each project's own files: `toolchain` (or a patch-version `go`)
 lines in `go.mod`/`go.work` and `.go-version`, `.nvmrc`/`.node-version`/`package.json`,
 `.python-version`, plus `mise.toml` and `.tool-versions`. Shared defaults are in
-`~/.config/mise/conf.d/dotfiles.toml` (stow package `mise`), which mise never
+`~/.config/mise/conf.d/dotfiles.toml` (feature `tool.mise`), which mise never
 writes; `mise use -g` writes the machine-local `~/.config/mise/config.toml`.
 
 ```sh
@@ -300,7 +358,7 @@ SHOW_COWSAY=true
 
 ## AI CLI Helpers
 
-Interactive launchers from `stow/zsh/.zshrc`:
+Interactive launchers from `~/.config/zsh/zshrc.zsh` (feature `shell.zsh`):
 
 | Command | Model | Effort | Behavior |
 | --------- | ------- | -------- | ---------- |
@@ -345,9 +403,10 @@ system configs once per machine (they need sudo):
 
 ### Agent workspaces and fleets (gitstead)
 
-The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`.
-Install and configure [gitstead](https://github.com/ashtonian/gitstead) separately;
-fleet definitions, agent profiles, and workspace paths live in the machine-local
+The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`,
+and `gitstead cd <query>` jumps to a repository. The `brew.dev-apps` feature
+installs [gitstead](https://github.com/ashtonian/gitstead); fleet definitions,
+agent profiles, and workspace paths live in the machine-local
 `~/.config/gitstead/config.yaml` and are not supplied by this repository. Claude
 launchers disable claude.ai connectors in `wg-*` tmux sessions.
 
@@ -363,7 +422,7 @@ each finishes. Drive it from the terminal and a browser at once:
 | `ocweb` | Open the web UI (password copied to the clipboard; user `opencode`) |
 
 Setup, configuration, the `delegate_*` tools, operations and security:
-[stow/opencode/README.md](stow/opencode/README.md).
+[features/agents.opencode/README.md](features/agents.opencode/README.md).
 
 ### Agent dashboard
 
@@ -406,11 +465,15 @@ AI-assisted development workflows from `lib_sh/claude.sh`:
 
 ## Multi-Machine Setup
 
-This repo is designed to sync across multiple machines via LaunchAgent (every 4 hours). Each machine installs shared packages and backs up its own app configs without overwriting the other.
+This repo is designed to sync across multiple machines via LaunchAgent (every 4 hours). Each machine converges on the features its profiles enable and installs their missing packages; app settings backup returns with rollout step 8 (see [Mackup](#mackup-app-config-backup)).
+
+A machine set up before the feature engine needs its `machine.toml` and a
+current Go before the migration reaches it; see
+[Moving an existing machine to the feature engine](docs/OPERATIONS.md#moving-an-existing-machine-to-the-feature-engine).
 
 ### After install on a new machine
 
-1. **GPG signing** — create `~/.gitconfig.local` (see `stow/git/.gitconfig.local.example`):
+1. **GPG signing** — create `~/.gitconfig.local` (see `features/git/gitconfig.local.example`):
 
    ```ini
    [commit]
@@ -421,7 +484,7 @@ This repo is designed to sync across multiple machines via LaunchAgent (every 4 
        program = /opt/homebrew/bin/gpg
    ```
 
-2. **Machine-specific packages** — create `Brewfile.local` in `~/.dotfiles/` (gitignored):
+2. **Machine-specific packages** — create `Brewfile.local` in `~/.dotfiles/` (gitignored; sync installs it after the generated Brewfile):
 
    ```ruby
    brew "some-package-only-on-this-machine"
@@ -444,13 +507,13 @@ repository.
 
 ### How multi-machine sync works
 
-- **Brewfile**: The shared `Brewfile` is curated manually. Sync installs missing packages with `--no-upgrade` and disables Homebrew auto-update for this operation. Weekly updates own upgrades. Use `Brewfile.local` for machine-specific packages.
-- **Stow**: `sync.sh stow` links one file at a time (`--no-folding`), so no directory in `$HOME` becomes a link into the repository and a tool writing next to its config never writes into the repository. Gitignored files found inside a package (written there through an old directory link, such as gh's `hosts.yml`) are moved to their place in `$HOME` before the package is relinked. Untracked files that are not ignored are linked, listed in the log, and left for you to commit or remove.
+- **Packages**: The `brew.*` features hold the curated package lists, split by role; `dotfiles apply` writes the enabled ones into `~/.config/dotfiles/generated/Brewfile`. Sync installs missing packages with `--no-upgrade` and disables Homebrew auto-update for this operation. Weekly updates own upgrades. Use `Brewfile.local` for machine-specific packages.
+- **Features**: Sync runs `dotfiles apply` right after the merge. Files are linked one at a time, so no directory in `$HOME` is a link into the repository and a tool writing next to its config never writes into the repository.
 - **Git sync**: Repositories with an unfinished merge, rebase, cherry-pick or bisect are skipped. Sync requires a configured Git identity and signing key, creates signed commits and merges, and verifies signatures locally. Source conflicts abort the merge; backup repositories retain their local-wins merge policy. Detached HEADs and branches without a matching `origin` tracking branch are skipped.
 - **Publishing**: Gitleaks scans staged dotfiles and outgoing commits with redacted output; auxiliary repos are not scanned. Missing tools, scan failures, signing failures and merge failures stop publication. GitHub verification is checked after the push and does not undo publication on failure; bad_email requires correcting the signing identity.
 - **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
 - **Failures**: Sync returns a nonzero status when an operation fails and records the failure in `logs/sync.log`.
-- **Local overrides**: `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` are never tracked.
+- **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` and `Brewfile.local` are never tracked.
 
 ## Mackup: App Config Backup
 
@@ -494,19 +557,20 @@ zinit times
 zinit list
 ```
 
-### Stow Conflicts
+### A file is in the way
 
 ```sh
-# Check what would happen
-stow --dir="$HOME/.dotfiles/stow" --target="$HOME" --simulate --verbose zsh
-
-# Relink every package after comparing and backing up conflicting files
-~/.dotfiles/sync.sh stow
+dotfiles doctor            # lists each problem with its path
+dotfiles apply --dry-run   # what apply would change
 ```
 
-Stow does not overwrite conflicting regular files; a package with a conflict is
-left exactly as it was, and the log names the file. Editing an existing linked
-file does not require restowing. See [failure recovery](docs/OPERATIONS.md#shell-and-stow-troubleshooting).
+`apply` never overwrites a file it did not create; it reports it and carries
+on with everything else. Compare the file with the tracked one the message
+names, keep what you need, move it aside, and run `dotfiles apply`. Editing a
+linked file needs no apply. A managed copy edited here (`edited here since
+dotfiles last wrote it`) is kept with `dotfiles adopt <path>`, or replaced with
+the repository's version by deleting it and running `dotfiles apply`. See
+[feature engine troubleshooting](docs/OPERATIONS.md#feature-engine-troubleshooting).
 
 ### Sync Issues
 
@@ -518,25 +582,33 @@ tail -50 ~/.dotfiles/logs/sync.log
 ~/.dotfiles/sync.sh sync 2>&1
 ```
 
-
 ## Adding New Dotfiles
 
-### Via Stow (recommended for configs you edit)
+### As a feature (recommended for configs you edit)
 
 ```sh
-# 1. Create package directory
-mkdir -p ~/.dotfiles/stow/myapp
+# 1. Create the feature; home/ mirrors $HOME
+mkdir -p ~/.dotfiles/features/tool.myapp/home/.config/myapp
+mv ~/.config/myapp/config.toml ~/.dotfiles/features/tool.myapp/home/.config/myapp/
+cat > ~/.dotfiles/features/tool.myapp/feature.toml <<'EOF'
+id = "tool.myapp"
+description = "myapp settings"
+category = "tools"
 
-# 2. Move existing config
-mv ~/.myapprc ~/.dotfiles/stow/myapp/.myapprc
+[provides]
+link = [".config/myapp"]   # each file under it, linked one by one
+EOF
 
-# 3. Link it, one link per file
-~/.dotfiles/sync.sh stow
+# 2. Enable it in a profile (or one machine's machine.toml), then link it
+$EDITOR ~/.dotfiles/profiles/base.toml
+dotfiles apply
 
-# 4. Commit it: sync never publishes new files
-git -C ~/.dotfiles add stow/myapp && git -C ~/.dotfiles commit -S -m "myapp: add config"
+# 3. Commit it: sync never publishes new files
+git -C ~/.dotfiles add features/tool.myapp profiles && git -C ~/.dotfiles commit -S -m "myapp: add config"
 ```
 
+Use `copy` instead of `link` for a file the tool rewrites, so its edits show as
+drift instead of landing in the repository.
 
 ## Package and AWS Helpers
 
@@ -544,9 +616,6 @@ The shared package manifest uses maintained `fastfetch` and `tlrc` clients in
 place of removed or disabled clients, and uses Rustup for Rust toolchains. On a
 fresh machine, initialize Rust with `rustup default stable`. Disabled or removed
 casks are excluded from the shared manifest; existing applications are preserved.
-
-The sync wrapper accepts `SYNC_DIR` for the backup root and `MACKUP_CONFIG_FILE`
-for an alternate Mackup configuration (default `~/.mackup.cfg`).
 
 `assume_role` and `rename_aws_profile` respect `AWS_SHARED_CREDENTIALS_FILE` and
 `AWS_CONFIG_FILE`. Profile updates validate the response first, lock cooperating
@@ -562,7 +631,6 @@ session to the named profile; the region defaults to `us-east-1`.
 ## Resources
 
 - [Zinit](https://github.com/zdharma-continuum/zinit)
-- [Stow](https://www.gnu.org/software/stow/)
 - [Mackup](https://github.com/lra/mackup)
 - [Atuin](https://atuin.sh/)
 - [Dracula Theme](https://draculatheme.com/)
@@ -577,8 +645,13 @@ python3 -B -m unittest discover -s tests -v
 ```
 
 The suite uses temporary files and mock external commands. Git operation guards
-use temporary clones. Kernel-lock checks require macOS `lockf`; OpenCode worker
-checks require Bun and the plugin dependencies installed by OpenCode.
+use temporary clones. `RealFeatures` builds the engine with the installed Go and
+applies the repository's own features to temporary homes. Engine unit tests:
+`go test -race ./...`. Kernel-lock checks require macOS `lockf`; the agent
+dashboard checks require Node.js; OpenCode worker checks require Bun and the
+plugin dependencies OpenCode installs in `~/.config/opencode` (or a directory
+holding `node_modules/@opencode-ai/plugin` named by
+`DOTFILES_TEST_OPENCODE_DEPS`).
 
 Tests with missing platform/tool prerequisites are skipped. Run from the
 repository root, and use `git diff --check` to check whitespace. Warm
@@ -589,8 +662,8 @@ Documentation lint requires Node.js/npm:
 
 ```sh
 npx --yes markdownlint-cli2@0.23.3 \
-  "*.md" "docs/*.md" stow/opencode/README.md \
-  stow/opencode/.config/opencode/agents/coordinator.md win10/readme.md
+  "*.md" "docs/*.md" features/agents.opencode/README.md \
+  features/agents.opencode/home/.config/opencode/agents/coordinator.md win10/readme.md
 ```
 
 The [Markdown configuration](.markdownlint.json) permits wide command tables and
@@ -605,6 +678,7 @@ files and use private remotes for auxiliary backups. See
 [sync recovery](docs/OPERATIONS.md#sync-failures) for signing, scans, conflicts, and
 post-push verification failures.
 
-OpenCode defaults to all interfaces with HTTP basic auth and no TLS. Configure
-its bind address and network protection before enabling access from other
-devices; see [OpenCode security](stow/opencode/README.md#security).
+OpenCode listens on loopback by default, with HTTP basic auth and no TLS.
+`OPENCODE_HOSTNAME` opts in to another address; configure network protection
+before enabling access from other devices; see
+[OpenCode security](features/agents.opencode/README.md#security).

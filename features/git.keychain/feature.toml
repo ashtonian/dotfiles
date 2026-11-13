@@ -1,0 +1,8 @@
+id = "git.keychain"
+description = "Git credentials from the macOS Keychain"
+category = "tools"
+platforms = ["darwin"]
+requires = ["git"]
+
+[provides]
+gitconfig = "gitconfig"
