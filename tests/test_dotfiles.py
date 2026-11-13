@@ -33,6 +33,7 @@ class Fixture(unittest.TestCase):
                         AWS_CONFIG_FILE=str(self.path / 'config'),
                         PATH=str(self.bin) + os.pathsep + self.env['PATH'],
                         XDG_CACHE_HOME=str(self.path / 'cache'),
+                        XDG_CONFIG_HOME=str(self.path / 'config'),
                         TMPDIR=str(self.path),
                         PYTHONDONTWRITEBYTECODE='1')
 
@@ -400,8 +401,8 @@ def age(path, minutes=120):
     os.utime(path, (then, then))
 
 
-class SyncGit(Fixture):
-    """sync_git_repo against a real repository signed with a throwaway SSH key."""
+class SignedRepo(Fixture):
+    """A real repository that signs with a throwaway SSH key."""
 
     def setUp(self):
         super().setUp()
@@ -436,6 +437,11 @@ class SyncGit(Fixture):
         if minutes_ago:
             age(self.repo / name, minutes_ago)
 
+
+
+class SyncGit(SignedRepo):
+    """sync_git_repo publishing tracked edits."""
+
     def sync(self):
         return self.bash('sync_git_repo "$1"', str(self.repo))
 
@@ -464,6 +470,113 @@ class SyncGit(Fixture):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn('index lock', p.stdout)
         self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
+
+
+# A stand-in for an upstream checkout's engine: `check` and `apply` record
+# their arguments, and `check` exits with CHECK_EXIT.
+FAKE_ENGINE = """package main
+
+import (
+	"os"
+	"strings"
+)
+
+const checkExit = CHECK_EXIT
+
+func main() {
+	args := []byte(strings.Join(os.Args[1:], "\\n"))
+	switch os.Args[1] {
+	case "check":
+		os.WriteFile(os.Getenv("DOTFILES_TEST_CHECKED"), args, 0o644)
+		os.Exit(checkExit)
+	case "apply":
+		os.WriteFile(os.Getenv("DOTFILES_TEST_APPLIED"), args, 0o644)
+	}
+}
+"""
+
+
+@unittest.skipUnless(shutil.which('go'), 'Go required to build the upstream engine')
+class SyncFeaturesLayout(SignedRepo):
+    """The run that first pulls the features layout: gated on a machine manifest and on the
+    upstream engine building and planning it, then applied in the same run."""
+
+    def setUp(self):
+        super().setUp()
+        self.origin = self.path / 'origin.git'
+        subprocess.run(['git', 'init', '-q', '--bare', '-b', 'master', str(self.origin)], check=True, env=self.env)
+        self.git('remote', 'add', 'origin', str(self.origin))
+        self.git('push', '-q', '-u', 'origin', 'master')
+        (self.repo / 'logs').mkdir()
+        self.machine = self.path / 'config/dotfiles/machine.toml'
+        self.applied = self.path / 'applied'
+        self.checked = self.path / 'checked'
+        self.engine = self.path / 'engine/dotfiles'
+        gocache = subprocess.run(['go', 'env', 'GOCACHE'], capture_output=True, text=True, check=True).stdout.strip()
+        self.env.update(DOTFILES_DIR=str(self.repo), XDG_CONFIG_HOME=str(self.path / 'config'),
+                        DOTFILES_BIN=str(self.engine), DOTFILES_TEST_APPLIED=str(self.applied),
+                        DOTFILES_TEST_CHECKED=str(self.checked), GOCACHE=gocache)
+
+    def publish_upstream(self, check_exit=0, engine=FAKE_ENGINE):
+        """Upstream gains the features layout and its engine; this machine has not pulled it yet."""
+        files = {'features/shell.env/feature.toml': 'id = "shell.env"\n', 'profiles/base.toml': '',
+                 'profiles/dev.toml': '', 'go.mod': 'module example.invalid/engine\n\ngo 1.21\n',
+                 'cmd/dotfiles/main.go': engine.replace('CHECK_EXIT', str(check_exit))}
+        for name, text in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text(text)
+        self.git('add', *files)
+        self.git('commit', '-q', '-m', 'features layout')
+        self.git('push', '-q', 'origin', 'master')
+        self.git('reset', '-q', '--hard', 'HEAD~1')
+        self.upstream = self.git('rev-parse', 'origin/master').strip()
+
+    def write_machine(self):
+        self.machine.parent.mkdir(parents=True)
+        self.machine.write_text('profiles = ["base"]\n')
+
+    def run_sync(self):
+        return self.bash('sync_dotfiles; s=$?; apply_features || s=1; exit $s')
+
+    def assert_not_merged(self, p):
+        self.assertNotEqual(p.returncode, 0)
+        self.assertNotEqual(self.git('rev-parse', 'HEAD').strip(), self.upstream)
+        self.assertFalse(self.applied.exists())
+
+    def test_without_a_machine_manifest_nothing_is_merged_or_applied(self):
+        self.publish_upstream()
+        p = self.run_sync()
+        self.assert_not_merged(p)
+        self.assertIn('has no ' + str(self.machine), p.stdout)
+        self.assertIn('available: base dev', p.stdout)
+        self.assertFalse(self.checked.exists())
+
+    def test_with_a_machine_manifest_the_same_run_merges_and_applies(self):
+        self.publish_upstream()
+        self.write_machine()
+        p = self.run_sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.git('rev-parse', 'HEAD').strip(), self.upstream)
+        checked = self.checked.read_text().split('\n')
+        self.assertEqual((checked[0], checked[1], checked[3], checked[4]), ('check', '--repo', '--machine', str(self.machine)))
+        self.assertFalse(Path(checked[2]).exists(), 'the upstream tree is removed after the check')
+        self.assertEqual(self.applied.read_text().split(), ['apply', '--repo', str(self.repo.resolve())])
+        self.assertIn('Building ' + str(self.engine), p.stdout, 'the merged engine is built for the apply')
+
+    def test_an_upstream_engine_that_cannot_plan_this_machine_is_not_merged(self):
+        self.publish_upstream(check_exit=2)
+        self.write_machine()
+        p = self.run_sync()
+        self.assert_not_merged(p)
+        self.assertIn('cannot plan', p.stdout)
+
+    def test_an_upstream_engine_that_does_not_build_is_not_merged(self):
+        self.publish_upstream(engine=FAKE_ENGINE.replace('func main() {', 'func main() { undefined()'))
+        self.write_machine()
+        p = self.run_sync()
+        self.assert_not_merged(p)
+        self.assertIn('does not build', p.stdout)
+        self.assertFalse(self.checked.exists())
 
 
 @unittest.skipUnless(shutil.which('stow'), 'GNU Stow required')
@@ -649,6 +762,7 @@ git() {
         esac ;;
       symbolic-ref) echo master ;;
       ls-files) return 0 ;;
+      cat-file) return 1 ;;  # upstream has the fixture's own layout, without features/
       config)
         case "$3" in
           user.name) echo Fixture ;;

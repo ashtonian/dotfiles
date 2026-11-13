@@ -120,12 +120,22 @@ refuse to read or save a symlinked preference file.
 | ---------- | ------ | ----------- |
 | `~/.dotfiles` | git, tracked files only | Every 4 hours |
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
+| This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
 | Missing packages | brew bundle install `--no-upgrade` | Every sync |
 
 Sync publishes edits to files the repository already tracks. A new file is
 never published until you commit it yourself. A repository with a Git index
 lock, or with a tracked edit newer than `SYNC_QUIET_MINUTES`, is left alone
 until a later run, so half-finished work is not committed.
+
+Once the checkout uses the feature engine (it has `features/`), each sync runs
+`dotfiles apply` in the same run as the merge, so a pull that moves tracked
+files never leaves links to their old paths. Before it merges an upstream that
+uses the engine, sync checks that this machine can install it: the machine has
+`~/.config/dotfiles/machine.toml` (otherwise it logs the profiles upstream
+offers), and the upstream's own engine builds with this machine's Go and plans
+that manifest (`dotfiles check`). If any of that fails, sync neither merges nor
+pushes, and the checkout stays as it is.
 
 ### Manual Sync Commands
 
@@ -137,8 +147,9 @@ until a later run, so half-finished work is not committed.
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
 ~/.dotfiles/sync.sh brewfile  # Install missing packages
-~/.dotfiles/sync.sh stow      # Relink stow packages, one link per file
-~/.dotfiles/sync.sh all       # Full sync + stow
+~/.dotfiles/sync.sh apply     # Build the engine if needed and run dotfiles apply
+~/.dotfiles/sync.sh stow      # Stow layout: relink packages, one link per file (engine layout: apply)
+~/.dotfiles/sync.sh all       # Full sync, and stow in the stow layout
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
 

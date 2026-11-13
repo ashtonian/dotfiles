@@ -1024,10 +1024,24 @@ Each step is a pull request with its tests and docs.
    apply, teardown, stubs, per-file linking and managed copies, and the
    platform interfaces with macOS and Linux backends; the bootstrap test on
    macOS and Ubuntu runners.
-5. **Migration.** Split the Brewfile, zsh modules, `config.sh` and LaunchAgents
-   into features and profiles; replace stow with the engine's linking; move
-   host-only values into host profiles and existing `*.local` files into the
-   machine manifest and stubs.
+5. **Migration**, in two merges. A pull that changes the layout is run by the
+   sync already installed on each machine, so that sync has to understand the
+   new layout before the layout arrives.
+   - **5a, sync bridge.** `sync.sh` handles both layouts. It refuses to merge
+     an upstream that introduces `features/` onto a machine without
+     `machine.toml` (it logs the profiles upstream offers), or whose own engine
+     does not build with the machine's Go or cannot plan its `machine.toml`
+     (`dotfiles check`), and it runs
+     `dotfiles apply` in the same run as the merge, so the old stow links never
+     point at moved files for longer than that run. 5a merges and runs on every
+     machine, and each machine gets its `machine.toml`, before 5b merges.
+   - **5b, migration.** Split the Brewfile and the stow packages into features
+     and profiles; replace stow with the engine's linking (unfolding stow's
+     directory links and moving the untracked files tools wrote through them
+     home); move host-only values into host profiles and existing `*.local`
+     files into the machine manifest and stubs. `config.sh` and the
+     LaunchAgents move with step 6, which brings the hooks and schedules they
+     need.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
    results, notifications, `doctor --automation` and the status page.
