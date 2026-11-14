@@ -151,6 +151,7 @@ pushes, and the checkout stays as it is.
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
 ~/.dotfiles/sync.sh brewfile  # Install the enabled features' missing packages
+~/.dotfiles/sync.sh mise      # Install the tools mise's shared defaults name (the pinned Go, Node LTS)
 ~/.dotfiles/sync.sh build     # Rebuild ~/.local/bin/dotfiles if its sources changed
 ~/.dotfiles/sync.sh apply     # Build if needed, then dotfiles apply
 ~/.dotfiles/sync.sh all       # Same as sync
@@ -321,10 +322,10 @@ after the OMZ git plugin loads, so `gc` stays `git commit`.
 
 ### Language versions (mise)
 
-[mise](https://mise.jdx.dev) selects Go, Node, Python and other tool versions per
-directory, from each project's own files: `toolchain` (or a patch-version `go`)
-lines in `go.mod`/`go.work` and `.go-version`, `.nvmrc`/`.node-version`/`package.json`,
-`.python-version`, plus `mise.toml` and `.tool-versions`. Shared defaults are in
+[mise](https://mise.jdx.dev) installs Go, Node, Python and other tools and
+selects their versions per directory, from each project's own files:
+`.go-version`, `.nvmrc`/`.node-version`/`package.json`, `.python-version`, plus
+`mise.toml` and `.tool-versions`. Shared defaults are in
 `~/.config/mise/conf.d/dotfiles.toml` (feature `tool.mise`), which mise never
 writes; `mise use -g` writes the machine-local `~/.config/mise/config.toml`.
 
@@ -336,12 +337,21 @@ mise trust              # let a project's mise.toml set env vars and run tasks
 
 - Real sessions activate mise at each prompt. Agents, LaunchAgents and GUI apps
   get mise's shims from `env.sh`, so they run the same versions.
-- `GOTOOLCHAIN=local` (setting `go.toolchain`, exported by `env.sh` for every
-  shell and agent) keeps Go from downloading a different toolchain than the
-  one mise selected. In a project whose `go.mod` names a Go you do not have
-  yet, run `mise install` there: until then `go` is Homebrew's, and a `go.mod`
-  that needs a newer one fails with `GOTOOLCHAIN=local` in the message.
-- Node outside any project is the LTS release (`mise install` once per machine).
+- **Go** is one pinned release (`go = "1.27.4"` in the shared defaults, the
+  official build CI's setup-go installs) for every machine, shell, agent and
+  checkout. mise does not read `go.mod` or `go.work`: their `go` and
+  `toolchain` lines are the oldest Go a module accepts, and with
+  `GOTOOLCHAIN=auto` (setting `go.toolchain`, exported by `env.sh`) the `go`
+  command runs the pinned release unless a module needs a newer one, which it
+  then downloads once through `GOPROXY`, checked against `GOSUMDB`. A project
+  that wants an exact Go commits `.go-version` or a `mise.toml`. `go install`
+  writes to `~/go/bin` (`go.set_gobin = false`), so its commands outlive a
+  pin bump.
+- The weekly update on the canary machine (setting `mise.canary`, `studio`)
+  moves the Go pin to the newest patch of its minor and publishes it; each
+  machine's next sync installs it. A new minor is a deliberate edit to the pin.
+- Node outside any project is the LTS release. Sync installs whatever the
+  shared defaults name and the machine lacks.
 - A project's `mise.toml` takes effect only after `mise trust`; set
   `trusted_config_paths` in `~/.config/mise/config.toml` to trust your own
   project roots, never everything.

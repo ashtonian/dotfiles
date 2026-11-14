@@ -217,10 +217,7 @@ setup_features() {
 install_packages() {
     info "Installing the enabled features' packages..."
     "$DOTFILES_DIR/sync.sh" brewfile || warn "Some packages may have failed to install; see $DOTFILES_DIR/logs/sync.log"
-    # The tools mise's configuration names, such as the default Node LTS.
-    if command -v mise &>/dev/null; then
-        mise install --yes || warn "mise could not install every tool; run 'mise install'"
-    fi
+    "$DOTFILES_DIR/sync.sh" mise || warn "mise could not install every tool; see $DOTFILES_DIR/logs/sync.log"
 }
 
 #=============================================================================

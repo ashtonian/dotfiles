@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import stat
@@ -361,6 +362,21 @@ class Sync(Fixture):
         self.assertIn('install --no-upgrade', audit.read_text())
         self.assertIn('AUTO_UPDATE=1', audit.read_text())
 
+    def test_sync_installs_mise_tools_only_when_some_are_missing(self):
+        audit = self.path / 'mise-audit'
+        home = self.path / 'home'
+        home.mkdir()
+        self.env.update(HOME=str(home), DOTFILES_TEST_AUDIT=str(audit))
+        self.cli('mise', 'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\n'
+                 'case "$*" in *"ls --missing"*) printf "%s" "${MISE_MISSING:-}" ;; esac')
+        p = self.bash('sync_mise_tools')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertNotIn('install', audit.read_text())
+        self.env['MISE_MISSING'] = 'go  1.27.5 (missing)'
+        p = self.bash('sync_mise_tools')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('-C %s install --yes' % home, audit.read_text())
+
     def test_sync_never_runs_mackup(self):
         audit = self.path / 'mackup-audit'
         home = self.path / 'home'
@@ -509,6 +525,111 @@ class SyncGit(SignedRepo):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertIn('index lock', p.stdout)
         self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
+
+
+MISE_PIN = 'features/tool.mise/home/.config/mise/conf.d/dotfiles.toml'
+
+
+class GoPin(SignedRepo):
+    """dotfiles-update.sh --go moving the Go pin to its minor's newest patch."""
+
+    def setUp(self):
+        super().setUp()
+        self.pin = self.repo / MISE_PIN
+        self.pin.parent.mkdir(parents=True)
+        self.pin.write_text((ROOT / MISE_PIN).read_text().replace(self.current_pin(ROOT / MISE_PIN), '1.27.4'))
+        self.git('add', MISE_PIN)
+        self.git('commit', '-q', '-m', 'pin')
+        origin = self.path / 'origin.git'
+        subprocess.run(['git', 'clone', '-q', '--bare', str(self.repo), str(origin)], check=True, env=self.env)
+        self.git('remote', 'add', 'origin', str(origin))
+        self.git('fetch', '-q', 'origin')
+        self.git('branch', '-q', '--set-upstream-to=origin/master')
+        self.audit = self.path / 'mise-audit'
+        self.env.update(DOTFILES_DIR=str(self.repo), DOTFILES_TEST_AUDIT=str(self.audit),
+                        DOTFILES_MISE_CANARY='canary-host', MISE_LATEST='1.27.5', MISE_GO_VERSION='1.27.5')
+        self.cli('scutil', 'printf "%s\\n" "${FIXTURE_HOST:-canary-host}"')
+        # latest prints MISE_LATEST; install records its arguments; exec runs
+        # `go version` as the Go release MISE_GO_VERSION.
+        self.cli('mise', '\n'.join([
+            'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"',
+            'case "$1" in',
+            '  latest) printf "%s\\n" "$MISE_LATEST" ;;',
+            '  install) exit "${MISE_INSTALL_EXIT:-0}" ;;',
+            '  exec) printf "go version go%s darwin/arm64\\n" "$MISE_GO_VERSION" ;;',
+            'esac']))
+
+    @staticmethod
+    def current_pin(path):
+        return re.search(r'^go = "([0-9.]+)"$', path.read_text(), re.M).group(1)
+
+    def update(self):
+        return subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-update.sh'), '--quiet', '--go'],
+                              env=self.env, capture_output=True, text=True, timeout=30)
+
+    def test_moves_to_the_newest_patch_and_commits_it_signed(self):
+        p = self.update()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.current_pin(self.pin), '1.27.5')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'mise: pin Go 1.27.5\n')
+        self.assertEqual(self.git('show', '--name-only', '--format=', 'HEAD').split(), [MISE_PIN])
+        self.git('verify-commit', 'HEAD')
+        calls = self.audit.read_text()
+        self.assertIn('latest go@1.27', calls)
+        self.assertIn('install --yes go@1.27.5', calls)
+
+    def test_changes_nothing_off_the_canary_or_when_already_newest(self):
+        for env in ({'FIXTURE_HOST': 'other-host'}, {'DOTFILES_MISE_CANARY': ''}, {'MISE_LATEST': '1.27.4'}):
+            with self.subTest(env=env):
+                saved = {k: self.env.get(k) for k in env}
+                self.env.update(env)
+                p = self.update()
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertEqual(self.current_pin(self.pin), '1.27.4')
+                self.assertEqual(self.git('log', '-1', '--format=%s'), 'pin\n')
+                for k, v in saved.items():
+                    if v is None:
+                        self.env.pop(k, None)
+                    else:
+                        self.env[k] = v
+        self.assertNotIn('install', self.audit.read_text())
+
+    def test_reads_the_canary_from_the_generated_settings(self):
+        del self.env['DOTFILES_MISE_CANARY']
+        generated = Path(self.env['HOME']) / '.config/dotfiles/generated'
+        generated.mkdir(parents=True)
+        (generated / 'env.sh').write_text(
+            "[ -n \"${DOTFILES_MISE_CANARY:-}\" ] || DOTFILES_MISE_CANARY='canary-host'; export DOTFILES_MISE_CANARY\n")
+        p = self.update()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.current_pin(self.pin), '1.27.5')
+
+    def test_leaves_an_edited_pin_file_alone(self):
+        self.pin.write_text(self.pin.read_text() + '# a local note\n')
+        p = self.update()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('uncommitted edits', (self.repo / 'logs/update.log').read_text())
+        self.assertEqual(self.current_pin(self.pin), '1.27.4')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'pin\n')
+
+    def test_a_release_that_does_not_install_or_run_keeps_the_pin(self):
+        for env in ({'MISE_INSTALL_EXIT': '3'}, {'MISE_GO_VERSION': '1.27.4'}):
+            with self.subTest(env=env):
+                self.env.update(env)
+                p = self.update()
+                self.assertNotEqual(p.returncode, 0)
+                self.assertEqual(self.current_pin(self.pin), '1.27.4')
+                self.assertEqual(self.git('log', '-1', '--format=%s'), 'pin\n')
+                self.env.pop('MISE_INSTALL_EXIT', None)
+                self.env['MISE_GO_VERSION'] = '1.27.5'
+
+    def test_a_commit_that_fails_restores_the_pin(self):
+        self.git('config', 'user.signingkey', str(self.path / 'no-such-key'))
+        p = self.update()
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(self.current_pin(self.pin), '1.27.4')
+        self.assertEqual(self.git('status', '--porcelain', '--', MISE_PIN), '')
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'pin\n')
 
 
 # A stand-in for an upstream checkout's engine: `check` and `apply` record
@@ -767,7 +888,7 @@ class Install(Fixture):
                  if line.startswith(('sync.sh', 'dotfiles'))]
         self.assertEqual(steps, ['sync.sh build',
                                  f'dotfiles init --repo {self.home}/.dotfiles --profiles base,dev',
-                                 'sync.sh apply', 'sync.sh brewfile'])
+                                 'sync.sh apply', 'sync.sh brewfile', 'sync.sh mise'])
         self.assertNotIn('stow', self.audit.read_text())
 
     def test_keeps_an_existing_machine_manifest(self):

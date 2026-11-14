@@ -11,10 +11,15 @@ retire = [
 link = [".config/mise/conf.d/dotfiles.toml"]
 
 # In env.sh rather than mise's [env]: mise applies [env] only where it runs (a
-# real session's prompt hook, a shim), and an agent's `go` outside a pinned
-# project is Homebrew's, which no mise process ever touches.
+# real session's prompt hook, a shim), not to every process that runs `go`.
 [settings."go.toolchain"]
 type = "string"
-default = "local"
+default = "auto"
 env = "GOTOOLCHAIN"
-doc = "GOTOOLCHAIN for every shell and agent: `local` runs the Go on PATH (mise's version for a pinned project, else Homebrew's) and never downloads another"
+doc = "GOTOOLCHAIN for every shell and agent: `auto` runs the Go on PATH (mise's pinned release) unless the module's go.mod or go.work requires a newer one, which the go command then fetches through GOPROXY, verified against GOSUMDB; `local` never switches"
+
+[settings."mise.canary"]
+type = "string"
+default = ""
+env = "DOTFILES_MISE_CANARY"
+doc = "LocalHostName of the machine whose weekly dotfiles-update.sh moves the shared Go pin in conf.d/dotfiles.toml to its minor's newest patch and commits it; the others install it on their next sync. Empty: no machine moves it"

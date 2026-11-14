@@ -15,3 +15,7 @@ enable = [
   "brew.base",
   "brew.macos",
 ]
+
+[settings]
+# The one machine that trials and publishes the shared mise pins.
+"mise.canary" = "studio"

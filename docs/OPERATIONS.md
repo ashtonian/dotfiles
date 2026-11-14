@@ -23,7 +23,8 @@ relocate the installer or rewrite LaunchAgent templates.
 | `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
-| `GOTOOLCHAIN` | Go toolchain selection | `local` | Run the Go on PATH (mise's version where a project pins one, else Homebrew's) and never download another. Setting `go.toolchain` (feature `tool.mise`), exported by the generated `env.sh` for every shell and agent; a value already in the environment wins |
+| `GOTOOLCHAIN` | Go toolchain selection | `auto` | Run the Go on PATH (mise's pinned release, or a project's `.go-version`) unless the module's `go.mod`/`go.work` needs a newer one, which the `go` command downloads through `GOPROXY`, checked against `GOSUMDB`; `local` never switches. Setting `go.toolchain` (feature `tool.mise`), exported by the generated `env.sh` for every shell and agent; a value already in the environment wins |
+| `DOTFILES_MISE_CANARY` | LocalHostName | empty; the base profile sets `studio` | `dotfiles-update.sh`: the one machine whose weekly run moves the Go pin in `conf.d/dotfiles.toml` to its minor's newest patch and commits it. Setting `mise.canary` (feature `tool.mise`), exported by the generated `env.sh` |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
@@ -267,8 +268,8 @@ Before the migration reaches the machine:
 
 3. Where fnm provided Node, install mise's default Node now (`brew install mise`,
    then `mise install`): `env.sh` puts mise's shims on PATH instead of fnm's
-   Node, so agents and LaunchAgents that run `node` or `npx` need it. The weekly
-   update runs `mise install` from then on.
+   Node, so agents and LaunchAgents that run `node` or `npx` need it. Sync runs
+   `mise install` from then on.
 
 Then, on a machine with the sync LaunchAgent, the next sync merges, builds and
 applies in one run. On a machine without it, run the same steps by hand:
@@ -333,7 +334,11 @@ state files, disable signing, or force-push to clear a failure.
 | `Refusing to load formula ... from untrusted tap` | Homebrew loads third-party tap items only once trusted. The generated Brewfile trusts every `brew` or `cask` a feature names in full (`user/repo/name`); an item listed by its short name cannot be trusted that way, so name it in full in its feature. Trusted entries are in `~/.homebrew/trust.json` (`brew trust --json=v1` lists them). |
 | `Installing <cask> has failed!` with `sudo: a password is required` | The cask runs a `.pkg` installer, which needs root, and the LaunchAgent has no terminal to ask for a password. Install it once from a terminal (`brew install --cask <cask>`); later syncs find it installed. |
 | `Could not symlink ...` / `is a symlink belonging to <formula>` | Another installed formula owns the same files, usually the one a feature's entry replaced (`tldr` for `tlrc`). `brew uninstall <old formula>`, then `brew link <new formula>`. |
-| Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, `mise install`, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--mise`, `--zinit` or `--sync`. |
+| `mise could not install every tool` | Sync installs what `conf.d/dotfiles.toml` and `~/.config/mise/config.toml` name after the Brewfile. Run `mise -C ~ install` from a terminal for the full error: usually no network, or a pin (such as a Go release) that does not exist. The next sync retries. |
+| `go: downloading go1.X.Y` in a build | A module's `go.mod` or `go.work` needs a newer Go than the pin, and `GOTOOLCHAIN=auto` fetched it (once per release, into the module cache). Expected for a module ahead of the fleet; to run it everywhere, raise the pin's minor. With `GOTOOLCHAIN=local` the same module fails with `requires go >= ...`. |
+| `go version` is not the pin in a checkout | `mise ls go` names the file that selected it: a `.go-version` or `mise.toml` there pins its own, or the module needs a newer Go (row above). A session started before an update keeps the `GOTOOLCHAIN` it inherited until it restarts. |
+| `The Go pin moves on the canary machine only` | Expected everywhere but the canary (`mise.canary`). On the canary, the update log names why a newer patch was left: the checkout is off its tracking branch, `conf.d/dotfiles.toml` has uncommitted edits, or the release would not install or run. Fix that and run `dotfiles-update.sh --go`. |
+| Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, the Go pin, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--go`, `--zinit` or `--sync`. |
 
 ```sh
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \

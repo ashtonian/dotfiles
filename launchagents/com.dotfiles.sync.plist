@@ -11,7 +11,7 @@ DESCRIPTION:
 
 WHAT IT DOES:
     1. Checks for network connectivity
-    2. Installs missing packages
+    2. Installs missing packages, then the tools mise's configuration names
     3. Signs commits of tracked files and merges; scans outgoing dotfiles for secrets
     4. Verifies outgoing signatures, pushes, and checks GitHub verification
 

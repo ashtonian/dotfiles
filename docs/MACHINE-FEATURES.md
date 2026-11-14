@@ -258,7 +258,7 @@ never stops the steps after it.
 | `update.flatpak` | weekly (Linux) | `flatpak update --noninteractive` |
 | `update.zinit` | weekly | zinit self-update, then `zinit update --all` (plugins and Oh My Zsh snippets) |
 | `update.rustup`, `update.cargo` | weekly | `rustup update`; reinstall `cargo` entries whose crates.io version changed |
-| `update.mise` | weekly | `mise upgrade` for the global tool versions; on the canary machine, trial the newest mise release and bump the pin (see [Language versions](#language-versions)) |
+| `update.mise` | weekly | `mise upgrade` for the global tool versions; on the canary machine, trial the newest mise release and bump the pin, and move the Go pin to its minor's newest patch (see [Language versions](#language-versions)) |
 | `update.uv-tools` | weekly | `uv tool upgrade --all` |
 | `status.refresh` | after every run | Re-run checks, write the status JSON and page |
 
@@ -813,17 +813,37 @@ and asdf.
 
 - **Per directory.** mise reads `mise.toml` and `.tool-versions`, plus each
   ecosystem's own files, enabled globally with
-  `idiomatic_version_file_enable_tools = ["go", "node", "python"]`: the
-  `toolchain` line (or a patch-version `go` line) in `go.mod` and `go.work`
-  and `.go-version`; `.nvmrc`, `.node-version` and `package.json`; and
+  `idiomatic_version_file_enable_tools = ["go", "node", "python"]`:
+  `.go-version`; `.nvmrc`, `.node-version` and `package.json`; and
   `.python-version`. A subdirectory uses the nearest file above it.
-- **Go.** The `go.toolchain` setting (feature `tool.mise`, default `local`)
-  exports `GOTOOLCHAIN` from the generated `env.sh`, so the toolchain mise
-  selected is the one that runs, in every shell and agent. With Go's default
-  `auto`, the `go` command can download and run a newer toolchain than the one
-  mise reports. It is not in mise's `[env]`, which applies only where mise runs
-  (a prompt hook, a shim): an agent's `go` outside a pinned project is
-  Homebrew's, which no mise process touches.
+  `idiomatic_version_file_disable_files` turns off `go.mod` and `go.work` (see
+  Go).
+- **Go.** One pinned release, `go` in `conf.d/dotfiles.toml`, for every
+  machine and checkout: the official build, which is what CI's setup-go
+  installs. A `go.mod` or `go.work` `go` or `toolchain` line is the oldest Go
+  the module accepts, and Go acts on it: with `GOTOOLCHAIN=auto` (setting
+  `go.toolchain`, exported from the generated `env.sh`) the `go` command runs
+  the pinned release unless the module needs a newer one, which it downloads
+  once through `GOPROXY`, checked against `GOSUMDB`, into the module cache.
+  mise reads the same lines as exact versions; left on, every checkout would
+  run its own, usually older, patch release and need its own install, so they
+  are off. An exact Go for one project is a committed `.go-version` or
+  `mise.toml`. `go.set_gobin = false` keeps `go install` writing to
+  `$GOPATH/bin` rather than the pinned release's own `bin`, which a pin bump
+  would leave behind. `GOTOOLCHAIN` is not in mise's `[env]`, which applies
+  only where mise runs (a prompt hook, a shim). Homebrew's `go` stays as the bootstrap
+  compiler: `install.sh` and sync build the engine with it
+  (`GOTOOLCHAIN=local`), under LaunchAgent PATHs that have no shims; shells and
+  agents find mise's shims ahead of it.
+- **Go patch releases.** Each week `dotfiles-update.sh` on the canary machine
+  (`mise.canary`, `studio` in the base profile) asks mise for the newest patch
+  of the pinned minor, installs it, checks that `go version` reports it, and
+  commits the one-line pin, signed; its sync publishes it and every other
+  machine's next sync installs it before any build needs it. It leaves the pin
+  alone when the checkout is off its tracking branch or the file has
+  uncommitted edits. A new minor changes the compiler and runtime under every
+  benchmark, so it is a deliberate edit. With rollout step 6 this moves into
+  `update.mise`.
 - **Python.** mise selects the interpreter; uv keeps managing project
   environments (`python.uv_venv_auto` for projects with a `uv.lock`).
 - **Interactive shells** use `mise activate zsh` (`mise activate pwsh` on
@@ -848,8 +868,9 @@ and asdf.
   shows on the status page and the pin stays.
 - **Migration.** `fnm` and `asdf` leave the package lists, and `env.sh` drops
   `FNM_DIR` and the fnm default alias. mise installs the shared default Node LTS
-  (`node = "lts"`) through `mise install`, which `install.sh` and the weekly
-  `dotfiles-update.sh` run; versions a project pins install on first use there.
+  (`node = "lts"`) and the pinned Go through `mise install`, which `install.sh`
+  and every sync run (after the Brewfile); versions a project pins install on
+  first use there.
 
 ## Implementation
 
