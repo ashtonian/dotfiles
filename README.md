@@ -316,7 +316,7 @@ shared defaults last (`Match final`), so hosts installers append to
 Real sessions differ from tool shells: `ls`, `du`, `ping` and `top` stay the
 real commands everywhere (their replacements take different flags); eza
 listings are `ll`, `la` and `lt`, ncdu is `dux`, and `reload` starts a fresh
-shell (`exec zsh`). The git aliases (`gs`, `gc` and the rest) are applied again
+login shell (`exec "$SHELL" -l`). The git aliases (`gs`, `gc` and the rest) are applied again
 after the OMZ git plugin loads, so `gc` stays `git commit`.
 
 ### Language versions (mise)
