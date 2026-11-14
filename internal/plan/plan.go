@@ -195,6 +195,24 @@ func underLibrary(rel string) bool {
 	return first == "Library"
 }
 
+// packageLine renders a Brewfile brew or cask entry. Homebrew refuses to load
+// a formula or cask from a third-party tap until it is trusted. Naming one in
+// full (user/repo/name) in a feature is that decision, so the entry trusts
+// that one item, never its whole tap; `brew bundle` records it before it loads
+// anything.
+func packageLine(kind, name string, opts ...string) string {
+	if strings.Count(name, "/") == 2 {
+		opts = append(opts, "trusted: true")
+	}
+	var line strings.Builder
+	fmt.Fprintf(&line, "%s %q", kind, name)
+	for _, o := range opts {
+		line.WriteString(", ")
+		line.WriteString(o)
+	}
+	return line.String()
+}
+
 // generate renders the outputs shells and tools read, so no shell startup
 // parses a manifest. Every output is written even when empty, so stubs and
 // includes can load it unconditionally.
@@ -219,16 +237,16 @@ func generate(features map[string]*manifest.Feature, order []string, values map[
 				}
 			case "brew":
 				for _, n := range pr.Brew {
+					var opts []string
 					if link, ok := pr.BrewLink[n]; ok {
-						entry(fmt.Sprintf("brew %q, link: %t", n, link), id)
-					} else {
-						entry(fmt.Sprintf("brew %q", n), id)
+						opts = append(opts, fmt.Sprintf("link: %t", link))
 					}
+					entry(packageLine("brew", n, opts...), id)
 				}
 			case "cask":
 				if env.GOOS == "darwin" {
 					for _, n := range pr.Cask {
-						entry(fmt.Sprintf("cask %q", n), id)
+						entry(packageLine("cask", n), id)
 					}
 				}
 			case "mas":

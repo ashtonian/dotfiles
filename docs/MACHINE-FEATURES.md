@@ -142,8 +142,8 @@ retire      = []              # paths under ~ an older layout linked; apply remo
 
 [provides]
 tap    = []                   # Homebrew taps
-brew   = ["zoxide"]           # Brewfile entries (macOS, Linux)
-cask   = []                   # macOS applications
+brew   = ["zoxide"]           # Brewfile entries (macOS, Linux); user/repo/name trusts that formula
+cask   = []                   # macOS applications; user/repo/name trusts that cask
 mas    = []                   # Mac App Store apps: { name = "...", id = 123 }
 vscode = []                   # VS Code extension ids, in the generated Brewfile
 go     = []                   # `go install` packages, in the generated Brewfile
@@ -205,7 +205,7 @@ startup parses a manifest.
 
 | Output | Consumer | Contents |
 | --- | --- | --- |
-| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Enabled features' `tap`, `brew`, `cask`, `mas`, `flatpak`, `vscode` and `go` entries, grouped by kind in feature order, each once, commented with the feature that wants it (`cargo` comes with its features) |
+| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Enabled features' `tap`, `brew`, `cask`, `mas`, `flatpak`, `vscode` and `go` entries, grouped by kind in feature order, each once, commented with the feature that wants it (`cargo` comes with its features). A `brew` or `cask` named in full (`user/repo/name`) carries `trusted: true`, so Homebrew's tap trust admits that one item and never its whole tap; a tap listed only in `tap` stays untrusted |
 | `generated/configuration.winget` | sync, `winget configure` (Windows) | Enabled features' `winget` entries as `Microsoft.WinGet.DSC/WinGetPackage` resources |
 | `generated/profile.ps1` | the PowerShell profile stub (Windows) | Enabled `pwsh` fragments in feature order |
 | `generated/env.sh` | `~/.config/shell/env.sh` | Enabled `env` fragments in feature order; POSIX, builtins only |

@@ -329,6 +329,9 @@ state files, disable signing, or force-push to clear a failure.
 | `dotfiles apply left problems to resolve` | The log above lists them; see [Feature engine troubleshooting](#feature-engine-troubleshooting). Sync carries on with packages and the other repositories. |
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
+| `Refusing to load formula ... from untrusted tap` | Homebrew loads third-party tap items only once trusted. The generated Brewfile trusts every `brew` or `cask` a feature names in full (`user/repo/name`); an item listed by its short name cannot be trusted that way, so name it in full in its feature. Trusted entries are in `~/.homebrew/trust.json` (`brew trust --json=v1` lists them). |
+| `Installing <cask> has failed!` with `sudo: a password is required` | The cask runs a `.pkg` installer, which needs root, and the LaunchAgent has no terminal to ask for a password. Install it once from a terminal (`brew install --cask <cask>`); later syncs find it installed. |
+| `Could not symlink ...` / `is a symlink belonging to <formula>` | Another installed formula owns the same files, usually the one a feature's entry replaced (`tldr` for `tlrc`). `brew uninstall <old formula>`, then `brew link <new formula>`. |
 | Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, `mise install`, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--mise`, `--zinit` or `--sync`. |
 
 ```sh
