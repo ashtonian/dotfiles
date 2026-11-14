@@ -109,7 +109,7 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
         _env_back "$_env_d"
     done
 fi
-# mise's shims run the tool version each directory asks for (go.mod, .nvmrc,
+# mise's shims run the tool version each directory asks for (.go-version, .nvmrc,
 # .python-version, mise.toml) in agents, LaunchAgents and GUI apps; interactive
 # zsh puts the real tool directories in front of them.
 _env_front "${MISE_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/mise}/shims"

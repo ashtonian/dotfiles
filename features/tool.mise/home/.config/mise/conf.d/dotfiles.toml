@@ -3,11 +3,25 @@
 # overrides any key here.
 
 [settings]
-# Read each project's own version files: go.mod/go.work `toolchain` lines and
-# .go-version, .nvmrc/.node-version/package.json, and .python-version.
+# Read each project's own version files: .go-version, .nvmrc/.node-version/package.json,
+# and .python-version.
 idiomatic_version_file_enable_tools = ["go", "node", "python"]
+# go.mod and go.work state the oldest Go a module accepts, and the go command
+# already acts on that (GOTOOLCHAIN=auto, setting go.toolchain). mise reads
+# them as exact versions, which would run each checkout on its own older
+# patch. A project that wants an exact Go commits .go-version or mise.toml.
+idiomatic_version_file_disable_files = ["go:go.mod", "go:go.work"]
+# `go install` keeps writing to $GOPATH/bin, which env.sh puts on PATH, so the
+# commands it installs outlive a pin bump; mise would aim GOBIN at the pinned
+# release's own bin directory.
+go.set_gobin = false
 
 [tools]
-# The default outside any project, which agents and LaunchAgents reach through
-# mise's shims. Go comes from Homebrew outside projects; uv manages Python.
+# The defaults outside any pinned project, which agents and LaunchAgents reach
+# through mise's shims. uv manages Python.
 node = "lts"
+# The Go release every machine and checkout builds with: the official build,
+# as CI's setup-go installs it. The weekly dotfiles-update.sh on the canary
+# machine (setting mise.canary) moves it to the newest patch of its minor; a
+# new minor is a deliberate edit.
+go = "1.27.4"

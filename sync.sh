@@ -85,6 +85,24 @@ sync_brewfile() {
     return "$result"
 }
 
+# The tools mise's configuration names: the default Node LTS, and the pinned Go
+# a pull may just have moved. Installed here, after the merge, so no build
+# downloads one on its first `go`. From $HOME, so only the shared and
+# machine-wide configuration count, not a project the job happens to run in.
+sync_mise_tools() {
+    command -v mise >/dev/null || return 0
+    local missing
+    # A listing that fails falls through to the install, which reports why.
+    if missing=$(mise -C "$HOME" ls --missing --global 2>&1) && [[ -z "$missing" ]]; then
+        return 0
+    fi
+    log "INFO: Installing the tools mise's configuration names"
+    if ! run_logged mise -C "$HOME" install --yes; then
+        log "ERROR: mise could not install every tool; run: mise -C ~ install"
+        return 1
+    fi
+}
+
 repo_idle() {
     local state location conflicts
     for state in MERGE_HEAD CHERRY_PICK_HEAD REVERT_HEAD rebase-merge rebase-apply sequencer BISECT_LOG; do
@@ -356,10 +374,12 @@ run_mode() {
             check_connectivity || return 0
             # Apply right after the merge: a pull that moves tracked files
             # leaves links to their old paths until it runs. The Brewfile it
-            # generates is installed next.
+            # generates is installed next, then mise's tools (mise is one of
+            # the packages).
             sync_dotfiles || status=1
             apply_features || status=1
             sync_brewfile || status=1
+            sync_mise_tools || status=1
             sync_auxiliary_repos || status=1
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
@@ -368,7 +388,8 @@ run_mode() {
         build) build_engine || status=$? ;;
         apply) apply_features || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|brewfile|all|check}\n' "$0"; return 1 ;;
+        mise) sync_mise_tools || status=$? ;;
+        *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|brewfile|mise|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }
