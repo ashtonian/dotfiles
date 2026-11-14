@@ -40,8 +40,9 @@ func generated(t *testing.T, p *Plan, name string) string {
 func TestBrewfileFollowsThePlatform(t *testing.T) {
 	root := t.TempDir()
 	pkgs := feature(t, root, manifest.Feature{ID: "pkgs", Provides: manifest.Provides{
-		Tap: []string{"owner/tap"}, Brew: []string{"git", "zoxide"}, BrewLink: map[string]bool{"zoxide": false},
-		Cask: []string{"iterm2"}, Mas: []manifest.MasApp{{Name: "Things", ID: 904280696}},
+		Tap:  []string{"owner/tap"},
+		Brew: []string{"git", "zoxide", "owner/tap/tool", "owner/tap/linked"}, BrewLink: map[string]bool{"zoxide": false, "owner/tap/linked": false},
+		Cask: []string{"iterm2", "owner/tap/app"}, Mas: []manifest.MasApp{{Name: "Things", ID: 904280696}},
 		Flatpak: []string{"org.example.App"}, Vscode: []string{"golang.go"}, Go: []string{"golang.org/x/tools/gopls@latest"},
 	}}, nil)
 	again := feature(t, root, manifest.Feature{ID: "again", Provides: manifest.Provides{Brew: []string{"git"}}}, nil)
@@ -51,7 +52,8 @@ func TestBrewfileFollowsThePlatform(t *testing.T) {
 		goos          string
 		want, without []string
 	}{
-		{"darwin", []string{`cask "iterm2" # pkgs`, `mas "Things", id: 904280696 # pkgs`}, []string{"flatpak"}},
+		{"darwin", []string{`cask "iterm2" # pkgs`, `cask "owner/tap/app", trusted: true # pkgs`,
+			`mas "Things", id: 904280696 # pkgs`}, []string{"flatpak"}},
 		{"linux", []string{`flatpak "org.example.App" # pkgs`}, []string{"cask ", "mas "}},
 	}
 	for _, tt := range tests {
@@ -59,10 +61,12 @@ func TestBrewfileFollowsThePlatform(t *testing.T) {
 			p, err := Build(features, []string{"pkgs", "again"}, nil, Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: tt.goos})
 			require.NoError(t, err)
 			brewfile := generated(t, p, "Brewfile")
-			for _, line := range append([]string{`tap "owner/tap" # pkgs`, `brew "zoxide", link: false # pkgs`,
+			for _, line := range append([]string{`tap "owner/tap" # pkgs`, `brew "git" # pkgs`, `brew "zoxide", link: false # pkgs`,
+				`brew "owner/tap/tool", trusted: true # pkgs`, `brew "owner/tap/linked", link: false, trusted: true # pkgs`,
 				`vscode "golang.go" # pkgs`, `go "golang.org/x/tools/gopls@latest" # pkgs`}, tt.want...) {
 				assert.Contains(t, brewfile, line+"\n")
 			}
+			assert.NotContains(t, brewfile, `tap "owner/tap", trusted`, "trust covers the named items, never the whole tap")
 			for _, absent := range tt.without {
 				assert.NotContains(t, brewfile, absent)
 			}

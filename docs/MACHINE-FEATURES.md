@@ -142,8 +142,8 @@ retire      = []              # paths under ~ an older layout linked; apply remo
 
 [provides]
 tap    = []                   # Homebrew taps
-brew   = ["zoxide"]           # Brewfile entries (macOS, Linux)
-cask   = []                   # macOS applications
+brew   = ["zoxide"]           # Brewfile entries (macOS, Linux); user/repo/name trusts that formula
+cask   = []                   # macOS applications; user/repo/name trusts that cask
 mas    = []                   # Mac App Store apps: { name = "...", id = 123 }
 vscode = []                   # VS Code extension ids, in the generated Brewfile
 go     = []                   # `go install` packages, in the generated Brewfile
@@ -205,7 +205,7 @@ startup parses a manifest.
 
 | Output | Consumer | Contents |
 | --- | --- | --- |
-| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Enabled features' `tap`, `brew`, `cask`, `mas`, `flatpak`, `vscode` and `go` entries, grouped by kind in feature order, each once, commented with the feature that wants it (`cargo` comes with its features) |
+| `generated/Brewfile` | sync, `brew bundle` (macOS, Linux) | Enabled features' `tap`, `brew`, `cask`, `mas`, `flatpak`, `vscode` and `go` entries, grouped by kind in feature order, each once, commented with the feature that wants it (`cargo` comes with its features). A `brew` or `cask` named in full (`user/repo/name`) carries `trusted: true`, so Homebrew's tap trust admits that one item and never its whole tap; a tap listed only in `tap` stays untrusted |
 | `generated/configuration.winget` | sync, `winget configure` (Windows) | Enabled features' `winget` entries as `Microsoft.WinGet.DSC/WinGetPackage` resources |
 | `generated/profile.ps1` | the PowerShell profile stub (Windows) | Enabled `pwsh` fragments in feature order |
 | `generated/env.sh` | `~/.config/shell/env.sh` | Enabled `env` fragments in feature order; POSIX, builtins only |
@@ -817,10 +817,13 @@ and asdf.
   `toolchain` line (or a patch-version `go` line) in `go.mod` and `go.work`
   and `.go-version`; `.nvmrc`, `.node-version` and `package.json`; and
   `.python-version`. A subdirectory uses the nearest file above it.
-- **Go.** mise's global `[env]` sets `GOTOOLCHAIN = "local"`, so the
-  toolchain mise selected is the one that runs. With Go's default `auto`, the
-  `go` command can download and run a newer toolchain than the one mise
-  reports.
+- **Go.** The `go.toolchain` setting (feature `tool.mise`, default `local`)
+  exports `GOTOOLCHAIN` from the generated `env.sh`, so the toolchain mise
+  selected is the one that runs, in every shell and agent. With Go's default
+  `auto`, the `go` command can download and run a newer toolchain than the one
+  mise reports. It is not in mise's `[env]`, which applies only where mise runs
+  (a prompt hook, a shim): an agent's `go` outside a pinned project is
+  Homebrew's, which no mise process touches.
 - **Python.** mise selects the interpreter; uv keeps managing project
   environments (`python.uv_venv_auto` for projects with a `uv.lock`).
 - **Interactive shells** use `mise activate zsh` (`mise activate pwsh` on

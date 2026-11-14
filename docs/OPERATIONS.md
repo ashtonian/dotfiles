@@ -23,6 +23,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
+| `GOTOOLCHAIN` | Go toolchain selection | `local` | Run the Go on PATH (mise's version where a project pins one, else Homebrew's) and never download another. Setting `go.toolchain` (feature `tool.mise`), exported by the generated `env.sh` for every shell and agent; a value already in the environment wins |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
@@ -329,6 +330,9 @@ state files, disable signing, or force-push to clear a failure.
 | `dotfiles apply left problems to resolve` | The log above lists them; see [Feature engine troubleshooting](#feature-engine-troubleshooting). Sync carries on with packages and the other repositories. |
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
+| `Refusing to load formula ... from untrusted tap` | Homebrew loads third-party tap items only once trusted. The generated Brewfile trusts every `brew` or `cask` a feature names in full (`user/repo/name`); an item listed by its short name cannot be trusted that way, so name it in full in its feature. Trusted entries are in `~/.homebrew/trust.json` (`brew trust --json=v1` lists them). |
+| `Installing <cask> has failed!` with `sudo: a password is required` | The cask runs a `.pkg` installer, which needs root, and the LaunchAgent has no terminal to ask for a password. Install it once from a terminal (`brew install --cask <cask>`); later syncs find it installed. |
+| `Could not symlink ...` / `is a symlink belonging to <formula>` | Another installed formula owns the same files, usually the one a feature's entry replaced (`tldr` for `tlrc`). `brew uninstall <old formula>`, then `brew link <new formula>`. |
 | Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, `mise install`, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--mise`, `--zinit` or `--sync`. |
 
 ```sh
