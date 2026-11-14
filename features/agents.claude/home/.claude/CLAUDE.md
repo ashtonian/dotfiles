@@ -76,6 +76,12 @@
 - **Keep code comments minimal.** Comment WHY, never what — the code already says what. Cover the non-obvious and stop; cut narration, restatement of the next line, and hedging. This is the common failure mode: comments are routinely far too verbose. (READMEs and package docs are the exception — keep those thorough, see Documentation.)
 - **No premature abstraction.** Write generalized, reusable code only once you actually need it in more than one place. This does not weaken DRY: deduplicate *knowledge*, not code that merely looks alike.
 
+## Dependency Injection
+
+- **Inject what has effects; construct what doesn't.** A unit receives as constructor parameters anything that does I/O, holds shared or long-lived state, or is nondeterministic: stores, clients, queues, loggers, metrics, config, clocks, randomness, ID generators. It never reaches for these through globals, package-level singletons, `init()`, or a service locator. Pure helpers, value types, and state the unit exclusively owns are built in place — don't add a parameter or interface just so something *can* be injected.
+- **Constructor injection only.** Required dependencies are explicit constructor parameters; optional ones go through options. No setter/field injection or post-construction wiring — a constructed object is complete and usable.
+- **Wire by hand at the composition root.** The entrypoint (`main` or equivalent) builds the whole graph top-down in plain code, so the application's structure is readable in one place. No third-party DI containers, reflection- or annotation-driven wiring, or codegen injectors. Exception: where a framework's built-in container *is* the ecosystem idiom (ASP.NET Core, Spring, NestJS, Angular), use it — register explicitly, still inject through constructors, and never layer another container on top.
+
 ## Greenfield Projects
 
 - Do not preserve old behavior or backwards compatibility unless the requirements say it matters. Ask if unsure.
@@ -142,7 +148,7 @@
 
 - Prefer the **functional options pattern** (`WithX()`) when constructors have 3+ optional parameters.
 - Constructor functions accept interfaces: `func NewService(store Store, logger *slog.Logger) *Service`.
-- **Fat mains.** Keep dependency construction, wiring, configuration, and lifecycle explicit in `main`; keep business logic in packages. No DI containers (wire, fx), and no `App`/container/init abstraction hiding the application's structure.
+- **Fat mains.** `main` is the composition root: keep dependency construction, wiring, configuration, and lifecycle explicit there; keep business logic in packages. Go has no idiomatic container — no wire, fx, dig, or `App`/container/init abstraction hiding the application's structure.
 - Define interfaces where they are **consumed**, not where they are implemented.
 - Types are deliberate; interfaces usually emerge from real usage. Think through how a type will be used before writing it, but do not architect ahead of need.
 
