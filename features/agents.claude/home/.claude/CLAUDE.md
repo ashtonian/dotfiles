@@ -125,6 +125,14 @@
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
 
+## Evergreen repos — few branches, few builds (gox, estavelle, jobcrm, karsto)
+
+- These four are in evergreen development. Keep the number of task branches, pull requests and CI runs low: every branch push and PR runs the full matrix on shared runners and costs every agent queue time. That is the cost to minimise, not branch size. This overrides any "one branch / one PR per unit" wording in those repositories' own agent docs.
+- Batch your lane's queued units into **one task branch and one PR** per work session or lane batch, even when they are unrelated and the diff is large. Keep each unit its own commit, with its RFC/ledger updates in that commit, so history and review stay legible.
+- Push when a coherent batch is ready to validate, not after every commit: a later push cancels the run in progress. Fold a follow-up fix into the open branch rather than opening another.
+- Open a separate branch only when the work must land on its own: it blocks another lane or the trunk, it must be revertible alone, it needs a distinct reviewer or acceptance gate, or it waits on a dependency the rest of the batch does not.
+- Everything else in the repository's agreement holds: cut from the current trunk, sync by merge, never rebase, merge on green and promptly. Batching is not a reason to let a branch drift.
+
 ## Searching in Claude Code's Bash tool
 
 - `grep` there is a shell function that runs Claude Code's built-in ugrep with `--ignore-files -I`: it silently skips gitignored and binary files. Searching ignored, vendored or generated paths (`node_modules`, build output, `.gitignore`d configs) needs `command grep`.
