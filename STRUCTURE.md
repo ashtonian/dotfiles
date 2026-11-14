@@ -76,7 +76,7 @@ where the feature is off.
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml` |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
-| `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` |
+| `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml`; setting `go.toolchain` (`GOTOOLCHAIN`) |
 | `tool.neofetch` | desktop | darwin, linux | `~/.config/neofetch` |
 | `tool.taskwarrior` | desktop | darwin, linux | copies `~/.taskrc` |
 

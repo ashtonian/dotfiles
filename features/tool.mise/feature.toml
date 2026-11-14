@@ -9,3 +9,12 @@ retire = [
 
 [provides]
 link = [".config/mise/conf.d/dotfiles.toml"]
+
+# In env.sh rather than mise's [env]: mise applies [env] only where it runs (a
+# real session's prompt hook, a shim), and an agent's `go` outside a pinned
+# project is Homebrew's, which no mise process ever touches.
+[settings."go.toolchain"]
+type = "string"
+default = "local"
+env = "GOTOOLCHAIN"
+doc = "GOTOOLCHAIN for every shell and agent: `local` runs the Go on PATH (mise's version for a pinned project, else Homebrew's) and never downloads another"

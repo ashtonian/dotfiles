@@ -817,10 +817,13 @@ and asdf.
   `toolchain` line (or a patch-version `go` line) in `go.mod` and `go.work`
   and `.go-version`; `.nvmrc`, `.node-version` and `package.json`; and
   `.python-version`. A subdirectory uses the nearest file above it.
-- **Go.** mise's global `[env]` sets `GOTOOLCHAIN = "local"`, so the
-  toolchain mise selected is the one that runs. With Go's default `auto`, the
-  `go` command can download and run a newer toolchain than the one mise
-  reports.
+- **Go.** The `go.toolchain` setting (feature `tool.mise`, default `local`)
+  exports `GOTOOLCHAIN` from the generated `env.sh`, so the toolchain mise
+  selected is the one that runs, in every shell and agent. With Go's default
+  `auto`, the `go` command can download and run a newer toolchain than the one
+  mise reports. It is not in mise's `[env]`, which applies only where mise runs
+  (a prompt hook, a shim): an agent's `go` outside a pinned project is
+  Homebrew's, which no mise process touches.
 - **Python.** mise selects the interpreter; uv keeps managing project
   environments (`python.uv_venv_auto` for projects with a `uv.lock`).
 - **Interactive shells** use `mise activate zsh` (`mise activate pwsh` on

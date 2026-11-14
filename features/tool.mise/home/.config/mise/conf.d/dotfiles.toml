@@ -7,11 +7,6 @@
 # .go-version, .nvmrc/.node-version/package.json, and .python-version.
 idiomatic_version_file_enable_tools = ["go", "node", "python"]
 
-[env]
-# Run the Go toolchain mise selected. With Go's default (auto), the go command
-# can download and run a newer toolchain than the one mise reports.
-GOTOOLCHAIN = "local"
-
 [tools]
 # The default outside any project, which agents and LaunchAgents reach through
 # mise's shims. Go comes from Homebrew outside projects; uv manages Python.

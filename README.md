@@ -336,9 +336,11 @@ mise trust              # let a project's mise.toml set env vars and run tasks
 
 - Real sessions activate mise at each prompt. Agents, LaunchAgents and GUI apps
   get mise's shims from `env.sh`, so they run the same versions.
-- `GOTOOLCHAIN=local` keeps Go from downloading a different toolchain than the
+- `GOTOOLCHAIN=local` (setting `go.toolchain`, exported by `env.sh` for every
+  shell and agent) keeps Go from downloading a different toolchain than the
   one mise selected. In a project whose `go.mod` names a Go you do not have
-  yet, run `mise install`.
+  yet, run `mise install` there: until then `go` is Homebrew's, and a `go.mod`
+  that needs a newer one fails with `GOTOOLCHAIN=local` in the message.
 - Node outside any project is the LTS release (`mise install` once per machine).
 - A project's `mise.toml` takes effect only after `mise trust`; set
   `trusted_config_paths` in `~/.config/mise/config.toml` to trust your own
