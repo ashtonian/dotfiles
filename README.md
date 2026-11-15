@@ -197,6 +197,9 @@ launchctl start com.dotfiles.sync
 # Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
+# gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --gpg-agent-only
+
 # Uninstall
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
 ```

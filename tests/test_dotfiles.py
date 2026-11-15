@@ -1645,6 +1645,96 @@ class AgentMonitorGate(AgentMonitorFixture):
         self.assertIn('fewer than 32 characters', p.stderr)
 
 
+class GpgAgentSupervisor(Fixture):
+    """bin/gpg-agent-supervisor against a fake agent: the PID that answers on
+    gpg's socket is the content of a file, and gpgconf's --launch starts the
+    next PID from 501 unless DOTFILES_TEST_AGENT_FAILS is set."""
+
+    SCRIPT = 'bin/gpg-agent-supervisor'
+
+    def setUp(self):
+        super().setUp()
+        self.agent = self.path / 'agent.pid'
+        self.calls = self.path / 'calls'
+        self.env.update(FAKE_AGENT=str(self.agent), FAKE_NEXT=str(self.path / 'next.pid'),
+                        CALLS=str(self.calls))
+        self.cli('gpg-connect-agent', '''
+case " $* " in *" --no-autostart "*) ;; *) echo "autostart $*" >>"$CALLS" ;; esac
+if [ -s "$FAKE_AGENT" ]; then echo "D $(cat "$FAKE_AGENT")"; echo OK
+else echo 'gpg-connect-agent: no gpg-agent running in this session' >&2; fi''')
+        self.cli('gpgconf', '''
+echo "gpgconf $*" >>"$CALLS"
+case "$*" in
+  '--kill gpg-agent') rm -f "$FAKE_AGENT" ;;
+  '--launch gpg-agent')
+    [ -s "$FAKE_AGENT" ] && exit 0
+    [ -n "${DOTFILES_TEST_AGENT_FAILS:-}" ] && exit 0
+    next=$(( $(cat "$FAKE_NEXT" 2>/dev/null || echo 500) + 1 ))
+    echo "$next" >"$FAKE_NEXT"; echo "$next" >"$FAKE_AGENT" ;;
+esac''')
+
+    def running(self, pid):
+        self.agent.write_text(f'{pid}\n')
+
+    def answering(self):
+        return self.agent.read_text().strip() if self.agent.exists() else None
+
+    def recorded(self):
+        return self.calls.read_text().splitlines() if self.calls.exists() else []
+
+    def test_start_replaces_the_running_agent(self):
+        self.running(100)
+        p = self.bash('start_agent', source=self.SCRIPT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), '501')
+        self.assertEqual(self.answering(), '501')
+
+    def test_check_keeps_the_agent_it_started(self):
+        self.running(501)
+        p = self.bash('check_agent 501', source=self.SCRIPT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), '501')
+        self.assertEqual(self.recorded(), [])
+
+    def test_check_replaces_an_agent_started_elsewhere(self):
+        self.running(777)
+        p = self.bash('check_agent 501', source=self.SCRIPT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), '501')
+        self.assertEqual(self.answering(), '501')
+        self.assertIn('gpg-agent 777 was started outside this login', p.stderr)
+
+    def test_check_restarts_a_stopped_agent(self):
+        p = self.bash('check_agent 400', source=self.SCRIPT)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.strip(), '501')
+        self.assertEqual(self.answering(), '501')
+        self.assertIn('gpg-agent 400 is gone', p.stderr)
+
+    def test_an_agent_that_never_answers_fails_the_start(self):
+        self.env['DOTFILES_TEST_AGENT_FAILS'] = '1'
+        p = self.bash('start_agent', source=self.SCRIPT)
+        self.assertNotEqual(p.returncode, 0)
+        self.assertEqual(p.stdout.strip(), '')
+        self.assertIn('gpg-agent did not start', p.stderr)
+
+    def test_never_autostarts_an_agent_from_its_own_queries(self):
+        self.running(777)
+        self.bash('check_agent "$(start_agent)"', source=self.SCRIPT)
+        self.assertEqual([c for c in self.recorded() if c.startswith('autostart')], [])
+
+    def test_refuses_an_invalid_interval_before_touching_the_agent(self):
+        self.running(777)
+        for value in ('0', '1.5', 'ten'):
+            with self.subTest(value=value):
+                self.env['GPG_AGENT_SUPERVISOR_SECONDS'] = value
+                p = subprocess.run(['/bin/bash', str(ROOT / self.SCRIPT)], cwd=self.path, env=self.env,
+                                   capture_output=True, text=True, timeout=20)
+                self.assertEqual(p.returncode, 64)
+                self.assertIn('GPG_AGENT_SUPERVISOR_SECONDS', p.stderr)
+                self.assertEqual(self.answering(), '777')
+
+
 class OtelAgent(Fixture):
     VERSION = '0.163.1'
     TOKEN = 'a' * 48

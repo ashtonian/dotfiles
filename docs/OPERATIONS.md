@@ -27,6 +27,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DOTFILES_MISE_CANARY` | LocalHostName | empty; the base profile sets `studio` | `dotfiles-update.sh`: the one machine whose weekly run moves the Go pin in `conf.d/dotfiles.toml` to its minor's newest patch and commits it. Setting `mise.canary` (feature `tool.mise`), exported by the generated `env.sh` |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
+| `GPG_AGENT_SUPERVISOR_SECONDS` | Whole seconds, at least 1 | `10` | `bin/gpg-agent-supervisor`: how often it checks that the running gpg-agent is the one it started in the GUI login, and replaces it if not; set in the installed `com.ashtonian.gpg-agent` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
 | `PAGER` | Command | less | Core pager default |
 | `LANG` | Locale string | en_US.UTF-8 | Existing value is preserved |
@@ -91,7 +92,12 @@ gh auth status
 ```
 
 Authenticate Git transport for the remote, make the signing key usable by the
-background job, and register its public key with GitHub. The commit email must
+background job, and register its public key with GitHub. On macOS the key's
+passphrase comes from pinentry-mac: tick "Save in Keychain" in its dialog once
+and it reads the passphrase from the login keychain from then on. pinentry-mac
+can do that only for a gpg-agent running in the GUI login, so the
+`com.ashtonian.gpg-agent` LaunchAgent keeps one there for SSH sessions, agents
+and launchd jobs to sign through ([GPG agent](#gpg-agent)). The commit email must
 match an email on the signing key that is verified on the GitHub account.
 For deliberate manual commits, use `git commit -S` and `git verify-commit HEAD`.
 After a GitHub push, inspect its Verified badge or API status too.
@@ -125,9 +131,9 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | -------- | ---------- |
 | No options | Install/reload all eligible agents; sync starts at load |
 | `--sync-only` / `--update-only` / `--go-cache-trim-only` | Install/reload one scheduled job |
-| `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` | Install/reload one service if prerequisites exist |
+| `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` / `--gpg-agent-only` | Install/reload one service if prerequisites exist |
 | `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all eight installed agent plists |
+| `--uninstall` | Unload and remove all nine installed agent plists |
 | `--help` | Show supported options |
 
 `com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour. Go
@@ -217,6 +223,43 @@ drop, inspect the log and `launchctl list` for duplicate jobs before removing a
 specific stale job. OpenCode has separate [operations instructions](../features/agents.opencode/README.md#operations),
 and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
 [telemetry collector](AGENT-TELEMETRY.md#operations).
+
+### GPG agent
+
+`com.ashtonian.gpg-agent` runs `bin/gpg-agent-supervisor` in the GUI login
+whenever gnupg is installed. pinentry-mac reaches the login keychain and shows
+its dialog only for a gpg-agent started in that login. One started from an SSH
+session can do neither, and every signature through it fails with
+`gpg: signing failed: No pinentry`. gpg, git and the zsh gpg-agent plugin
+(which queries the agent before every command) start an agent from whichever
+shell needs one first, which on a host reached over SSH is usually an SSH
+session.
+
+At load, the supervisor replaces the running agent with one it starts, then
+every `GPG_AGENT_SUPERVISOR_SECONDS` (10) checks the PID answering on gpg's
+socket and replaces any other agent. An agent started elsewhere can therefore
+fail signatures for at most that long. Each replacement drops the agent's
+cached passphrases; pinentry-mac reads them back from the keychain on the next
+signature, or asks on the Mac's screen if the passphrase was never saved.
+Reinstalling the LaunchAgent replaces the agent the same way. Stopping the
+supervisor leaves its agent running.
+
+The LaunchAgent runs only while someone is logged in at the Mac's screen.
+After a restart, log in there (unlocking FileVault does) before signing from
+an SSH session.
+
+```sh
+launchctl print "gui/$(id -u)/com.ashtonian.gpg-agent"   # state = running
+tail -20 ~/Library/Logs/gpg-agent/supervisor.log         # starts and replacements
+gpg-connect-agent 'getinfo pid' /bye                     # the PID the log last started
+```
+
+Replacements logged again and again (`is gone; starting another`, or `was
+started outside this login`) mean something keeps stopping the agent: look for
+`gpgconf --kill gpg-agent` in scripts and scheduled jobs.
+`gpg-agent did not start` means the agent cannot listen on its socket: run
+`gpgconf --list-dirs agent-socket` and check that `~/.gnupg` exists with mode
+0700.
 
 ## App backups
 
@@ -313,6 +356,7 @@ state files, disable signing, or force-push to clear a failure.
 | Detached HEAD / missing tracking branch | Check out the intended branch and set its same-named origin upstream after fetching. |
 | Gitleaks fails | Fix staged content or the outgoing commit. Rotate/revoke an exposed secret; deleting the current file does not remove Git history. |
 | Signing fails | Check effective Git config, key availability, GPG/pinentry, and background unlock behavior. Diagnose with a deliberate signed commit interactively; never disable signing. |
+| `gpg: signing failed: No pinentry` | The gpg-agent that answered runs outside the GUI login, where pinentry-mac cannot reach the keychain or show a dialog. Check `launchctl print "gui/$(id -u)/com.ashtonian.gpg-agent"`: not found means install it (`dotfiles-install-launchagents.sh --gpg-agent-only`); running means the supervisor replaces that agent within `GPG_AGENT_SUPERVISOR_SECONDS`, so retry. If nobody is logged in at the Mac's screen, log in there. If pinentry-mac asks on every signature, tick "Save in Keychain" in its dialog ([GPG agent](#gpg-agent)). |
 | GitHub reports bad_email | Correct the affected commit to a signing-key email verified on GitHub. Keep a backup ref before any authorized history repair. |
 | GitHub verification fails after push | Publication already occurred. Inspect the reason and GitHub status; repair only affected commits within authorized history scope. |
 | Merge conflict | Automation aborts the merge. Resolve and sign the integration deliberately. Dotfiles has no conflict preference; auxiliary repos use local-preferred conflicting hunks (`-X ours`). |

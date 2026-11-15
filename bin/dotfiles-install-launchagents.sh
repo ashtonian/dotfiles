@@ -21,6 +21,9 @@
 #     see docs/AGENT-TELEMETRY.md)
 #   - com.ashtonian.go-cache-trim : every hour, deletes Go build cache
 #     entries unused for 24 hours (only when go is installed; see bin/go-cache-trim)
+#   - com.ashtonian.gpg-agent : keeps gpg-agent in the GUI login, where
+#     pinentry-mac reaches the login keychain, so SSH sessions can sign (only
+#     when gnupg is installed; see bin/gpg-agent-supervisor)
 #
 # USAGE:
 #   dotfiles-install-launchagents.sh [options]
@@ -34,6 +37,7 @@
 #   --agent-monitor-gate-only  Install only the agent dashboard's LAN gate
 #   --otel-agent-only  Install only the agent telemetry collector
 #   --go-cache-trim-only  Install only the Go build cache trim
+#   --gpg-agent-only  Install only the gpg-agent supervisor
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
 #   --help         Show this help
@@ -51,6 +55,7 @@ AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
 AGENT_MONITOR_GATE_AGENT="com.ashtonian.agent-monitor-gate"
 OTEL_AGENT="com.ashtonian.otel-agent"
 GO_CACHE_TRIM_AGENT="com.ashtonian.go-cache-trim"
+GPG_AGENT_AGENT="com.ashtonian.gpg-agent"
 
 # Colors
 RED='\033[0;31m'
@@ -207,12 +212,23 @@ install_go_cache_trim_agent() {
     install_agent "$GO_CACHE_TRIM_AGENT"
 }
 
+# install_gpg_agent_agent starts the supervisor, which replaces the running
+# gpg-agent; signing keeps working because pinentry-mac re-reads the passphrase.
+install_gpg_agent_agent() {
+    if [[ ! -x /opt/homebrew/bin/gpgconf ]]; then
+        log_warn "gnupg is not installed (brew install gnupg); skipping $GPG_AGENT_AGENT"
+        return 0
+    fi
+    mkdir -p "$HOME/Library/Logs/gpg-agent" # launchd does not create log directories
+    install_agent "$GPG_AGENT_AGENT"
+}
+
 show_status() {
     echo ""
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT" "$GO_CACHE_TRIM_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT" "$GO_CACHE_TRIM_AGENT" "$GPG_AGENT_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -281,6 +297,7 @@ install_all() {
     install_agent_monitor_agent
     install_otel_agent
     install_go_cache_trim_agent
+    install_gpg_agent_agent
 
     echo ""
     echo "=== Installation Complete ==="
@@ -310,6 +327,7 @@ uninstall_all() {
     uninstall_agent "$AGENT_MONITOR_GATE_AGENT"
     uninstall_agent "$OTEL_AGENT"
     uninstall_agent "$GO_CACHE_TRIM_AGENT"
+    uninstall_agent "$GPG_AGENT_AGENT"
 
     echo ""
     echo "All LaunchAgents removed."
@@ -347,6 +365,9 @@ main() {
             ;;
         --go-cache-trim-only)
             install_go_cache_trim_agent
+            ;;
+        --gpg-agent-only)
+            install_gpg_agent_agent
             ;;
         --uninstall)
             uninstall_all
