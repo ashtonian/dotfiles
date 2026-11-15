@@ -1,0 +1,83 @@
+#!/usr/bin/env bash
+#===============================================================================
+# gpg-agent-supervisor - keep gpg-agent running in the macOS GUI login
+#===============================================================================
+#
+# DESCRIPTION:
+#   pinentry-mac reads a passphrase saved in the login keychain, or asks for it
+#   in a dialog, only for a gpg-agent started inside the GUI login. An agent
+#   started from an SSH session can do neither, so every signature fails with
+#   "No pinentry" for as long as that agent runs. gpg, git and the zsh gpg-agent
+#   plugin start an agent from whichever shell needs one first, and on a host
+#   whose shells are reached over SSH that is usually an SSH session's.
+#
+#   The com.ashtonian.gpg-agent LaunchAgent runs this in the GUI login. It
+#   replaces any running agent with one it starts, then every
+#   GPG_AGENT_SUPERVISOR_SECONDS (default 10) replaces the agent again whenever
+#   it is not that one. A replacement drops the agent's cached passphrases;
+#   pinentry-mac reads them back from the keychain on the next signature.
+#
+# USAGE:
+#   gpg-agent-supervisor
+#
+#===============================================================================
+
+set -euo pipefail
+
+log() {
+    printf '%s %s\n' "$(date -u +%FT%TZ)" "$*" >&2
+}
+
+# running_agent prints the PID of the agent answering on gpg's socket, or
+# nothing. gpg-connect-agent exits 0 even when no agent answers.
+running_agent() {
+    gpg-connect-agent --no-autostart 'getinfo pid' /bye 2>/dev/null |
+        awk '$1 == "D" { print $2 }'
+}
+
+# start_agent replaces any running agent with one started from this process's
+# login session and prints its PID. gpgconf --launch succeeds even when the
+# agent it starts cannot listen, so the PID query is what confirms it.
+start_agent() {
+    local pid
+    gpgconf --kill gpg-agent
+    gpgconf --launch gpg-agent
+    pid=$(running_agent)
+    if [[ -z "$pid" ]]; then
+        log "gpg-agent did not start; see gpgconf --list-dirs agent-socket"
+        return 1
+    fi
+    printf '%s\n' "$pid"
+}
+
+# check_agent OURS prints the PID to keep watching: OURS while that agent
+# still answers, else the PID of the agent that replaced it.
+check_agent() {
+    local ours="$1" running
+    running=$(running_agent)
+    if [[ "$running" == "$ours" ]]; then
+        printf '%s\n' "$ours"
+        return 0
+    fi
+    if [[ -z "$running" ]]; then
+        log "gpg-agent $ours is gone; starting another"
+    else
+        log "gpg-agent $running was started outside this login; replacing it"
+    fi
+    start_agent
+}
+
+main() {
+    local interval="${GPG_AGENT_SUPERVISOR_SECONDS:-10}" ours
+    if ! [[ "$interval" =~ ^[1-9][0-9]*$ ]]; then
+        log "GPG_AGENT_SUPERVISOR_SECONDS must be a whole number of seconds, at least 1 (got '$interval')"
+        exit 64
+    fi
+    ours=$(start_agent)
+    log "started gpg-agent $ours; checking every ${interval}s"
+    while sleep "$interval"; do
+        ours=$(check_agent "$ours")
+    done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then main "$@"; fi
