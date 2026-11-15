@@ -1,6 +1,7 @@
 id = "tool.gh"
-description = "GitHub CLI settings (a managed copy: gh rewrites it)"
+description = "GitHub CLI settings (a managed copy: gh rewrites it) and gh as git's GitHub credential helper"
 category = "tools"
+requires = ["git"]
 
 # Where the stow package used to link these files.
 retire = [
@@ -9,3 +10,4 @@ retire = [
 
 [provides]
 copy = [".config/gh/config.yml"]
+gitconfig = "gitconfig"

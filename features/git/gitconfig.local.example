@@ -14,13 +14,3 @@
 # Machine-specific safe directories
 # [safe]
 #     directory = /path/to/your/repos
-
-# GitHub credentials through gh, the same lines `gh auth setup-git` writes into
-# ~/.gitconfig. The empty helper clears osxkeychain for these hosts, which SSH
-# sessions can't use while the login keychain is locked.
-# [credential "https://github.com"]
-#     helper =
-#     helper = !/opt/homebrew/bin/gh auth git-credential
-# [credential "https://gist.github.com"]
-#     helper =
-#     helper = !/opt/homebrew/bin/gh auth git-credential

@@ -74,7 +74,7 @@ where the feature is off.
 | `ssh` | base | darwin, linux | `~/.ssh/dotfiles.conf`; stubs `~/.ssh/config` (its Include before any `Host` or `Match`) |
 | `tool.atuin` | base | all | `~/.config/atuin` |
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
-| `tool.gh` | base | all | copies `~/.config/gh/config.yml` |
+| `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
 | `tool.neofetch` | desktop | darwin, linux | `~/.config/neofetch` |
