@@ -1,0 +1,11 @@
+# GitHub over HTTPS takes gh's token, so one `gh auth login --insecure-storage`
+# covers git in every session, SSH ones included. The empty helper drops the
+# helpers listed before it, such as git.keychain's osxkeychain, which an SSH
+# session can't read while the login keychain is locked; git.keychain's fragment
+# must therefore come first (TestGitHubCredentialsComeFromGh).
+[credential "https://github.com"]
+	helper =
+	helper = !gh auth git-credential
+[credential "https://gist.github.com"]
+	helper =
+	helper = !gh auth git-credential

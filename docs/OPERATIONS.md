@@ -97,19 +97,17 @@ For deliberate manual commits, use `git commit -S` and `git verify-commit HEAD`.
 After a GitHub push, inspect its Verified badge or API status too.
 
 Git uses gh for `github.com` and `gist.github.com` credentials, so one gh login
-covers both. `gh auth setup-git` writes the helpers with `git config --global`,
-which lands in `~/.gitconfig`: this machine's own file, read after the shared
-`~/.config/git/config`. [The local template](../features/git/gitconfig.local.example)
-shows the same helpers for `~/.gitconfig.local` instead. Besides gh's defaults
-(`repo`, `read:org`, `gist`, `workflow`), this setup uses `project` for GitHub
-Projects, `write:gpg_key` for registering the signing key, and `admin:public_key`
-and `admin:ssh_signing_key` for the SSH key upload helper. Log in once with all
-of them:
+covers both. The `tool.gh` feature's fragment of the generated git config sets
+the helpers (`features/tool.gh/gitconfig`). It comes after `git.keychain`'s
+`osxkeychain` and clears it for those two hosts, so no `gh auth setup-git` is
+needed. Besides gh's defaults (`repo`, `read:org`, `gist`, `workflow`), this
+setup uses `project` for GitHub Projects, `write:gpg_key` for registering the
+signing key, and `admin:public_key` and `admin:ssh_signing_key` for the SSH key
+upload helper. Log in once with all of them:
 
 ```sh
 gh auth login -h github.com --insecure-storage \
   -s project,write:gpg_key,admin:public_key,admin:ssh_signing_key
-gh auth setup-git -h github.com
 ```
 
 `--insecure-storage` keeps the token in `~/.config/gh/hosts.yml` (mode 0600,
