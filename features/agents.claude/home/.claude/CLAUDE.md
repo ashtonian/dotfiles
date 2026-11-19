@@ -111,6 +111,11 @@
 - All config values must have sane defaults. A service should start reasonably with zero overrides.
 - No hardcoded environment-specific values (URLs, ports, credentials, pool sizes, timeouts). These must be config variables.
 
+## Shared state
+
+- **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
+- Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
+
 ## Graceful Shutdown (services and long-running processes)
 
 - Handle `SIGTERM` and `SIGINT`. Stop accepting new work, drain in-flight work, close pools, flush logs/metrics, cancel goroutines via context.
@@ -180,15 +185,32 @@
 - Check with `errors.Is()` / `errors.As()` — never compare error strings.
 - Do not swallow errors. If you handle it (log, recover), do not also return it.
 - Errors must carry enough context to diagnose without reading source — include entity IDs, request IDs, operation names.
+- Error strings name the operation, not the outcome: `saving tenant 42: …`, `getting node: …`. Never "failed to …", "error …", "unable to …" — the fact that it is an error is already known.
+- Wrap with `%w` only where the wrap adds context the caller doesn't already have, and at most once per layer. Don't re-wrap an error with the same operation the callee already named.
 - Use typed errors with sub-fields or codes when they inform the caller better than a plain string.
 
 ### Logging
 
-- Use `log/slog` with structured JSON output. Do not use `logrus`, `log`, or `fmt.Println` for operational logging.
-- Log levels: `Info` for major operations (startup, shutdown, connections), `Debug` for flow details (cache hit/miss, retry), `Warn` for recoverable issues (timeout+retry, fallback), `Error` for failures needing attention.
-- Every log entry must include context to trace back to the request: request ID, entity ID, operation name.
-- Error logs: include the error via `slog.Any("error", err)` and the operation that failed.
+- **`log/slog` only, through `slog.NewJSONHandler`.** No `logrus`, stdlib `log`, or `fmt.Println` for operational logging.
+- **The level lives in a `slog.LevelVar`** so it can be changed at runtime without a restart. **The default is `Warn`:** a healthy service at the default level writes its startup entry and nothing else.
+- **One startup entry, always.** Every process logs `starting` at `Info` with its service, version, effective log level and non-secret config (secrets shown only as set/unset). Write it straight to the handler (`logger.Handler().Handle`) so the level gate can't drop it.
+- **Injected, never global.** `main` builds the logger and passes it through constructors. No package-global logger, no `init()`, and library code never calls the package-level `slog.Info`/`slog.Default()`. `main` may `slog.SetDefault` the same logger solely so third-party code that logs through the default lands in the same JSON stream.
+- **Messages are fixed strings.** Variable data goes in attributes, never formatted into the message: `logger.Info("saving tenant", slog.String("tenant_id", id))`, not `logger.Info(fmt.Sprintf("saving tenant %s", id))`. Errors go in as `slog.Any("error", err)` with the operation as the message.
+- **Levels.** Exactly five: the stdlib four plus `Trace`. Each lower level adds the detail the one above leaves out, so whoever lowers the level gets progressively more to debug with:
+
+  | Level | Value | Use |
+  |---|---|---|
+  | `Error` | 8 | A failure that needs someone's attention |
+  | `Warn` | 4 | Degraded but handled: timeout with retry, fallback, dropped or skipped work |
+  | `Info` | 0 | What the service is doing, operation by operation: connections, config and level changes, one entry per request or job, periodic throughput summaries |
+  | `Debug` | -4 | Enough to follow one unit of work through the code: the decisions taken and why, ids, cache hit/miss, retries, query timings, result counts |
+  | `Trace` | -12 | The rest: payloads and bodies (redacted, size-capped), per-iteration loops, health checks |
+
+  Render `TRACE` through the handler's `ReplaceAttr`; otherwise slog prints `DEBUG-8`.
+- **Request logging.** Shared HTTP middleware sets the request ID and writes one `Info` entry per request: method, route template, status, duration, request ID, user ID. When `Debug` is enabled the same entry adds sizes, client address and query parameter names; at `Trace` it adds redacted, size-capped request and response bodies. Health routes log at `Trace`. `/metrics` is not logged.
+- **Full context, from `ctx`.** Every entry carries every id of the unit of work it belongs to, without the call site adding them. Put the ids into the context once where the work is decoded (request, message), and again wherever a stage learns another (the rule, lambda or reaction it is acting on). A handler wrapper adds them to each record; call sites use the `…Context` methods. Asynchronous work carries a correlation ID minted at its entry point and kept on every derived message.
 - Never log secrets, tokens, passwords, or PII.
+- **Migrating from logrus.** These rules apply to new and changed code; untouched code isn't rewritten just to conform. When you change a logrus file, move the whole file to slog — never leave a file mixing the two.
 
 ### Testing
 
