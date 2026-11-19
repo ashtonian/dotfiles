@@ -1,0 +1,239 @@
+#!/usr/bin/env -S python3 -I
+"""disable-aerials - replace the macOS aerial wallpaper and screen saver with stills
+
+USAGE:
+  disable-aerials [--dry-run] [--picture FILE] [--saver BUNDLE] [--store FILE]
+
+On macOS 14 and later the default wallpaper is an aerial video, linked to the
+screen saver and the lock screen. While it plays, WallpaperAerialsExtension
+spins at 100%+ CPU and its VTDecoderXPCService grows by many GiB until the Mac
+swaps. It plays whenever the screen saver starts (idle with display sleep held
+off) and whenever the lock screen shows, which includes every Screen Sharing
+connection.
+
+This rewrites every entry in the wallpaper store (all spaces and displays, the
+system default, and any per-display or per-space entry) to a still desktop
+picture and a non-aerial screen saver. The screen saver stays on, because on a
+Mac whose display never sleeps it is what locks the screen. The store is backed
+up under $XDG_STATE_HOME/dotfiles/wallpaper/ before it is written. When the
+store is the live one, WallpaperAgent is restarted to load it and the aerial
+extension is stopped, which also ends its decoder.
+"""
+
+import argparse
+import datetime
+import os
+import platform
+import plistlib
+import shutil
+import subprocess
+import sys
+import tempfile
+import time
+from pathlib import Path
+
+LIVE_STORE = Path.home() / 'Library/Application Support/com.apple.wallpaper/Store/Index.plist'
+DEFAULT_PICTURE = Path('/System/Library/Desktop Pictures/Solid Colors/Space Gray.png')
+DEFAULT_SAVER = Path('/System/Library/Screen Savers/FloatingMessage.saver')
+IMAGE_PROVIDER = 'com.apple.wallpaper.choice.image'
+SAVER_PROVIDER = 'com.apple.wallpaper.choice.screen-saver'
+ENTRY_KEYS = {'Linked', 'Desktop', 'Idle'}
+ENTRY_TYPES = {'linked', 'individual'}
+# WallpaperAgent may rewrite the store's LastUse stamps when it restarts; give
+# it this long to settle before checking that the choices survived.
+SETTLE_SECONDS = 10
+
+
+class StoreError(Exception):
+    pass
+
+
+def name():
+    return Path(sys.argv[0]).name
+
+
+def content(provider, configuration):
+    return {
+        'Choices': [{
+            'Provider': provider,
+            'Configuration': plistlib.dumps(configuration, fmt=plistlib.FMT_BINARY),
+            'Files': [],
+        }],
+        'EncodedOptionValues': '$null',
+        'Shuffle': '$null',
+    }
+
+
+def wanted_choices(picture, saver):
+    """The decoded (provider, configuration) pair for the Desktop and Idle slots."""
+    return {
+        'Desktop': (IMAGE_PROVIDER, {'type': 'imageFile', 'url': {'relative': picture.as_uri()}}),
+        # A bundle is a directory, and the agent expects its file URL to end in a slash.
+        'Idle': (SAVER_PROVIDER, {'module': {'relative': saver.as_uri() + '/'}}),
+    }
+
+
+def current_choice(entry, slot):
+    try:
+        choice = entry[slot]['Content']['Choices'][0]
+        return choice['Provider'], plistlib.loads(choice['Configuration'])
+    except (KeyError, IndexError, TypeError, plistlib.InvalidFileException):
+        return None
+
+
+def entries(node, where=''):
+    """Yield (path, entry) for every wallpaper entry under node. An entry is a
+    dict with a Type saying how its Linked, Desktop and Idle slots relate."""
+    if not isinstance(node, dict):
+        return
+    if 'Type' in node or ENTRY_KEYS & node.keys():
+        if node.get('Type') not in ENTRY_TYPES:
+            raise StoreError(f'{where or "/"}: unknown entry type {node.get("Type")!r}; refusing to guess its layout')
+        yield where or '/', node
+        return
+    for key, value in node.items():
+        yield from entries(value, f'{where}/{key}')
+
+
+def skeleton():
+    """The store macOS writes before anyone changes the wallpaper."""
+    return {'AllSpacesAndDisplays': {'Type': 'linked'}, 'Displays': {}, 'Spaces': {},
+            'SystemDefault': {'Type': 'linked'}}
+
+
+def matches(entry, wanted):
+    return entry['Type'] == 'individual' and all(current_choice(entry, slot) == want
+                                                 for slot, want in wanted.items())
+
+
+def utc_now():
+    # plistlib reads and writes dates as naive UTC.
+    return datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
+
+
+def plan(store, picture, saver):
+    """Rewrite store in place; return the paths of the entries that changed."""
+    wanted = wanted_choices(picture, saver)
+    now = utc_now()
+    changed = []
+    # list() finds every entry, and refuses an unknown one, before any is changed.
+    for where, entry in list(entries(store)):
+        if matches(entry, wanted):
+            continue
+        entry.pop('Linked', None)
+        for slot, (provider, configuration) in wanted.items():
+            entry[slot] = {'Content': content(provider, configuration), 'LastSet': now, 'LastUse': now}
+        entry['Type'] = 'individual'
+        changed.append(where)
+    return changed
+
+
+def load(path):
+    if not path.exists():
+        return skeleton()
+    try:
+        return plistlib.loads(path.read_bytes())
+    except plistlib.InvalidFileException as err:
+        raise StoreError(f'reading {path}: {err}') from err
+
+
+def backup_dir():
+    return Path(os.environ.get('XDG_STATE_HOME') or Path.home() / '.local/state') / 'dotfiles/wallpaper'
+
+
+def backup(path):
+    directory = backup_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    stamp = utc_now().strftime('%Y%m%dT%H%M%SZ')
+    target = directory / f'Index-{stamp}.plist'
+    shutil.copy2(path, target)
+    return target
+
+
+def write(path, store):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temp = tempfile.mkstemp(dir=path.parent, prefix='.Index-', suffix='.plist')
+    try:
+        with os.fdopen(fd, 'wb') as out:
+            plistlib.dump(store, out, fmt=plistlib.FMT_BINARY)
+        os.replace(temp, path)
+    except BaseException:
+        os.unlink(temp)
+        raise
+
+
+def restart_agent(path, picture, saver):
+    """Load the new store and stop the aerial, then confirm the agent kept it."""
+    for process in ('WallpaperAgent', 'WallpaperAerialsExtension'):
+        # Exit 1 means it was not running; launchd starts the agent again on demand.
+        subprocess.run(['/usr/bin/killall', process], capture_output=True, timeout=10)
+    wanted = wanted_choices(picture, saver)
+    deadline = time.monotonic() + SETTLE_SECONDS
+    while True:
+        time.sleep(1)
+        found = list(entries(load(path)))
+        reverted = [where for where, entry in found if not matches(entry, wanted)]
+        if found and not reverted:
+            return
+        if time.monotonic() > deadline:
+            raise StoreError(f'WallpaperAgent reverted {", ".join(reverted) or "the whole store"}; '
+                             f'restore a backup from {backup_dir()} or set the wallpaper in System Settings')
+
+
+def parse(argv):
+    parser = argparse.ArgumentParser(prog=name(), description=__doc__.split('\n\n')[0].split(' - ', 1)[1])
+    parser.add_argument('--dry-run', action='store_true', help='report what would change, write nothing')
+    parser.add_argument('--picture', type=Path, default=DEFAULT_PICTURE,
+                        help=f'still image for the desktop and lock screen (default: {DEFAULT_PICTURE})')
+    parser.add_argument('--saver', type=Path, default=DEFAULT_SAVER,
+                        help=f'.saver bundle for the screen saver (default: {DEFAULT_SAVER})')
+    parser.add_argument('--store', type=Path, default=LIVE_STORE,
+                        help='wallpaper store to rewrite (default: the logged-in user\'s); '
+                             'WallpaperAgent is restarted only for the default')
+    args = parser.parse_args(argv)
+    args.live = args.store == LIVE_STORE
+    if args.live and not has_aerials():
+        return args
+    if not args.picture.is_file():
+        parser.error(f'--picture {args.picture}: not a file')
+    if not (args.saver / 'Contents/Info.plist').is_file():
+        parser.error(f'--saver {args.saver}: not a screen saver bundle')
+    args.picture, args.saver = args.picture.resolve(), args.saver.resolve()
+    return args
+
+
+def has_aerials():
+    """Aerial wallpapers and this store arrived in macOS 14."""
+    return sys.platform == 'darwin' and int(platform.mac_ver()[0].split('.')[0] or 0) >= 14
+
+
+def main(argv):
+    args = parse(argv)
+    if args.live and not has_aerials():
+        print(f'{name()}: not macOS 14 or later; no aerial wallpaper to replace')
+        return 0
+    store = load(args.store)
+    changed = plan(store, args.picture, args.saver)
+    if not changed:
+        print(f'{name()}: {args.store} already uses {args.picture.name} and {args.saver.name}')
+        return 0
+    print(f'{name()}: desktop {args.picture}, screen saver {args.saver}: {", ".join(changed)}')
+    if args.dry_run:
+        print(f'{name()}: dry run; {args.store} unchanged')
+        return 0
+    if args.store.exists():
+        print(f'{name()}: backed up to {backup(args.store)}')
+    write(args.store, store)
+    print(f'{name()}: wrote {args.store}')
+    if args.live:
+        restart_agent(args.store, args.picture, args.saver)
+        print(f'{name()}: restarted WallpaperAgent and stopped WallpaperAerialsExtension')
+    return 0
+
+
+if __name__ == '__main__':
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except (StoreError, OSError, subprocess.SubprocessError) as err:
+        print(f'{name()}: {err}', file=sys.stderr)
+        sys.exit(1)
