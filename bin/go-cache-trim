@@ -1,69 +1,145 @@
 #!/usr/bin/env bash
 #===============================================================================
-# go-cache-trim - delete Go build cache entries no build has used recently
+# go-cache-trim - keep each Go build cache under a size cap
 #===============================================================================
 #
 # USAGE:
-#   go-cache-trim            trim entries unused for GO_CACHE_TRIM_HOURS (24)
+#   go-cache-trim            trim every cache
 #   go-cache-trim --dry-run  report what a trim would free, delete nothing
 #
-# Go trims its build cache itself, but only of entries unused for five days,
-# and that limit cannot be changed. The agent checkouts on this Mac share one
-# cache (`go env GOCACHE`, on E2TB) whose working set is about 320 GiB. Cache
-# keys include the toolchain version, so a Go upgrade orphans that whole set,
-# and for Go's five days the cache holds two of them. The LaunchAgent
-# com.ashtonian.go-cache-trim runs this every hour.
+# Caches: `go env GOCACHE`, then each directory in the colon-separated
+# GO_EXTRA_BUILD_CACHES (setting paths.go_extra_build_caches), such as one a
+# checkout's mise.toml points GOCACHE at. Each is trimmed in two steps:
 #
-# A build refreshes the mtime of every entry it uses (at most hourly), and
-# Go's own trim reads the same mtime, so an entry deleted here was unused for
-# the whole window. A later build that needs it compiles it again.
+#   1. entries no build has used for GO_CACHE_TRIM_HOURS (24)
+#   2. while the cache is still over GO_CACHE_TRIM_MAX_GIB (400), the least
+#      recently used of the rest, never one used in the last two hours
+#
+# Go trims its build cache itself, but only of entries unused for five days,
+# and neither that window nor a size cap can be set. Agent builds write
+# hundreds of GiB a day, most of it never read again, so an age window alone
+# does not bound the cache. The LaunchAgent com.ashtonian.go-cache-trim runs
+# this every hour.
+#
+# A build refreshes the mtime of every entry it uses (at most hourly), and Go's
+# own trim reads the same mtime. Each entry's mtime is checked again as it is
+# deleted, so one a build used after the listing stays. A later build that
+# needs a deleted entry compiles it again.
 set -euo pipefail
 
-hours=${GO_CACHE_TRIM_HOURS:-24}
 dry_run=false
 case "${1:-}" in
     --dry-run) dry_run=true ;;
     "") ;;
     *) echo "usage: go-cache-trim [--dry-run]" >&2; exit 2 ;;
 esac
-if [[ ! $hours =~ ^[0-9]+$ ]] || (( hours < 2 )); then
-    # Under two hours the hourly mtime refresh could expire an entry in use.
+
+# launchd starts this without a login shell; the generated env.sh carries the
+# host's settings, and a value already in the environment wins.
+settings="$HOME/.config/dotfiles/generated/env.sh"
+# shellcheck source=/dev/null
+if [[ -r $settings ]]; then . "$settings"; fi
+
+hours=${GO_CACHE_TRIM_HOURS:-24}
+max_gib=${GO_CACHE_TRIM_MAX_GIB:-400}
+# Under two hours the hourly mtime refresh could expire an entry in use.
+floor_minutes=120
+if [[ ! $hours =~ ^[0-9]+$ ]] || (( hours * 60 < floor_minutes )); then
     echo "go-cache-trim: GO_CACHE_TRIM_HOURS=$hours: want a whole number of at least 2" >&2
     exit 2
 fi
-
-cache=$(go env GOCACHE)
-if [[ ! -d $cache ]]; then
-    echo "$(date -u +%FT%TZ) cache $cache absent (volume not mounted?); nothing to trim"
-    exit 0
-fi
-# Refuse anything that is not a Go build cache: the find below deletes files.
-if [[ $cache != /* ]] || ! head -1 "$cache/README" 2>/dev/null | grep -q '^This directory holds cached build artifacts from the Go build system\.$'; then
-    echo "go-cache-trim: $cache is not a Go build cache" >&2
-    exit 1
+if [[ ! $max_gib =~ ^[0-9]+(\.[0-9]+)?$ ]] || ! awk -v v="$max_gib" 'BEGIN { exit !(v > 0) }'; then
+    echo "go-cache-trim: GO_CACHE_TRIM_MAX_GIB=$max_gib: want a number of GiB above 0" >&2
+    exit 2
 fi
 
-# Entries live in the 256 two-hex-digit directories; README, trim.txt and the
-# fuzz corpus beside them are left alone.
-stale() {
-    find "$cache" -mindepth 2 -maxdepth 2 -path "$cache/[0-9a-f][0-9a-f]/*" -type f -mmin +$(( hours * 60 )) "$@"
+gocache=$(go env GOCACHE)
+work=$(mktemp -d "${TMPDIR:-/tmp}/go-cache-trim.XXXXXX")
+trap 'rm -rf "$work"' EXIT
+
+stamp() { date -u +%FT%TZ; }
+gib() { awk -v b="$1" 'BEGIN { printf "%.1f", b / 1073741824 }'; }
+
+# trim CACHE logs one line for the cache. It fails only for a directory that
+# is not a Go build cache.
+trim() {
+    local cache=$1 total old_n old_b lru_n lru_b n b verb tail=""
+    if [[ ! -d $cache ]]; then
+        echo "$(stamp) cache $cache absent (volume not mounted?); nothing to trim"
+        return 0
+    fi
+    # Go writes the README when a build first uses the cache.
+    if [[ ! -e $cache/README && -z $(ls -A "$cache") ]]; then
+        echo "$(stamp) cache $cache empty (no build has used it yet); nothing to trim"
+        return 0
+    fi
+    # Refuse anything that is not a Go build cache: this deletes files.
+    if [[ $cache != /* ]] || ! head -1 "$cache/README" 2>/dev/null | grep -q '^This directory holds cached build artifacts from the Go build system\.$'; then
+        echo "go-cache-trim: $cache is not a Go build cache" >&2
+        return 1
+    fi
+
+    # Entries live in the 256 two-hex-digit directories; README, trim.txt and
+    # the fuzz corpus beside them are left alone. An entry Go's own trim
+    # removes mid-listing is skipped, and a listing cut short can only lead to
+    # deleting less.
+    find "$cache" -mindepth 2 -maxdepth 2 -path "$cache/[0-9a-f][0-9a-f]/*" -type f \
+        -exec sh -c 'stat -f "%m %b %N" "$@" 2>/dev/null' go-cache-trim {} + >"$work/listing" || true
+    LC_ALL=C sort -n -k1,1 "$work/listing" >"$work/by-mtime"
+
+    # Oldest first: every entry past the age window, then, while the cache is
+    # over the cap, every entry older than the floor. Writes "bytes path" lines
+    # to delete and prints: cache_bytes old_n old_bytes lru_n lru_bytes
+    read -r total old_n old_b lru_n lru_b < <(awk -v now="$(date +%s)" \
+        -v window=$(( hours * 3600 )) -v floor=$(( floor_minutes * 60 )) \
+        -v cap="$max_gib" -v out="$work/delete" '
+        BEGIN { cap *= 1073741824; printf "" > out }
+        NR == FNR { total += $2 * 512; next }
+        FNR == 1 { left = total }
+        {
+            b = $2 * 512
+            if ($1 < now - window) { old_n++; old_b += b }
+            else if (left > cap && $1 < now - floor) { lru_n++; lru_b += b }
+            else exit
+            left -= b
+            print b, substr($0, length($1) + length($2) + 3) > out
+        }
+        END { printf "%.0f %d %.0f %d %.0f\n", total, old_n, old_b, lru_n, lru_b }
+    ' "$work/by-mtime" "$work/by-mtime")
+
+    if $dry_run; then
+        verb="would delete"
+        n=$(( old_n + lru_n ))
+        b=$(( old_b + lru_b ))
+    elif [[ ! -s $work/delete ]]; then
+        verb=deleted
+        n=0
+        b=0
+    else
+        verb=deleted
+        # find reads each mtime again as it deletes and prints only what it
+        # removed, in the list's order, so the sizes join back in one pass.
+        read -r n b < <(cut -d' ' -f2- "$work/delete" | tr '\n' '\0' |
+            xargs -0 -n 1000 sh -c 'find "$@" -maxdepth 0 -type f -mmin +'"$floor_minutes"' -print -delete 2>/dev/null; true' go-cache-trim |
+            awk -v list="$work/delete" '
+                {
+                    while ((getline line < list) > 0) {
+                        sp = index(line, " ")
+                        if (substr(line, sp + 1) == $0) { n++; b += substr(line, 1, sp - 1); break }
+                    }
+                }
+                END { printf "%d %.0f\n", n, b }')
+    fi
+
+    if awk -v left=$(( total - old_b - lru_b )) -v cap="$max_gib" 'BEGIN { exit !(left > cap * 1073741824) }'; then
+        tail="; still over the cap, with entries used in the last $(( floor_minutes / 60 )) h"
+    fi
+    echo "$(stamp) $verb $n entries ($(gib "$b") GiB) from $cache: listed $old_n unused for $hours h" \
+        "and $lru_n least recently used over the $max_gib GiB cap; about $(gib $(( total - b ))) GiB left$tail"
 }
 
-# summarize VERB: one log line from the entry sizes on stdin.
-summarize() {
-    awk -v now="$(date -u +%FT%TZ)" -v verb="$1" -v h="$hours" -v cache="$cache" \
-        '{ n++; b += $1 } END { printf "%s %s %d entries (%.1f GiB) unused for %d h from %s\n", now, verb, n, b / 1073741824, h, cache }'
-}
-
-# Each batch is sized just before it is removed, so the total is what this run
-# deleted even while builds write to the cache. Go's own trim can remove an
-# entry after find lists it; stat skips that entry, and the rest of its batch
-# is still sized and removed.
-if $dry_run; then
-    verb="would delete"
-    batch='stat -f %z "$@" 2>/dev/null || true'
-else
-    verb=deleted
-    batch='stat -f %z "$@" 2>/dev/null; rm -f "$@"'
-fi
-stale -print0 | xargs -0 -n 1000 sh -c "$batch" go-cache-trim | summarize "$verb"
+status=0
+while IFS= read -r cache <&3; do
+    trim "$cache" || status=1
+done 3< <({ echo "$gocache"; tr ':' '\n' <<<"${GO_EXTRA_BUILD_CACHES:-}"; } | sed 's#/*$##' | awk 'NF && !seen[$0]++')
+exit $status
