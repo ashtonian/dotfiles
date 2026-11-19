@@ -165,6 +165,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
+| [bin/disable-aerials](bin/disable-aerials) | Rewrite the wallpaper store to a still desktop picture and the Floating Message screen saver, then restart WallpaperAgent; `--dry-run` reports only. `config.sh` runs it |
 
 ## Automation and data boundaries
 

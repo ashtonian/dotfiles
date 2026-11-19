@@ -30,7 +30,9 @@ enabled features, installs their packages, and loads LaunchAgents. The sync
 agent runs immediately at load. Apply problems and package failures are
 warnings, so inspect the output before relying on the completion message.
 
-The final prompt offers `config.sh`, which applies broad system/app preferences,
+The final prompt offers `config.sh`, which applies broad system/app preferences
+(among them a still wallpaper and screen saver in place of the leaking aerial; see
+[Aerial wallpaper memory leak](docs/OPERATIONS.md#aerial-wallpaper-memory-leak)),
 installs packages again, and may restart apps or offer a reboot. Review it before
 accepting; it is optional. Open a new terminal after installation.
 
