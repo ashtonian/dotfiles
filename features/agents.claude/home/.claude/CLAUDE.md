@@ -12,6 +12,7 @@
 - **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
 - Run it in the background, and set a 10-minute tick beside it (e.g. a background `sleep 600`, or a Monitor). On each tick, read its progress — log tail, lock holder/queue, container state, CI status — and give the user a one-line status. Act as soon as it goes wrong: a hang, an error in the log, no progress since the last tick.
 - A queued job counts too: check what is ahead of it and whether that holder is still making progress.
+- **Subagents and forks you are waiting on: never let 30 minutes pass without checking each one.** A hung agent never sends its completion notice, so waiting for it is how a session stalls. Check how recently its output file changed, following the symlink (`stat -L -f %m <file>` on macOS; without `-L` you read the link's own time), not its contents, or message it for a one-line status. If it has not moved since the last check, ask what it is blocked on; if it stays stuck, stop it and take the work back.
 
 ## Analyze the profiles — never hand-wave a performance conclusion
 
