@@ -194,7 +194,7 @@ launchctl start com.dotfiles.sync
 # Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
 
-# Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
+# Go build cache trim only (each cache under 400 GiB, every hour; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
 # gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)

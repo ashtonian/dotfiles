@@ -19,8 +19,9 @@
 #   - com.ashtonian.otel-agent : the local collector that forwards coding-agent
 #     telemetry to the cluster (only after `otel-agent install` and `configure`;
 #     see docs/AGENT-TELEMETRY.md)
-#   - com.ashtonian.go-cache-trim : every hour, deletes Go build cache
-#     entries unused for 24 hours (only when go is installed; see bin/go-cache-trim)
+#   - com.ashtonian.go-cache-trim : every hour, keeps each Go build cache
+#     under 400 GiB, oldest unused entries first (only when go is installed;
+#     see bin/go-cache-trim)
 #   - com.ashtonian.gpg-agent : keeps gpg-agent in the GUI login, where
 #     pinentry-mac reaches the login keychain, so SSH sessions can sign (only
 #     when gnupg is installed; see bin/gpg-agent-supervisor)

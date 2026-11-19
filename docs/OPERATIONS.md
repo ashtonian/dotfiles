@@ -27,6 +27,8 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DOTFILES_MISE_CANARY` | LocalHostName | empty; the base profile sets `studio` | `dotfiles-update.sh`: the one machine whose weekly run moves the Go pin in `conf.d/dotfiles.toml` to its minor's newest patch and commits it. Setting `mise.canary` (feature `tool.mise`), exported by the generated `env.sh` |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
+| `GO_CACHE_TRIM_MAX_GIB` | GiB above 0, decimals allowed | `400` | `bin/go-cache-trim`: the size cap for each cache; once entries past `GO_CACHE_TRIM_HOURS` are gone, it deletes the least recently used of the rest until the cache fits, never one used in the last two hours; set in the installed `com.ashtonian.go-cache-trim` plist |
+| `GO_EXTRA_BUILD_CACHES` | Colon-separated directory paths | unset (only `go env GOCACHE`); the `studio` profile sets `/Volumes/E2TB2/cache/go/build` | `bin/go-cache-trim`: Go build caches to trim besides `go env GOCACHE`, such as one a checkout's `mise.toml` points `GOCACHE` at. Setting `paths.go_extra_build_caches` (feature `shell.env`), exported by the generated `env.sh`, which the job reads itself because launchd starts it without a shell |
 | `GPG_AGENT_SUPERVISOR_SECONDS` | Whole seconds, at least 1 | `10` | `bin/gpg-agent-supervisor`: how often it checks that the running gpg-agent is the one it started in the GUI login, and replaces it if not; set in the installed `com.ashtonian.gpg-agent` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
 | `PAGER` | Command | less | Core pager default |
@@ -136,14 +138,36 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | `--uninstall` | Unload and remove all nine installed agent plists |
 | `--help` | Show supported options |
 
-`com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour. Go
-trims its build cache only of entries unused for five days. The agent
-checkouts share one cache whose working set is about 320 GiB, and cache keys
-include the toolchain version: after a Go upgrade the old toolchain's entries
-are never used again, so for five days the cache would hold two working sets. Each run logs the entries and GiB it deleted to
-`~/Library/Logs/go-cache-trim/trim.log`; `bin/go-cache-trim --dry-run` reports
-what a run would delete. A deleted entry costs one recompile the next time a
-build needs it.
+`com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour over
+`go env GOCACHE` and each directory in `GO_EXTRA_BUILD_CACHES`. Go trims its
+build cache only of entries unused for five days, and has no size cap. Agent
+builds write hundreds of GiB a day, most of it never read again: in a
+sample of the shared cache, 83% of the bytes were never reused more than an
+hour after they were written. Cache keys also include the toolchain
+version, so after a Go upgrade the old toolchain's entries are never used
+again. Each run therefore deletes, per cache, the entries unused for
+`GO_CACHE_TRIM_HOURS`, then the least recently used of the rest until the
+cache is under `GO_CACHE_TRIM_MAX_GIB`. It never deletes an entry used in the
+last two hours, and it reads each entry's mtime again as it deletes it, so an
+entry a build picked up after the listing stays. A deleted entry costs one
+recompile the next time a build needs it.
+
+Each run logs one line per cache to `~/Library/Logs/go-cache-trim/trim.log`:
+the entries and GiB deleted, how many were past the age window and how many
+went for the cap, and about how much is left. `bin/go-cache-trim --dry-run`
+reports what a run would delete. Troubleshooting:
+
+- A line ending `still over the cap, with entries used in the last 2 h`: builds
+  used more than the cap within two hours. Raise `GO_CACHE_TRIM_MAX_GIB`, or
+  find the package that compiles to such large archives.
+- `cache ... absent (volume not mounted?)`: the volume holding that cache is
+  not mounted; the next run after it mounts trims it.
+- `cache ... empty (no build has used it yet)`: nothing to do; Go writes the
+  cache's README on the first build that uses it.
+- `... is not a Go build cache` in `trim.err` and exit status 1: a configured
+  directory has no Go README. Check `GO_EXTRA_BUILD_CACHES` (`echo
+  $GO_EXTRA_BUILD_CACHES` in a shell, or the setting in the machine's
+  profiles); the other caches are still trimmed.
 
 The job runs at low I/O priority (`LowPriorityIO` in the plist), so its
 deletes wait whenever builds keep the volume busy, and a run can then take
