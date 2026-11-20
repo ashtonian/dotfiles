@@ -5,6 +5,7 @@ package manifest
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -13,6 +14,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/ashtonian/dotfiles/internal/prefs"
 )
 
 // Platforms a feature can declare; the values match runtime.GOOS.
@@ -80,6 +83,9 @@ type Provides struct {
 	Link      []string        `toml:"link"`       // files under home/, linked one by one
 	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
 	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
+	// Prefs maps a store from prefs.Stores to a file of the settings this
+	// feature owns in that app, set key by key; see package prefs.
+	Prefs map[string]string `toml:"prefs"`
 }
 
 // MasApp is a Mac App Store app.
@@ -277,6 +283,14 @@ func validateFeature(f *Feature, dirName string) error {
 	}
 	for _, p := range append(slices.Clone(f.Provides.Link), f.Provides.Copy...) {
 		if err := checkRelative(p); err != nil {
+			return err
+		}
+	}
+	for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
+		if !slices.Contains(prefs.Stores, store) {
+			return fmt.Errorf("prefs names unknown store %q (want one of %s)", store, strings.Join(prefs.Stores, ", "))
+		}
+		if err := checkRelative(f.Provides.Prefs[store]); err != nil {
 			return err
 		}
 	}

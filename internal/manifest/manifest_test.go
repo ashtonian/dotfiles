@@ -58,6 +58,8 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a stub keyword that is not one word", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".ssh/config\", line = \"Include x\", before = [\"Host *\"] }]\n", "must be one word"},
 		{"a setting with an unknown type", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"float\"\n", `unknown type "float"`},
 		{"a secret default that is a value", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"secret\"\ndefault = \"hunter2\"\n", "never a value"},
+		{"an unknown preference store", "a", "id = \"a\"\n[provides.prefs]\niterm = \"iterm.toml\"\n", `prefs names unknown store "iterm"`},
+		{"a prefs file outside the feature", "a", "id = \"a\"\n[provides.prefs]\nmuxy = \"../muxy.toml\"\n", "leaves the feature directory"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

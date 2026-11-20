@@ -6,5 +6,6 @@ enable = [
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
+  "agents.claude.theme",
   "agents.agent-mcp",
 ]

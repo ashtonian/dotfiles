@@ -162,6 +162,9 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.brew_link]          # a formula's Brewfile `link:` option
 # zoxide = false
 
+[provides.prefs]              # app settings owned key by key: store = prefs file (see App settings)
+# muxy = "muxy.toml"
+
 [settings.cd_override]
 type    = "bool"
 default = true
@@ -191,12 +194,60 @@ fragment is in the generated output.
 ### Teardown
 
 Disabling a feature reverses each `provides` type: remove its links and
-managed copies, unregister its scheduled jobs (`launchctl bootout`,
+managed copies, put back the app settings it set, unregister its scheduled jobs (`launchctl bootout`,
 `systemctl --user disable --now`, `Unregister-ScheduledTask`), drop its
 fragments from the generated outputs, and run its `teardown` hook. Packages
 are not uninstalled automatically, because another tool or the user may rely
 on them. The status page lists installed packages no enabled feature wants,
 and `dotfiles prune --packages` removes them on request.
+
+### App settings
+
+Some apps keep settings every machine should share in the same file as state
+that belongs to one machine, and rewrite that file themselves. Muxy's
+`settings.toml` holds the theme and shortcuts beside the recent projects and
+the remote servers it pairs with; Claude Code's `~/.claude/settings.json` holds
+the theme beside each machine's own hooks, permissions and MCP servers. A link
+breaks on the app's first save, a managed copy reports drift on every change
+the app makes, and either one would carry one machine's state to the others.
+Mackup's whole-file copies (see [Mackup](#mackup)) have the same problem.
+
+A feature names the settings it owns instead, in a prefs file per app:
+
+```toml
+# features/tool.muxy/feature.toml
+[provides.prefs]
+muxy = "muxy.toml"
+
+# features/tool.muxy/muxy.toml: one top-level `key = value` per line
+"appearance.dark_theme" = "Dracula"
+"terminal.font_families" = ["FiraCode Nerd Font Mono"]
+```
+
+`apply` sets each key through the app's own interface, a store, and leaves
+every other key alone:
+
+| Store | Talks to | Keys |
+| --- | --- | --- |
+| `muxy` | `muxy config get/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`), which validates each value and has the running app apply it. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
+| `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from | top-level keys; a value may be an object, which replaces that whole key |
+
+An app setting always has some value, so there is no "nothing there yet" that
+tells apply's own work from the owner's, as there is for a link or copy. The
+first apply on a machine sets the key and records the value it replaced in
+the state file. From then on:
+
+- a key that still has the value apply set follows the repository;
+- a key changed in the app since is a problem (`changed here since dotfiles
+  set it`) and is left alone; `dotfiles adopt <store>:<key>` rewrites that
+  line of the prefs file with the app's value;
+- disabling the feature, or removing the line, puts back the recorded earlier
+  value (or unsets the key), unless the key changed in the app since;
+- a store that cannot be reached (the app is not installed) is a problem for
+  its keys only; the rest of apply converges, and the next run tries again.
+
+`dotfiles check` parses every prefs file, so a malformed one never merges; it
+reads no app.
 
 ## Generated outputs
 
@@ -942,6 +993,7 @@ and its status. Decided entries record who decided.
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
 | D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zlogin.zsh` hands a marked `zsh -lc` command to Homebrew bash (`zshenv.zsh` a plain `zsh -c` one); `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 | D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
+| D32 | Settings in a file that mixes shared values with one machine's state, and that the app rewrites (Muxy, Claude Code's `settings.json`), are owned key by key through prefs files and set through the app's own interface (see [App settings](#app-settings)); whole-file links and copies stay for files that are entirely shared | owner |
 
 ### Open
 

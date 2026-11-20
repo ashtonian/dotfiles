@@ -1,7 +1,7 @@
 // Package apply converges a machine on a plan: it makes the planned links,
-// managed copies, generated outputs and stubs, and removes what an earlier
-// run installed for features that are no longer enabled. It never overwrites
-// a file it did not create.
+// managed copies, generated outputs and stubs, sets the planned app settings,
+// and removes what an earlier run installed for features that are no longer
+// enabled. It never overwrites a file it did not create.
 package apply
 
 import (
@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
 
@@ -33,11 +34,13 @@ type Env struct {
 	// untracked files a tool wrote, or that an older sync linked one by one;
 	// apply moves each one that $HOME still links to home. Empty for none.
 	StowTree string
+	// Prefs holds a store for each name in prefs.Stores.
+	Prefs map[string]PrefStore
 }
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, adopt
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, adopt
 	Path   string
 	Detail string
 }
@@ -98,9 +101,13 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 		func() error { return eachItem(r, p.Links, r.link) },
 		func() error { return eachItem(r, p.Copies, r.copy) },
 		func() error { return eachItem(r, p.Stubs, r.stub) },
+		// After the copies, so a setting can name a file a copy installs,
+		// such as a theme.
+		func() error { return eachItem(r, p.Prefs, r.pref) },
 		func() error { return eachItem(r, p.Retire, r.retire) },
 		r.rescueStowTree,
 		func() error { return r.teardown(p) },
+		func() error { return r.teardownPrefs(p) },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
@@ -321,7 +328,7 @@ func move(from, to string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(to, data, info.Mode().Perm()); err != nil {
+	if err := atomicfile.Write(to, data, info.Mode().Perm()); err != nil {
 		return err
 	}
 	return os.Remove(from)
@@ -472,7 +479,7 @@ func (r *runner) generated(f plan.File) error {
 		if err := r.mkdirParent(f.Path); err != nil {
 			return err
 		}
-		if err := writeAtomic(f.Path, f.Content, 0o644); err != nil {
+		if err := atomicfile.Write(f.Path, f.Content, 0o644); err != nil {
 			return err
 		}
 	}
@@ -561,7 +568,7 @@ func (r *runner) copy(c plan.Copy) error {
 		if err := r.mkdirParent(c.Target); err != nil {
 			return err
 		}
-		return writeAtomic(c.Target, content, srcInfo.Mode().Perm())
+		return atomicfile.Write(c.Target, content, srcInfo.Mode().Perm())
 	}
 
 	info, err := os.Lstat(c.Target)
@@ -631,7 +638,7 @@ func (r *runner) stub(s plan.Stub) error {
 			if err := r.mkdirParent(s.Path); err != nil {
 				return err
 			}
-			if err := writeAtomic(s.Path, []byte(line), 0o644); err != nil {
+			if err := atomicfile.Write(s.Path, []byte(line), 0o644); err != nil {
 				return err
 			}
 		}
@@ -651,7 +658,7 @@ func (r *runner) stub(s plan.Stub) error {
 		// its place, so installers that append write the local file.
 		r.act("stub", s.Path, s.Line)
 		if !r.dryRun {
-			if err := writeAtomic(s.Path, []byte(line), 0o644); err != nil {
+			if err := atomicfile.Write(s.Path, []byte(line), 0o644); err != nil {
 				return err
 			}
 		}
@@ -795,32 +802,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// writeAtomic writes data beside path and renames it into place, so a reader
-// never sees a partial file and a crash leaves the old one.
-func writeAtomic(path string, data []byte, mode fs.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".dotfiles-*")
-	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Rename(name, path); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
 }
 
 // replaceWithSymlink swaps whatever is at target for a link to source in one

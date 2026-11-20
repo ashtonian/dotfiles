@@ -15,8 +15,10 @@ This file maps the checked-in implementation.
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
-├── internal/plan/           # Links, managed copies, generated outputs and stubs to install
+├── internal/plan/           # Links, managed copies, generated outputs, stubs and app settings to install
 ├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, state, teardown, locking
+├── internal/prefs/          # App settings owned key by key: prefs files, and the Muxy and Claude Code stores
+├── internal/atomicfile/     # Write beside, then rename into place
 ├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig
 ├── profiles/                # Named feature sets: base, dev, desktop, server, work, studio
 ├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
@@ -54,6 +56,7 @@ where the feature is off.
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp` |
 | `agents.claude` | dev | all | `~/.claude/CLAUDE.md` |
+| `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.opencode` | desktop | all | `~/.config/opencode` |
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
@@ -78,10 +81,13 @@ where the feature is off.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
 | `tool.neofetch` | desktop | darwin, linux | `~/.config/neofetch` |
+| `tool.muxy` | desktop | darwin | Brewfile: 2 cask (Muxy, FiraCode Nerd Font); Muxy settings `appearance.dark_theme`, `terminal.font_families` |
 | `tool.taskwarrior` | desktop | darwin, linux | copies `~/.taskrc` |
 
-Edit linked files in place. Add, remove or move files, then run
-`dotfiles apply`; a file in the way is reported, never overwritten. See
+Edit linked files in place. A feature's prefs file (`[provides.prefs]`) lists
+the app settings it owns, one `key = value` line each; apply sets each one
+through the app and leaves the rest of the app's settings to the machine. Add,
+remove or move files, then run `dotfiles apply`; a file in the way is reported, never overwritten. See
 [A file is in the way](README.md#a-file-is-in-the-way).
 
 ## Shell loading

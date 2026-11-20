@@ -51,6 +51,7 @@ recognize `/usr/local` Homebrew installations.
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
+| Muxy 2.5 or later in `/Applications` or `~/Applications` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
 Claude Code, gitstead, and gateway credentials need separate setup when those
@@ -221,6 +222,7 @@ dotfiles apply             # converge this machine
 dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if any
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
+dotfiles adopt muxy:appearance.dark_theme   # the same for an app setting changed in the app
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
@@ -234,6 +236,17 @@ file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
 edits into its tracked file, which sync then publishes like any tracked edit. A
 second run with nothing changed does nothing.
+
+App settings that share a file with one machine's own state, such as Muxy's
+theme and Claude Code's `theme` in `~/.claude/settings.json`, are owned key by
+key: a feature's prefs file lists them, and `apply` sets each one through the
+app (`muxy config set` inside `Muxy.app`; an in-place edit of
+`settings.json`), leaving every other key to the machine. A setting changed in
+the app after apply set it is reported, never overwritten, and
+`dotfiles adopt <store>:<key>` keeps it; disabling the feature puts back the
+value it replaced. See
+[App settings](docs/MACHINE-FEATURES.md#app-settings). `--app-timeout`
+(default `15s`) bounds each call to an app's settings tool.
 Without `machine.toml` it refuses to run, since no profile would apply and it
 would remove everything the profiles install.
 
@@ -250,8 +263,8 @@ removed.
 | Profile | Enables |
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
-| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font) |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -277,7 +290,7 @@ disable = ["tool.taskwarrior"]
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
-| 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
+| 1 | Problems left for you (a file in the way, an edited copy, an app setting changed in the app, an app that is not installed, a missing setting), or for `doctor`, pending changes |
 | 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict) |
 | 64 | Usage |
 | 70 | An I/O failure |

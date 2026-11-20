@@ -761,12 +761,40 @@ class RealFeatures(Fixture):
         self.home.mkdir()
         self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_STATE_HOME=str(self.home / '.local/state'))
+        self.muxy_settings = self.path / 'muxy-settings.json'
+
+    def install_muxy(self):
+        """A stand-in for Muxy under the fresh home's ~/Applications, where the
+        engine looks first: its `muxy config` keeps settings in a JSON file."""
+        settings = self.muxy_settings
+        settings.write_text(json.dumps({'appearance.dark_theme': 'Muxy', 'appearance.layout': 'project_focused'}))
+        cli = self.home / 'Applications/Muxy.app/Contents/MacOS/muxy'
+        cli.parent.mkdir(parents=True)
+        cli.write_text(f'''#!{sys.executable}
+import json, pathlib, sys, tomllib
+state = pathlib.Path({str(settings)!r})
+values = json.loads(state.read_text())
+args = [a for a in sys.argv[1:] if a not in ('--json', '--')]
+if args[:2] == ['config', 'list']:
+    print(json.dumps(values))
+elif args[:2] == ['config', 'set'] and len(args) == 4:
+    values[args[2]] = tomllib.loads('v = ' + args[3])['v']
+    state.write_text(json.dumps(values))
+    print(json.dumps({{'key': args[2], 'applied': False}}))
+elif args[:2] == ['config', 'unset'] and len(args) == 3:
+    values.pop(args[2], None)
+    state.write_text(json.dumps(values))
+else:
+    sys.exit('muxy: unknown command')
+''')
+        cli.chmod(0o755)
 
     def dotfiles(self, *args):
         return subprocess.run([str(self.engine), *args, '--home', str(self.home), '--repo', str(ROOT)],
                               env=self.env, capture_output=True, text=True, timeout=60)
 
     def converge(self, profiles):
+        self.install_muxy()
         p = self.dotfiles('init', '--profiles', profiles)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         p = self.dotfiles('apply')
@@ -807,6 +835,11 @@ class RealFeatures(Fixture):
         brewfile = self.converge('base,dev,desktop,server')
         self.assertIn('cask "', brewfile)
         self.assertIn('vscode "', brewfile)
+        self.assertIn('cask "muxy" # tool.muxy', brewfile)
+        self.assertEqual(json.loads(self.muxy_settings.read_text()),
+                         {'appearance.dark_theme': 'Dracula', 'appearance.layout': 'project_focused',
+                          'terminal.font_families': ['FiraCode Nerd Font Mono']},
+                         'the shared Muxy settings are set, and the rest of Muxy is left alone')
         for stub in ('.zshenv', '.zprofile', '.zshrc', '.zlogin', '.bashrc', '.bash_profile', '.gitconfig', '.ssh/config'):
             self.assertFalse((self.home / stub).is_symlink(), stub + ' is a local stub')
         self.assertTrue((self.home / '.config/zsh/00-init.zsh').is_symlink())
@@ -849,6 +882,26 @@ class RealFeatures(Fixture):
         self.assertFalse((self.home / '.config/neofetch').exists())
         self.assertFalse((self.home / '.mackup.cfg').exists())
         self.assertTrue((self.home / '.claude/CLAUDE.md').is_symlink(), 'dev features are on')
+        self.assertEqual(json.loads(self.muxy_settings.read_text())['appearance.dark_theme'], 'Muxy',
+                         'Muxy is a desktop feature')
+
+    def test_claude_code_keeps_its_own_settings_and_takes_the_theme(self):
+        settings = self.home / '.claude/settings.json'
+        settings.parent.mkdir()
+        settings.write_text('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "dark-ansi"\n}\n')
+        self.converge('base,dev')
+        self.assertEqual(settings.read_text(), '{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula"\n}\n')
+        theme = self.home / '.claude/themes/dracula.json'
+        self.assertFalse(theme.is_symlink(), 'Claude Code rewrites its themes, so the theme is a managed copy')
+        self.assertEqual(json.loads(theme.read_text())['name'], 'Dracula')
+
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '[features]\ndisable = ["agents.claude.theme"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('restore-pref claude:theme -> "dark-ansi"', p.stdout)
+        self.assertEqual(json.loads(settings.read_text())['theme'], 'dark-ansi', 'disabling it puts back what was there')
+        self.assertFalse(theme.exists())
 
 
 class Install(Fixture):

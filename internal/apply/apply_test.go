@@ -23,6 +23,7 @@ type machine struct {
 	state                 *State
 	disable               []string
 	tracked               map[string]bool // repository paths git tracks, slash-separated
+	stores                map[string]PrefStore
 }
 
 func newMachine(t *testing.T) *machine {
@@ -75,7 +76,7 @@ func (m *machine) plan() *plan.Plan {
 func (m *machine) run(dryRun bool) *Report {
 	m.t.Helper()
 	report, next, err := Run(context.Background(), m.plan(), m.state, Env{Home: m.home, RepoRoot: m.repo, StowTree: filepath.Join(m.repo, "stow"),
-		Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}, dryRun)
+		Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }, Prefs: m.stores}, dryRun)
 	require.NoError(m.t, err)
 	if !dryRun {
 		m.state = next
@@ -390,7 +391,7 @@ func TestAdoptKeepsALocalEditInTheRepository(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, []byte("edited here\n"), 0o644))
 	require.Len(t, m.run(false).Problems, 1, "a local edit is drift")
 
-	report, next, err := Adopt(m.plan(), m.state, []string{target})
+	report, next, err := Adopt(context.Background(), m.plan(), m.state, []string{target}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, kinds(report)["adopt"])
 	m.state = next
@@ -412,8 +413,8 @@ func TestAdoptRefusesAnythingButAManagedCopy(t *testing.T) {
 	copied := m.at(".config/app/settings.json")
 	require.NoError(t, os.WriteFile(copied, []byte("edited here\n"), 0o644))
 	for _, other := range []string{m.at(".config/shell/a.sh"), m.at(".config/app/unmanaged.json")} {
-		_, _, err := Adopt(m.plan(), m.state, []string{copied, other})
-		assert.ErrorIs(t, err, ErrNotCopy, other)
+		_, _, err := Adopt(context.Background(), m.plan(), m.state, []string{copied, other}, nil)
+		assert.ErrorIs(t, err, ErrNotManaged, other)
 	}
 	content, err := os.ReadFile(filepath.Join(m.repo, "features/prefs/home/.config/app/settings.json"))
 	require.NoError(t, err)

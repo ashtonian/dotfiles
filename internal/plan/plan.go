@@ -1,5 +1,5 @@
-// Package plan turns the enabled features into the files a machine should
-// have: links, managed copies, generated outputs and local stubs.
+// Package plan turns the enabled features into what a machine should have:
+// links, managed copies, generated outputs, local stubs and app settings.
 package plan
 
 import (
@@ -7,12 +7,15 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
 	"github.com/ashtonian/dotfiles/internal/manifest"
+	"github.com/ashtonian/dotfiles/internal/prefs"
 )
 
 // ErrPlan wraps failures caused by the features themselves, such as a missing
@@ -50,12 +53,27 @@ type Stub struct {
 	KeepExisting        bool
 }
 
+// Pref is one app setting a feature owns; see package prefs.
+type Pref struct {
+	Store, Key string
+	Value      any // as TOML decoded it
+	Feature    string
+	// Source is the prefs file that sets it, which adopt rewrites.
+	Source string
+}
+
+// ID names the setting in reports, the state file and `dotfiles adopt`, as
+// <store>:<key>.
+func (p Pref) ID() string { return p.Store + ":" + p.Key }
+
 // Plan is the desired state for one machine.
 type Plan struct {
 	Links     []Link
 	Copies    []Copy
 	Generated []File
 	Stubs     []Stub
+	// Prefs lists the app settings to own, in feature order.
+	Prefs []Pref
 	// Retire lists old install paths to remove when they are still links into
 	// the repository.
 	Retire []string
@@ -126,6 +144,23 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 				return nil, err
 			}
 			p.Stubs = append(p.Stubs, Stub{Path: target, Line: s.Line, Feature: id, Before: s.Before, KeepExisting: s.KeepExisting})
+		}
+		for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
+			source := filepath.Join(f.Dir, filepath.FromSlash(f.Provides.Prefs[store]))
+			entries, err := prefs.ReadFile(source)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", ErrPlan, id, err)
+			}
+			for _, e := range entries {
+				if err := prefs.CheckSetting(store, e.Key, e.Value); err != nil {
+					return nil, fmt.Errorf("%w: %s: %s:%d: %w", ErrPlan, id, source, e.Line, err)
+				}
+				pref := Pref{Store: store, Key: e.Key, Value: e.Value, Feature: id, Source: source}
+				if err := claim(pref.ID(), id); err != nil {
+					return nil, err
+				}
+				p.Prefs = append(p.Prefs, pref)
+			}
 		}
 	}
 

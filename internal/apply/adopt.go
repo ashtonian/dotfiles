@@ -2,73 +2,136 @@ package apply
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 	"github.com/ashtonian/dotfiles/internal/plan"
+	"github.com/ashtonian/dotfiles/internal/prefs"
 )
 
-// ErrNotCopy means a path given to Adopt is not one of this machine's managed
-// copies.
-var ErrNotCopy = errors.New("not a managed copy on this machine")
+// ErrNotManaged means a target given to Adopt is neither one of this
+// machine's managed copies nor one of its app settings.
+var ErrNotManaged = errors.New("not a managed copy or app setting on this machine")
 
-// Adopt makes the current content of each managed copy at targets the
-// repository's version: it writes that content into the copy's tracked source
-// and records it, so the next apply sees no drift. It is how a change made
-// here, by hand or by the app that rewrites its own settings file, reaches
-// the repository. Every target is checked before any source is written.
-func Adopt(p *plan.Plan, prev *State, targets []string) (*Report, *State, error) {
-	byTarget := make(map[string]plan.Copy, len(p.Copies))
+// Adopt makes what is here the repository's version, for each target: a
+// managed copy's path, whose content is written into its tracked source, or
+// an app setting's <store>:<key>, whose current value replaces its line in
+// the prefs file. Both are recorded, so the next apply sees no drift. It is
+// how a change made here, by hand or by the app itself, reaches the
+// repository. Every target is checked before any tracked file is written.
+func Adopt(ctx context.Context, p *plan.Plan, prev *State, targets []string, stores map[string]PrefStore) (*Report, *State, error) {
+	copies := make(map[string]plan.Copy, len(p.Copies))
 	for _, c := range p.Copies {
-		byTarget[c.Target] = c
+		copies[c.Target] = c
 	}
-	type adoption struct {
-		copy    plan.Copy
-		content []byte
-		mode    os.FileMode
-		changed bool
+	settings := make(map[string]plan.Pref, len(p.Prefs))
+	for _, pr := range p.Prefs {
+		settings[pr.ID()] = pr
 	}
-	adoptions := make([]adoption, 0, len(targets))
+
+	// Each tracked file to write, built up in memory so two settings adopted
+	// from one prefs file both land.
+	type source struct {
+		before, after []byte
+		mode          os.FileMode
+	}
+	sources := map[string]*source{}
+	var order []string
+	load := func(path string) (*source, error) {
+		if s, ok := sources[path]; ok {
+			return s, nil
+		}
+		info, err := os.Stat(path)
+		if err != nil {
+			return nil, err
+		}
+		data, err := os.ReadFile(path)
+		if err != nil {
+			return nil, err
+		}
+		s := &source{before: data, after: data, mode: info.Mode().Perm()}
+		sources[path] = s
+		order = append(order, path)
+		return s, nil
+	}
+
+	next := prev.clone()
+	var actions []Action // one per target whose tracked file changes
 	for _, target := range targets {
-		c, ok := byTarget[filepath.Clean(target)]
+		if pr, ok := settings[target]; ok {
+			store, ok := stores[pr.Store]
+			if !ok {
+				return nil, nil, fmt.Errorf("adopt %s: no store for %s", target, pr.Store)
+			}
+			live, present, err := store.Get(ctx, pr.Key)
+			if err != nil {
+				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
+			}
+			if !present {
+				return nil, nil, fmt.Errorf("adopt %s: it has no value here, so there is nothing to keep", target)
+			}
+			src, err := load(pr.Source)
+			if err != nil {
+				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
+			}
+			updated, err := prefs.SetLine(pr.Source, src.after, pr.Key, live)
+			if err != nil {
+				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
+			}
+			if !bytes.Equal(updated, src.after) {
+				actions = append(actions, Action{Kind: "adopt", Path: target, Detail: pr.Source})
+			}
+			src.after = updated
+			value, err := prefs.EncodeJSON(live)
+			if err != nil {
+				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
+			}
+			rec := PrefRecord{Value: value, Previous: value, HadPrevious: true}
+			if old, had := prev.Prefs[target]; had {
+				rec.Previous, rec.HadPrevious = old.Previous, old.HadPrevious
+			}
+			next.Prefs[target] = rec
+			continue
+		}
+
+		c, ok := copies[filepath.Clean(target)]
 		if !ok {
-			return nil, nil, fmt.Errorf("%w: %s", ErrNotCopy, target)
+			return nil, nil, fmt.Errorf("%w: %s", ErrNotManaged, target)
 		}
 		info, err := os.Lstat(c.Target)
 		if err != nil {
 			return nil, nil, fmt.Errorf("adopt %s: %w", c.Target, err)
 		}
 		if !info.Mode().IsRegular() {
-			return nil, nil, fmt.Errorf("adopt %s: %w: it is not a regular file", c.Target, ErrNotCopy)
+			return nil, nil, fmt.Errorf("adopt %s: %w: it is not a regular file", c.Target, ErrNotManaged)
 		}
 		content, err := os.ReadFile(c.Target)
 		if err != nil {
 			return nil, nil, fmt.Errorf("adopt %s: %w", c.Target, err)
 		}
-		srcInfo, err := os.Stat(c.Source)
+		src, err := load(c.Source)
 		if err != nil {
 			return nil, nil, fmt.Errorf("adopt %s: %w", c.Target, err)
 		}
-		existing, err := os.ReadFile(c.Source)
-		if err != nil {
-			return nil, nil, fmt.Errorf("adopt %s: %w", c.Target, err)
+		if !bytes.Equal(content, src.after) {
+			actions = append(actions, Action{Kind: "adopt", Path: c.Target, Detail: c.Source})
 		}
-		adoptions = append(adoptions, adoption{copy: c, content: content, mode: srcInfo.Mode().Perm(),
-			changed: !bytes.Equal(existing, content)})
+		src.after = content
+		next.Copies[c.Target] = CopyRecord{Source: c.Source, SHA256: hash(content)}
 	}
 
-	report := &Report{}
-	next := prev.clone()
-	for _, a := range adoptions {
-		if a.changed {
-			if err := writeAtomic(a.copy.Source, a.content, a.mode); err != nil {
-				return report, nil, err
-			}
-			report.Actions = append(report.Actions, Action{Kind: "adopt", Path: a.copy.Target, Detail: a.copy.Source})
+	for _, path := range order {
+		s := sources[path]
+		if bytes.Equal(s.before, s.after) {
+			continue
 		}
-		next.Copies[a.copy.Target] = CopyRecord{Source: a.copy.Source, SHA256: hash(a.content)}
+		if err := atomicfile.Write(path, s.after, s.mode); err != nil {
+			return &Report{}, nil, err
+		}
 	}
-	return report, next, nil
+	return &Report{Actions: actions}, next, nil
 }

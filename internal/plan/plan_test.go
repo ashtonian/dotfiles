@@ -86,6 +86,43 @@ func TestTwoFeaturesCannotInstallOneFile(t *testing.T) {
 	assert.Contains(t, err.Error(), "a and b both install")
 }
 
+func TestPrefsArePlannedPerKey(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"}
+	theme := feature(t, root, manifest.Feature{ID: "theme", Provides: manifest.Provides{Prefs: map[string]string{
+		"muxy": "muxy.toml", "claude": "claude.toml"}}}, map[string]string{
+		"muxy.toml":   "\"appearance.dark_theme\" = \"Dracula\"\n",
+		"claude.toml": "theme = \"custom:dracula\"\n",
+	})
+	p, err := Build(map[string]*manifest.Feature{"theme": theme}, []string{"theme"}, nil, env)
+	require.NoError(t, err)
+	assert.Equal(t, []Pref{
+		{Store: "claude", Key: "theme", Value: "custom:dracula", Feature: "theme", Source: filepath.Join(theme.Dir, "claude.toml")},
+		{Store: "muxy", Key: "appearance.dark_theme", Value: "Dracula", Feature: "theme", Source: filepath.Join(theme.Dir, "muxy.toml")},
+	}, p.Prefs)
+
+	tests := []struct {
+		name  string
+		files map[string]string // the second feature's prefs files
+		want  string
+	}{
+		{"two features owning one key", map[string]string{"muxy.toml": "\"appearance.dark_theme\" = \"Nord\"\n"},
+			"theme and other both install muxy:appearance.dark_theme"},
+		{"a whole Muxy section", map[string]string{"muxy.toml": "appearance = { dark_theme = \"Nord\" }\n"},
+			"muxy: appearance is a table"},
+		{"a line adopt could not rewrite", map[string]string{"muxy.toml": "[appearance]\n"}, "a table header"},
+		{"a missing file", map[string]string{}, "no such file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			other := feature(t, t.TempDir(), manifest.Feature{ID: "other", Provides: manifest.Provides{Prefs: map[string]string{"muxy": "muxy.toml"}}}, tt.files)
+			_, err := Build(map[string]*manifest.Feature{"theme": theme, "other": other}, []string{"theme", "other"}, nil, env)
+			require.ErrorIs(t, err, ErrPlan)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
 func TestRetireSkipsPathsAFeatureInstalls(t *testing.T) {
 	root := t.TempDir()
 	home := filepath.Join(root, "home")
