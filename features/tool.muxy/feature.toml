@@ -1,0 +1,11 @@
+id = "tool.muxy"
+description = "Muxy, its terminal font, and the Muxy settings every machine shares"
+category = "tools"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+cask = ["muxy", "font-fira-code-nerd-font"]
+
+[provides.prefs]
+muxy = "muxy.toml"

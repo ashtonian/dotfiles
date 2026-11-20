@@ -8,11 +8,13 @@
 //	dotfiles doctor                         report drift and conflicts without changing anything
 //	dotfiles status [--json]                list every feature, whether it is enabled, and why
 //	dotfiles check                          validate the manifests and plan this machine, reading nothing under $HOME
-//	dotfiles adopt [flags] <path>...        make local edits to managed copies the repository's version
+//	dotfiles adopt [flags] <target>...      make local edits to managed copies (a path) or app
+//	                                        settings (<store>:<key>) the repository's version
 //
 // Exit status: 0 done; 1 doctor or apply left problems for the owner; 2 the
 // manifests are invalid or contradict each other, or the machine has none; 64
-// usage, or adopt named a path that is not a managed copy; 70 an I/O failure.
+// usage, or adopt named something that is not a managed copy or app setting;
+// 70 an I/O failure.
 package main
 
 import (
@@ -28,6 +30,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -37,6 +40,7 @@ import (
 	"github.com/ashtonian/dotfiles/internal/apply"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 	"github.com/ashtonian/dotfiles/internal/plan"
+	"github.com/ashtonian/dotfiles/internal/prefs"
 	"github.com/ashtonian/dotfiles/internal/resolve"
 )
 
@@ -65,6 +69,14 @@ type paths struct {
 	config                                      string // ~/.config
 }
 
+// prefStores builds the store for each app in prefs.Stores.
+func prefStores(home string, appTimeout time.Duration) map[string]apply.PrefStore {
+	return map[string]apply.PrefStore{
+		"claude": prefs.NewClaude(home),
+		"muxy":   prefs.NewMuxy(prefs.MuxyCommands(home), appTimeout),
+	}
+}
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|adopt [flags]")
@@ -87,6 +99,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	profiles := flags.String("profiles", "", "init: comma-separated profiles, in order")
 	force := flags.Bool("force", false, "init: replace an existing machine manifest")
 	gitTimeout := flags.Duration("git-timeout", 30*time.Second, "apply: how long listing the repository's tracked files may take")
+	appTimeout := flags.Duration("app-timeout", 15*time.Second, "apply, doctor, adopt: how long one call to an app's settings command may take")
 	if err := flags.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
@@ -112,19 +125,20 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		p.machine = filepath.Join(config, "dotfiles", "machine.toml")
 	}
 
+	stores := prefStores(p.home, *appTimeout)
 	switch cmd {
 	case "init":
 		return cmdInit(p, *profiles, *force, stdout, stderr)
 	case "apply":
-		return cmdApply(ctx, p, *dryRun, *lockWait, *gitTimeout, stdout, stderr)
+		return cmdApply(ctx, p, stores, *dryRun, *lockWait, *gitTimeout, stdout, stderr)
 	case "doctor":
-		return cmdApply(ctx, p, true, *lockWait, *gitTimeout, stdout, stderr)
+		return cmdApply(ctx, p, stores, true, *lockWait, *gitTimeout, stdout, stderr)
 	case "status":
 		return cmdStatus(p, *jsonOut, stdout, stderr)
 	case "check":
 		return cmdCheck(p, stdout, stderr)
 	case "adopt":
-		return cmdAdopt(ctx, p, flags.Args(), *lockWait, stdout, stderr)
+		return cmdAdopt(ctx, p, stores, flags.Args(), *lockWait, stdout, stderr)
 	default:
 		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check or adopt\n", cmd)
 		return exitUsage
@@ -167,7 +181,7 @@ func (l *loaded) plan(p paths) (*plan.Plan, error) {
 
 func exitFor(err error, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "dotfiles:", err)
-	if errors.Is(err, apply.ErrNotCopy) {
+	if errors.Is(err, apply.ErrNotManaged) {
 		return exitUsage
 	}
 	if errors.Is(err, manifest.ErrInvalid) || errors.Is(err, manifest.ErrNoMachine) ||
@@ -179,7 +193,7 @@ func exitFor(err error, stderr io.Writer) int {
 
 // cmdApply runs apply, or with dryRun the doctor check: the same plan, with
 // nothing changed on disk.
-func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout time.Duration, stdout, stderr io.Writer) int {
+func cmdApply(ctx context.Context, p paths, stores map[string]apply.PrefStore, dryRun bool, lockWait, gitTimeout time.Duration, stdout, stderr io.Writer) int {
 	l, err := load(p)
 	if err != nil {
 		return exitFor(err, stderr)
@@ -207,7 +221,7 @@ func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout ti
 		return exitFor(err, stderr)
 	}
 	env := apply.Env{Home: p.home, RepoRoot: p.repo, StowTree: filepath.Join(p.repo, retiredStowTree),
-		Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }}
+		Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }, Prefs: stores}
 	report, next, err := apply.Run(ctx, pl, prev, env, dryRun)
 	if err != nil {
 		return exitFor(err, stderr)
@@ -313,20 +327,25 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-// cmdAdopt copies local edits of managed copies into the repository, under
-// the same lock as apply, and records them so apply no longer reports drift.
-func cmdAdopt(ctx context.Context, p paths, targets []string, lockWait time.Duration, stdout, stderr io.Writer) int {
+// cmdAdopt copies local edits of managed copies and app settings into the
+// repository, under the same lock as apply, and records them so apply no
+// longer reports drift.
+func cmdAdopt(ctx context.Context, p paths, stores map[string]apply.PrefStore, targets []string, lockWait time.Duration, stdout, stderr io.Writer) int {
 	if len(targets) == 0 {
-		fmt.Fprintln(stderr, "dotfiles adopt: name the managed copies to keep, such as ~/.config/htop/htoprc")
+		fmt.Fprintln(stderr, "dotfiles adopt: name the managed copies or app settings to keep, such as ~/.config/htop/htoprc or muxy:appearance.dark_theme")
 		return exitUsage
 	}
-	abs := make([]string, len(targets))
+	resolved := make([]string, len(targets))
 	for i, t := range targets {
+		if store, _, ok := strings.Cut(t, ":"); ok && slices.Contains(prefs.Stores, store) {
+			resolved[i] = t // an app setting, <store>:<key>
+			continue
+		}
 		a, err := filepath.Abs(t)
 		if err != nil {
 			return exitFor(err, stderr)
 		}
-		abs[i] = a
+		resolved[i] = a
 	}
 	l, err := load(p)
 	if err != nil {
@@ -347,7 +366,7 @@ func cmdAdopt(ctx context.Context, p paths, targets []string, lockWait time.Dura
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	report, next, err := apply.Adopt(pl, prev, abs)
+	report, next, err := apply.Adopt(ctx, pl, prev, resolved, stores)
 	if err != nil {
 		return exitFor(err, stderr)
 	}

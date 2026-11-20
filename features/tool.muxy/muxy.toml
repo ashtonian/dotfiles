@@ -1,0 +1,8 @@
+# Muxy settings every machine shares, set one key at a time through the app's
+# own `muxy config set`. The rest of Muxy's settings.toml and terminal.toml
+# (recent projects, remote servers, layouts) stays this machine's own.
+# `muxy config list` shows every key; quote dotted keys. `dotfiles adopt
+# muxy:<key>` keeps a value changed in Muxy.
+"appearance.dark_theme" = "Dracula"
+# The Mono variant keeps Nerd Font icons one cell wide, as terminal programs expect.
+"terminal.font_families" = ["FiraCode Nerd Font Mono"]

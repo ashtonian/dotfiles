@@ -7,6 +7,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 )
 
 const stateVersion = 1
@@ -23,12 +25,25 @@ type State struct {
 	Generated map[string]string `json:"generated"`
 	// Stubs lists the stubs apply created.
 	Stubs map[string]bool `json:"stubs"`
+	// Prefs maps each app setting apply owns, by plan.Pref.ID, to what it set
+	// and what it replaced.
+	Prefs map[string]PrefRecord `json:"prefs"`
 }
 
 // CopyRecord is a managed copy's source and content hash at write time.
 type CopyRecord struct {
 	Source string `json:"source"`
 	SHA256 string `json:"sha256"`
+}
+
+// PrefRecord is an app setting's value as apply last set it, and the value it
+// had before apply first set it, which teardown puts back.
+type PrefRecord struct {
+	Value json.RawMessage `json:"value"`
+	// Previous is meaningful only with HadPrevious; without it the setting had
+	// no value, and teardown unsets it.
+	Previous    json.RawMessage `json:"previous,omitempty"`
+	HadPrevious bool            `json:"had_previous"`
 }
 
 func newState() *State {
@@ -38,6 +53,7 @@ func newState() *State {
 		Copies:    map[string]CopyRecord{},
 		Generated: map[string]string{},
 		Stubs:     map[string]bool{},
+		Prefs:     map[string]PrefRecord{},
 	}
 }
 
@@ -47,11 +63,13 @@ func (s *State) clone() *State {
 	maps.Copy(c.Copies, s.Copies)
 	maps.Copy(c.Generated, s.Generated)
 	maps.Copy(c.Stubs, s.Stubs)
+	maps.Copy(c.Prefs, s.Prefs)
 	return c
 }
 
 // LoadState reads the state file; a missing file is a machine apply has
-// never touched.
+// never touched. A file from before app settings existed has no prefs, which
+// reads as none set.
 func LoadState(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -67,6 +85,9 @@ func LoadState(path string) (*State, error) {
 	if s.Version != stateVersion {
 		return nil, fmt.Errorf("state %s has version %d; this dotfiles build reads version %d", path, s.Version, stateVersion)
 	}
+	if s.Prefs == nil {
+		s.Prefs = map[string]PrefRecord{}
+	}
 	return s, nil
 }
 
@@ -79,5 +100,5 @@ func (s *State) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
 	}
-	return writeAtomic(path, append(data, '\n'), 0o600)
+	return atomicfile.Write(path, append(data, '\n'), 0o600)
 }

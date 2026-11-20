@@ -10,6 +10,7 @@ enable = [
   "backup.mackup.config",
   "tool.neofetch",
   "tool.taskwarrior",
+  "tool.muxy",
   # They reach the home cluster: OpenCode's homelab gateway, and the
   # collector that forwards agent telemetry to it (D1, D31).
   "agents.opencode",
