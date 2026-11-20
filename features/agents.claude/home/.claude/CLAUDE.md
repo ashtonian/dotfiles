@@ -139,6 +139,10 @@
 - Open a separate branch only when the work must land on its own: it blocks another lane or the trunk, it must be revertible alone, it needs a distinct reviewer or acceptance gate, or it waits on a dependency the rest of the batch does not.
 - Everything else in the repository's agreement holds: cut from the current trunk, sync by merge, never rebase, merge on green and promptly. Batching is not a reason to let a branch drift.
 
+## Repositories you change only with permission
+
+- **`platform2121/vernemq-docker`** (the VerneMQ broker image): never change it without the user's explicit permission for that change. That covers branches, commits, pushes, pull requests, issues, comments, releases and tags. Reading it, cloning it into scratch and building an image from it locally for a test are fine. When work turns up something VerneMQ needs, write the finding where you were asked to work and tell the user; don't act on it in that repository.
+
 ## Searching in Claude Code's Bash tool
 
 - `grep` there is a shell function that runs Claude Code's built-in ugrep with `--ignore-files -I`: it silently skips gitignored and binary files. Searching ignored, vendored or generated paths (`node_modules`, build output, `.gitignore`d configs) needs `command grep`.
