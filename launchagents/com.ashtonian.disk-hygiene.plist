@@ -4,7 +4,8 @@
   Every day at 04:15, deletes agent scratch unused for 7 days and caches unused
   for 14, prunes the pnpm stores, and caps the dotfiles LaunchAgents' logs at
   1 MiB (bin/disk-hygiene; its header lists every DISK_HYGIENE_* setting). A
-  run missed while the Mac sleeps happens at wake.
+  run missed while the Mac sleeps happens at wake. PATH ends with mise's shims:
+  pnpm, and the node that corepack's pnpm hands over to, come from mise.
   $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
 -->
 <plist version="1.0">
@@ -18,7 +19,7 @@
     <key>EnvironmentVariables</key>
     <dict>
         <key>PATH</key>
-        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin:$HOME/.local/share/mise/shims</string>
         <key>DISK_HYGIENE_SCRATCH_DAYS</key>
         <string>7</string>
         <key>DISK_HYGIENE_CACHE_DAYS</key>

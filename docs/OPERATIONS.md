@@ -191,7 +191,10 @@ and repository scripts leave behind, so each run deletes:
 - packages no project links any more, through `pnpm store prune` on
   `~/Library/pnpm/store` and each drive's `.pnpm-store`, unless a pnpm is
   running. It uses the pnpm on PATH or the newest one corepack has cached, and
-  skips the stores when neither runs.
+  skips the stores when neither runs. The plist's PATH ends with mise's shims,
+  which supply pnpm and the node corepack's pnpm needs. A log line `no pnpm on
+  PATH or in a corepack cache` means none of them runs outside a project:
+  check `cd / && ~/.local/share/mise/shims/pnpm --version`.
 
 Unused means no file was read or written and no directory gained or lost an
 entry in the window; the internal disk and the external drives record access
