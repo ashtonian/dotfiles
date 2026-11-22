@@ -17,8 +17,9 @@ OpenCode    ─┘
 
 The export queue lives on disk. A Mac that is off the LAN (the MacBook Pro
 travels) or whose gateway is down keeps accepting telemetry, survives restarts
-with it queued, and delivers it once the gateway answers again. Each signal's
-queue holds about a week of studio's volume.
+with it queued, and delivers it once the gateway answers again. Loki and Mimir
+accept a backlog up to 7 days old. The queues hold about 8 to 9 days of
+studio's volume, so the backends' 7-day window, not the disk, is the bound.
 
 What arrives per harness:
 
@@ -100,13 +101,12 @@ otelcol-contrib 0.165.0.
 - **Per-host tokens**: Secrets `otel-gateway-token-studio`, `-mbp` and `-mini`
   in namespace `monitoring`, key `token`. `enroll` also reads the internal
   domain from `argocd/render-domains`, key `domain.internal`.
-- **Backends' age limits**: Loki accepts events up to 168 h old
-  (`reject_old_samples_max_age`), so a week's queued events land. Mimir accepts
-  samples only a little behind the newest data it holds (its TSDB head plus
-  `out_of_order_time_window`, 5 m in home-ops' `k8s/monitoring/mimir`), so it
-  refuses metric points queued longer than that. Counters are cumulative: a
-  session still running when the Mac reconnects reports its full totals with
-  its next export, while one that ended offline loses its last values.
+- **Backends' age limits**: both accept a backlog up to 7 days old: Loki's
+  `reject_old_samples_max_age` is 168 h (home-ops `k8s/monitoring/loki`), and
+  Mimir's `out_of_order_time_window` is 168 h behind the tenant's newest sample
+  (`k8s/monitoring/mimir`). Anything older is refused there, by Loki as too old
+  and by Mimir as out of bounds. The queues hold about 8 to 9 days at studio's
+  rate, so this window, not the disk, bounds a lossless outage.
 - **The collector release**: `otelcol-contrib_<version>_darwin_{arm64,amd64}.tar.gz`
   from [opentelemetry-collector-releases](https://github.com/open-telemetry/opentelemetry-collector-releases),
   verified against the pinned SHA-256.
@@ -256,6 +256,12 @@ new Local Network grant.
 - *A `.backup` file in the queue directory.* A queue file was corrupt (usually
   a crash during a write) and was replaced; what it held is in the backup and
   is not sent. `serve` keeps only the newest one.
+- *A backlog older than 7 days is missing in Grafana.* The Mac's counters show
+  it as sent; Loki refused it as too old and Mimir as out of bounds, which the
+  gateway's export to them reports. A full queue drops new data and keeps the
+  oldest, so an outage longer than about 9 days also loses what arrived after
+  the queue filled, and once everything queued is older than 7 days (an outage
+  of about 16 days) none of the outage lands.
 - *`queue_size` stays high while on the LAN.* The gateway or the LAN is slow.
   Check the gateway's alerts (`OtelGatewayDown`, `OtelGatewayExportFailing`).
 - *A harness shows no data.* It must be restarted after its config changed. A
