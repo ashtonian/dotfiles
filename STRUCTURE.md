@@ -28,6 +28,7 @@ This file maps the checked-in implementation.
 ├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
+├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -69,6 +70,7 @@ where the feature is off.
 | `brew.vscode` | dev | darwin | Brewfile: 67 vscode |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
+| `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
 | `ssh` | base | darwin, linux | `~/.ssh/dotfiles.conf`; stubs `~/.ssh/config` (its Include before any `Host` or `Match`) |
@@ -164,6 +166,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
+| [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
 
 ## Automation and data boundaries

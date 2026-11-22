@@ -249,7 +249,7 @@ removed.
 
 | Profile | Enables |
 | ------- | ------- |
-| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
+| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
 | `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
@@ -477,6 +477,22 @@ AI-assisted development workflows from `lib_sh/claude.sh`:
 | `cdoc` | Generate `CLAUDE.md` |
 | `creview` | Review branch changes |
 | `csecurity` | Security audit |
+
+## Spotlight exclusions
+
+Feature `macos.spotlight` keeps Spotlight out of folders that hold no
+documents: app caches and databases under `~/Library/Application Support`,
+`~/Library/Logs`, the pnpm store, Go toolchains, `/usr/local` and the Command
+Line Tools. `apply` does not run it; after installing the feature, and after
+editing the list, run:
+
+```sh
+spotlight-exclusions apply    # add the folders in ~/.config/spotlight/exclusions
+spotlight-exclusions check    # exit 1 if a folder on the list is not excluded
+```
+
+The list, the commands and troubleshooting:
+[docs/SPOTLIGHT.md](docs/SPOTLIGHT.md).
 
 ## Multi-Machine Setup
 

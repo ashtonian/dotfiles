@@ -1907,5 +1907,53 @@ class AgentMcp(Fixture):
             self.assertIn(flag, out)
 
 
+class SpotlightExclusions(Fixture):
+    """Config parsing and planning; the calls into mds are exercised by `spotlight-exclusions check`."""
+    FEATURE = FEATURES / 'macos.spotlight'
+
+    @classmethod
+    def setUpClass(cls):
+        import importlib.machinery
+        import importlib.util
+        script = cls.FEATURE / 'home/.local/bin/spotlight-exclusions'
+        loader = importlib.machinery.SourceFileLoader('spotlight_exclusions', str(script))
+        cls.tool = importlib.util.module_from_spec(importlib.util.spec_from_loader(loader.name, loader))
+        loader.exec_module(cls.tool)
+
+    def config(self, text):
+        path = self.path / 'exclusions'
+        path.write_text(text)
+        return path
+
+    def test_config_expands_home_normalizes_and_drops_comments_and_duplicates(self):
+        from unittest import mock
+        home = self.path / 'home'
+        text = '# comment\n\n~/Library/pnpm\n  /usr/local/  \n~/Library/../Library/pnpm\n'
+        with mock.patch.dict(os.environ, HOME=str(home)):
+            folders = self.tool.read_config(self.config(text))
+        self.assertEqual(folders, [str(home / 'Library/pnpm'), '/usr/local'])
+
+    def test_relative_path_is_rejected_with_its_line(self):
+        with self.assertRaisesRegex(self.tool.ConfigError, r'exclusions:2: .*not an absolute'):
+            self.tool.read_config(self.config('/usr/local\nLibrary/pnpm\n'))
+
+    def test_shipped_config_parses(self):
+        folders = self.tool.read_config(self.FEATURE / 'home/.config/spotlight/exclusions')
+        self.assertIn('/usr/local', folders)
+        self.assertTrue(all(os.path.isabs(f) for f in folders))
+
+    def test_plan_matches_folders_by_identity_not_spelling(self):
+        kept, new = self.path / 'kept', self.path / 'new'
+        kept.mkdir()
+        new.mkdir()
+        alias = self.path / 'alias'
+        alias.symlink_to(kept)
+        absent = str(self.path / 'absent')
+        result = self.tool.plan([str(kept), str(new), absent], current=[str(alias), str(self.path / 'gone')])
+        self.assertEqual(result.excluded, [str(kept)])
+        self.assertEqual(result.add, [str(new)])
+        self.assertEqual(result.absent, [absent])
+
+
 if __name__ == '__main__':
     unittest.main()
