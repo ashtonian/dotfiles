@@ -1091,7 +1091,9 @@ Each step is a pull request with its tests and docs.
      need.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
-   results, notifications, `doctor --automation` and the status page.
+   results, notifications, `doctor --automation` and the status page. Sync's
+   `otel-agent converge` step becomes the `agents.otel-agent` feature's
+   `apply` hook.
 7. **Windows.** The symlink test and managed-copy fallback, Task Scheduler,
    WinGet configuration, Credential Manager, the PowerShell profile stub, the
    Claude Code and Codex configs, `install.ps1`, and the Windows CI job.

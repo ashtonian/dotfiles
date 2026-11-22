@@ -4,6 +4,8 @@
   Local OpenTelemetry Collector: receives Claude Code, Codex and OpenCode
   telemetry on 127.0.0.1 and forwards it to the cluster gateway. Runs through
   bin/otel-agent serve (see docs/AGENT-TELEMETRY.md).
+  launchd restarts it only while the enrolled host name exists, so a Mac that
+  is not enrolled logs serve's refusal once instead of every ThrottleInterval.
   $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
 -->
 <plist version="1.0">
@@ -25,7 +27,13 @@
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
-    <true/>
+    <dict>
+        <key>PathState</key>
+        <dict>
+            <key>$HOME/.local/share/otel-agent/host</key>
+            <true/>
+        </dict>
+    </dict>
     <key>ThrottleInterval</key>
     <integer>10</integer>
     <key>StandardOutPath</key>

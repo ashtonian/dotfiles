@@ -387,6 +387,19 @@ class Sync(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('-C %s install --yes' % home, audit.read_text())
 
+    def test_sync_converges_the_telemetry_collector_and_reports_failure(self):
+        audit = self.path / 'otel-audit'
+        self.env['DOTFILES_TEST_AUDIT'] = str(audit)
+        # DOTFILES_DIR is the fixture, so its bin/ is the checkout's bin/.
+        self.cli('otel-agent', 'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\nexit "${OTEL_EXIT:-0}"')
+        p = self.bash('sync_otel_agent')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(audit.read_text(), 'converge\n')
+        self.env['OTEL_EXIT'] = '78'
+        p = self.bash('sync_otel_agent')
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('telemetry collector did not converge', p.stdout)
+
     def test_sync_never_runs_mackup(self):
         audit = self.path / 'mackup-audit'
         home = self.path / 'home'
@@ -1746,88 +1759,271 @@ esac''')
 
 
 class OtelAgent(Fixture):
-    VERSION = '0.163.1'
+    SCRIPT = ROOT / 'bin/otel-agent'
+    CONFIG = FEATURES / 'agents.otel-agent/home/.config/otel-agent/config.yaml'
+    VERSION = re.search(r'OTELCOL_VERSION=(\S+)', (ROOT / 'bin/otel-agent').read_text())[1]
+    PLATFORM = 'darwin_arm64' if os.uname().machine == 'arm64' else 'darwin_amd64'
     TOKEN = 'a' * 48
 
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
         self.home.mkdir()
-        self.state = self.home / '.local/share/otel-agent'
+        self.enrolled = self.home / '.local/share/otel-agent'
+        self.state = self.home / '.local/state/otel-agent'
         self.libexec = self.home / '.local/libexec/otelcol'
         self.config = self.home / '.config/otel-agent/config.yaml'
-        self.env.update(HOME=str(self.home), OTEL_AGENT_HOST='test-host')
-        for name in ('OTEL_AGENT_HOME', 'OTEL_AGENT_LIBEXEC', 'OTEL_AGENT_CONFIG'):
+        self.launchctl = self.path / 'launchctl-audit'
+        self.env.update(HOME=str(self.home), OTEL_TEST_LAUNCHCTL=str(self.launchctl))
+        for name in ('OTEL_AGENT_HOME', 'OTEL_AGENT_STATE', 'OTEL_AGENT_LIBEXEC', 'OTEL_AGENT_CONFIG',
+                     'OTEL_AGENT_HOST', 'OTEL_AGENT_KUBE_CONTEXT', 'XDG_STATE_HOME'):
             self.env.pop(name, None)
+        # launchd: `list` succeeds only when the test says the agent is loaded.
+        self.cli('launchctl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_LAUNCHCTL"\n'
+                 'if [ "$1" = list ]; then [ -n "${LAUNCHCTL_LOADED:-}" ] || exit 113; echo \'{ "PID" = 42; }\'; fi\n'
+                 'exit 0')
+        # Downloads fail unless a test serves an archive; every URL is recorded.
+        self.cli('curl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_LAUNCHCTL.curl"\n'
+                 'out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
+                 '[ -n "${OTEL_TEST_ARCHIVE:-}" ] && [ -n "$out" ] && cp "$OTEL_TEST_ARCHIVE" "$out" && exit 0\n'
+                 'exit 7')
 
     def run_agent(self, *args, input=None):
-        return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/otel-agent'), *args],
+        return subprocess.run(['/bin/zsh', '-f', str(self.SCRIPT), *args],
                               cwd=self.path, env=self.env, input=input,
-                              capture_output=True, text=True, timeout=20)
+                              capture_output=True, text=True, timeout=30)
 
-    def install_collector(self, version=VERSION):
-        collector = self.libexec / version / 'otelcol'
+    def calls(self, suffix=''):
+        path = Path(str(self.launchctl) + suffix)
+        return path.read_text().splitlines() if path.exists() else []
+
+    def install_collector(self, directory=None):
+        """A stand-in collector that prints what serve handed it."""
+        collector = self.libexec / (directory or f'{self.VERSION}_{self.PLATFORM}') / 'otelcol-contrib'
         collector.parent.mkdir(parents=True)
         collector.write_text('#!/bin/sh\nprintf "%s\\n" "args=$*" "gateway=$OTEL_AGENT_GATEWAY" '
-                             '"token=$OTEL_AGENT_TOKEN" "host=$OTEL_AGENT_HOST"\n')
+                             '"token=$OTEL_AGENT_TOKEN" "host=$OTEL_AGENT_HOST" "queue=$OTEL_AGENT_QUEUE"\n')
         collector.chmod(0o755)
         return collector
 
-    def configure(self):
-        self.state.mkdir(parents=True)
-        (self.state / 'endpoint').write_text('https://gateway.example\n')
-        (self.state / 'token').write_text(self.TOKEN + '\n')
+    def enroll(self, host='studio'):
+        self.enrolled.mkdir(parents=True)
+        (self.enrolled / 'endpoint').write_text('https://gateway.example\n')
+        (self.enrolled / 'token').write_text(self.TOKEN + '\n')
+        if host:
+            (self.enrolled / 'host').write_text(host + '\n')
+        self.config.parent.mkdir(parents=True, exist_ok=True)
+        self.config.write_text('receivers: {}\n')
 
-    def test_serve_runs_pinned_collector_with_gateway_from_state(self):
+    def test_serve_runs_pinned_collector_with_enrolled_gateway_host_and_queue(self):
         self.install_collector()
-        self.configure()
-        self.config.parent.mkdir(parents=True)
-        self.config.write_text('')
+        self.enroll('mbp')
         p = self.run_agent('serve')
         self.assertEqual(p.returncode, 0, p.stderr)
         lines = dict(line.split('=', 1) for line in p.stdout.splitlines())
         self.assertEqual(lines['args'], f'--config={self.config}')
         self.assertEqual(lines['gateway'], 'https://gateway.example')
         self.assertEqual(lines['token'], self.TOKEN)
-        self.assertEqual(lines['host'], 'test-host')
+        self.assertEqual(lines['host'], 'mbp')
+        self.assertEqual(lines['queue'], str(self.state / 'queue'))
+        self.assertEqual(stat.S_IMODE((self.state / 'queue').stat().st_mode), 0o700)
+        self.assertTrue((self.state / 'serving').read_text().strip())
 
-    def test_serve_without_gateway_is_a_config_error(self):
+    def test_host_environment_overrides_the_enrolled_name(self):
+        self.install_collector()
+        self.enroll('mbp')
+        self.env['OTEL_AGENT_HOST'] = 'mini'
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('host=mini', p.stdout)
+
+    def test_serve_refuses_until_the_mac_is_enrolled_with_a_host(self):
         self.install_collector()
         p = self.run_agent('serve')
         self.assertEqual(p.returncode, 78)
-        self.assertIn('otel-agent configure', p.stderr)
+        self.assertIn('otel-agent enroll', p.stderr)
+        # Enrolled before host names existed: the token is the old shared one.
+        self.enroll(host=None)
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('no host name configured', p.stderr)
+        self.env['OTEL_AGENT_HOST'] = 'Example-Mac-mini'
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('not a short lowercase name', p.stderr)
 
-    def test_configure_stores_gateway_privately(self):
-        p = self.run_agent('configure', 'https://gateway.example/', input=self.TOKEN + '\n')
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual((self.state / 'endpoint').read_text(), 'https://gateway.example\n')
-        self.assertEqual((self.state / 'token').read_text(), self.TOKEN + '\n')
-        self.assertEqual(stat.S_IMODE(self.state.stat().st_mode), 0o700)
-        for name in ('endpoint', 'token'):
-            self.assertEqual(stat.S_IMODE((self.state / name).stat().st_mode), 0o600)
-        self.assertIn('run otel-agent install', p.stdout)
-
-    def test_configure_rejects_plain_http_and_short_tokens(self):
-        p = self.run_agent('configure', 'http://gateway.example', input=self.TOKEN + '\n')
-        self.assertEqual(p.returncode, 64)
-        p = self.run_agent('configure', 'https://gateway.example', input='short\n')
+    def test_serve_installs_a_release_the_pin_moved_to_and_verifies_it(self):
+        # A pull moved the pin; the old release is still installed.
+        old = self.install_collector('0.163.1')
+        self.enroll()
+        archive = self.path / 'otelcol.tar.gz'
+        archive.write_bytes(b'not the pinned archive')
+        self.env['OTEL_TEST_ARCHIVE'] = str(archive)
+        p = self.run_agent('serve')
         self.assertEqual(p.returncode, 65)
-        self.assertFalse((self.state / 'token').exists())
+        self.assertIn('checksum mismatch', p.stderr)
+        [download] = self.calls('.curl')
+        self.assertTrue(download.endswith(
+            f'/releases/download/v{self.VERSION}/otelcol-contrib_{self.VERSION}_{self.PLATFORM}.tar.gz'), download)
+        self.assertTrue(old.exists(), 'nothing is removed until the new release is in place')
+        self.assertFalse((self.libexec / f'{self.VERSION}_{self.PLATFORM}').exists())
 
-    def test_install_keeps_only_the_pinned_version(self):
+    def test_a_failed_download_is_reported(self):
+        self.enroll()
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('downloading https://github.com/', p.stderr)
+
+    def test_an_architecture_without_a_pinned_release_is_refused(self):
+        self.cli('uname', 'echo ppc')
+        p = self.run_agent('install')
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('no otelcol-contrib release is pinned for ppc', p.stderr)
+        self.assertEqual(self.calls('.curl'), [])
+
+    def test_install_keeps_only_the_pinned_release(self):
         self.install_collector()
-        self.install_collector('0.150.0')
+        self.install_collector('0.163.1')
+        other = 'darwin_amd64' if self.PLATFORM == 'darwin_arm64' else 'darwin_arm64'
+        self.install_collector(f'{self.VERSION}_{other}')
         p = self.run_agent('install')
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual(sorted(d.name for d in self.libexec.iterdir()), [self.VERSION])
-        self.assertIn('otel-agent configure', p.stdout)
+        self.assertEqual(sorted(d.name for d in self.libexec.iterdir()), [f'{self.VERSION}_{self.PLATFORM}'])
+        self.assertIn('otel-agent enroll HOST', p.stdout)
+        self.assertNotIn('load', ' '.join(self.calls()))
+
+    def test_configure_stores_gateway_host_and_token_privately_and_starts_the_agent(self):
+        self.install_collector()
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('')
+        p = self.run_agent('configure', 'https://gateway.example/', 'mini', input=self.TOKEN + '\n')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((self.enrolled / 'endpoint').read_text(), 'https://gateway.example\n')
+        self.assertEqual((self.enrolled / 'token').read_text(), self.TOKEN + '\n')
+        self.assertEqual((self.enrolled / 'host').read_text(), 'mini\n')
+        self.assertEqual(stat.S_IMODE(self.enrolled.stat().st_mode), 0o700)
+        for name in ('endpoint', 'token', 'host'):
+            self.assertEqual(stat.S_IMODE((self.enrolled / name).stat().st_mode), 0o600)
+        self.assertNotIn(self.TOKEN, p.stdout + p.stderr)
+        installed = self.home / 'Library/LaunchAgents/com.ashtonian.otel-agent.plist'
+        self.assertIn(f'load {installed}', self.calls())
+        # launchd keeps it alive only while this Mac is enrolled.
+        self.assertIn(f'<key>{self.home}/.local/share/otel-agent/host</key>', installed.read_text())
+
+    def test_configure_rejects_plain_http_short_tokens_and_hostnames(self):
+        self.install_collector()
+        for args, token, status in ((('http://gateway.example', 'mini'), self.TOKEN, 64),
+                                    (('https://gateway.example', 'mini'), 'short', 65),
+                                    (('https://gateway.example', 'Example-Mac-mini'), self.TOKEN, 64),
+                                    (('https://gateway.example',), self.TOKEN, 64)):
+            with self.subTest(args=args):
+                p = self.run_agent('configure', *args, input=token + '\n')
+                self.assertEqual(p.returncode, status, p.stderr)
+        self.assertFalse(self.enrolled.exists())
+
+    def test_enroll_reads_this_hosts_token_and_gateway_from_the_cluster(self):
+        self.install_collector()
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('')
+        audit = self.path / 'kubectl-audit'
+        self.env['OTEL_TEST_KUBECTL'] = str(audit)
+        self.cli('kubectl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_KUBECTL"\ncase "$*" in\n'
+                 '  *render-domains*) printf home.example | base64 ;;\n'
+                 f'  *otel-gateway-token-mbp*) printf {self.TOKEN} | base64 ;;\n'
+                 '  *) exit 1 ;;\nesac')
+        p = self.run_agent('enroll', 'mbp', '--context', 'admin@cluster')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((self.enrolled / 'endpoint').read_text(), 'https://otel.home.example\n')
+        self.assertEqual((self.enrolled / 'token').read_text(), self.TOKEN + '\n')
+        self.assertEqual((self.enrolled / 'host').read_text(), 'mbp\n')
+        self.assertNotIn(self.TOKEN, p.stdout + p.stderr)
+        calls = audit.read_text().splitlines()
+        self.assertTrue(all(call.startswith('--context=admin@cluster ') for call in calls), calls)
+        self.assertTrue(any('-n monitoring get secret otel-gateway-token-mbp' in call for call in calls), calls)
+
+    def test_enroll_without_a_secret_for_the_host_stores_nothing(self):
+        self.cli('kubectl', 'case "$*" in *render-domains*) printf home.example | base64 ;; '
+                 '*) echo "secrets not found" >&2; exit 1 ;; esac')
+        p = self.run_agent('enroll', 'laptop')
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('otel-gateway-token-laptop', p.stderr)
+        self.assertFalse(self.enrolled.exists())
+
+    def test_enroll_without_kubectl_explains_piping_the_token_in(self):
+        self.env['PATH'] = f'{self.bin}:/usr/bin:/bin:/usr/sbin:/sbin'
+        p = self.run_agent('enroll', 'mini')
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('otel-gateway-token-mini', p.stderr)
+        self.assertIn('| ssh <this mac> ~/.dotfiles/bin/otel-agent configure https://otel.', p.stderr)
+
+    def test_converge_skips_a_mac_that_never_enrolled(self):
+        p = self.run_agent('converge')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout + p.stderr, '')
+        self.assertEqual(self.calls(), [])
+        self.assertEqual(self.calls('.curl'), [])
+
+    def test_converge_restarts_the_collector_only_when_what_it_runs_from_changed(self):
+        self.install_collector()
+        self.enroll()
+        self.assertEqual(self.run_agent('serve').returncode, 0)
+        self.env['LAUNCHCTL_LOADED'] = '1'
+        p = self.run_agent('converge')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual([call for call in self.calls() if not call.startswith('list ')], [])
+        # A pull changes the config the running collector started from.
+        self.config.write_text('receivers: {otlp: {}}\n')
+        p = self.run_agent('converge')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        installed = self.home / 'Library/LaunchAgents/com.ashtonian.otel-agent.plist'
+        self.assertIn(f'unload {installed}', self.calls())
+        self.assertIn(f'load {installed}', self.calls())
+        self.assertIn('restarted the collector', p.stdout)
+
+    def test_converge_reports_a_mac_enrolled_without_a_host(self):
+        self.install_collector()
+        self.enroll(host=None)
+        p = self.run_agent('converge')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('otel-agent enroll HOST', p.stderr)
+        self.assertEqual(self.calls(), [])
+
+    def test_launchagent_installer_waits_for_enrollment(self):
+        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-install-launchagents.sh'), '--otel-agent-only'],
+                           env=dict(self.env, DOTFILES_DIR=str(ROOT)), capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('no gateway configured; run otel-agent enroll HOST; skipping com.ashtonian.otel-agent', p.stdout)
+        self.assertEqual(self.calls(), [])
+
+    def test_status_shows_host_queue_and_counters(self):
+        self.install_collector()
+        self.enroll('mbp')
+        (self.state / 'queue').mkdir(parents=True)
+        (self.state / 'queue/exporter_otlp_http_logs_logs').write_bytes(b'\0' * (3 << 20))
+        self.env['LAUNCHCTL_LOADED'] = '1'
+        metrics = self.path / 'metrics.txt'
+        metrics.write_text(
+            'otelcol_exporter_queue_size{data_type="logs",exporter="otlp_http/logs"} 1.572864e+06\n'
+            'otelcol_exporter_queue_capacity{data_type="logs",exporter="otlp_http/logs"} 8.05306368e+08\n'
+            'otelcol_exporter_queue_capacity{data_type="metrics",exporter="otlp_http/metrics"} 2.147483648e+09\n'
+            'otelcol_exporter_queue_size{data_type="metrics",exporter="otlp_http/metrics"} 0\n'
+            'otelcol_exporter_sent_log_records{exporter="otlp_http/logs"} 12\n')
+        self.cli('curl', f'case "$*" in *8889*) cat {metrics} ;; esac')
+        p = self.run_agent('status')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('service:   running', p.stdout)
+        self.assertIn('host:      mbp', p.stdout)
+        self.assertIn(f'queue:     3 MiB on disk in {self.state}/queue', p.stdout)
+        self.assertIn('health:    ok', p.stdout)
+        self.assertRegex(p.stdout, r'queue logs +1\.5 of 768 MiB')
+        self.assertRegex(p.stdout, r'queue metrics +0\.0 of 2048 MiB')
+        self.assertRegex(p.stdout, r'otelcol_exporter_sent_log_records +12')
 
     def test_unknown_command_is_a_usage_error(self):
         self.assertEqual(self.run_agent('bogus').returncode, 64)
 
     def test_collector_config_deletes_identity_and_content_keys(self):
-        import re
-        text = (FEATURES / 'agents.otel-agent/home/.config/otel-agent/config.yaml').read_text()
+        text = self.CONFIG.read_text()
         # Every delete pattern, with `*alias` resolved to its `&anchor` value.
         anchors = dict(re.findall(r"&(\w+) '([^']+)'", text))
         patterns = [re.compile(literal or anchors[ref])
@@ -1841,6 +2037,19 @@ class OtelAgent(Fixture):
         for key in ('tool_name', 'tool_result_size_bytes', 'duration_ms', 'event.name',
                     'session.id', 'mcp_server', 'model', 'service.name', 'error_type'):
             self.assertFalse(deleted(key), key)
+
+    def test_collector_config_queue_files_have_room_above_every_queue(self):
+        # A queue file holds about 1.3 times its queue's bytes. The queue limit
+        # must bind before the file's, or a full file also refuses the writes
+        # that acknowledge delivered batches.
+        text = self.CONFIG.read_text()
+        queues = [int(size) for size in re.findall(r'^\s+queue_size: (\d+)', text, re.M)]
+        self.assertEqual(len(queues), 2, 'one queue per signal')
+        self.assertEqual(len(re.findall(r'^\s+storage: file_storage/queue$', text, re.M)), 2)
+        self.assertEqual(len(re.findall(r'^\s+sizer: bytes$', text, re.M)), 2)
+        max_size = int(re.search(r'^\s+max_size: (\d+)', text, re.M)[1])
+        self.assertGreaterEqual(max_size, 1.4 * max(queues))
+        self.assertRegex(text, r'(?m)^\s+on_rebound: true$')
 
 
 class AgentMcp(Fixture):
