@@ -258,6 +258,16 @@ class Helpers(Fixture):
         self.assertEqual(p.stdout, '')
         self.assertIn('Command failed', p.stderr)
 
+    def test_failed_brew_upgrade_still_cleans_up_and_fails_the_step(self):
+        audit = self.path / 'brew-audit'
+        self.env['DOTFILES_TEST_AUDIT'] = str(audit)
+        self.cli('brew', 'printf "%s\\n" "$1" >> "$DOTFILES_TEST_AUDIT"\n[ "$1" != upgrade ] || exit 7')
+        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-update.sh'), '--quiet', '--brew'],
+                           env=self.env, capture_output=True, text=True)
+        self.assertEqual(p.returncode, 7)
+        self.assertEqual(audit.read_text().split(), ['update', 'upgrade', 'cleanup', 'doctor'])
+        self.assertIn('brew upgrade failed', p.stderr)
+
     def test_atuin_keeps_history_keys_after_fzf_loads(self):
         fzf = shutil.which('fzf')
         if not fzf:
@@ -2095,6 +2105,29 @@ class DiskHygiene(Fixture):
                 p = self.run_hygiene('--dry-run')
                 self.assertEqual(p.returncode, 2)
                 self.assertIn('DISK_HYGIENE_CACHE_DAYS', p.stderr)
+
+
+class RotateLog(Fixture):
+    """rotate_log moves an outgrown log aside and keeps the newest archives."""
+
+    def test_rotates_past_the_limit_and_keeps_the_newest_archives(self):
+        log = self.path / 'sync.log'
+        for epoch in (1700000000, 1700000100, 1700000200):
+            (self.path / f'sync.log.{epoch}.old').write_text('old')
+        log.write_text('x' * 20)
+        p = self.bash('rotate_log "$1" 10 2', str(log), source='lib_sh/rotate-log.sh')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse(log.exists())
+        archives = sorted(f.name for f in self.path.glob('sync.log.*.old'))
+        self.assertEqual(len(archives), 2)
+        self.assertEqual(archives[0], 'sync.log.1700000200.old')
+
+    def test_leaves_a_log_within_the_limit(self):
+        log = self.path / 'sync.log'
+        log.write_text('x' * 5)
+        p = self.bash('rotate_log "$1" 10 2', str(log), source='lib_sh/rotate-log.sh')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(log.read_text(), 'x' * 5)
 
 
 class SessionDrive(Fixture):

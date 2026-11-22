@@ -3,11 +3,13 @@
 set -euo pipefail
 umask 077
 
+# shellcheck source=lib_sh/rotate-log.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/rotate-log.sh"
+
 DOTFILES_DIR=$(cd "${DOTFILES_DIR:-$HOME/.dotfiles}" && pwd -P)
 SYNC_DIR="${SYNC_DIR:-$HOME/.sync}"
 LOG_DIR="$DOTFILES_DIR/logs"
 LOG_FILE="$LOG_DIR/sync.log"
-MAX_LOG_SIZE=1048576
 # A repository with a tracked change newer than this is being edited; sync
 # leaves it for a later run instead of committing half-finished work.
 SYNC_QUIET_MINUTES="${SYNC_QUIET_MINUTES:-30}"
@@ -38,22 +40,6 @@ acquire_lock() {
         fi
     fi
     return "$status"
-}
-
-rotate_logs() {
-    if [[ -f "$LOG_FILE" ]] && [[ $(stat -f%z "$LOG_FILE") -gt $MAX_LOG_SIZE ]]; then
-        mv "$LOG_FILE" "$LOG_FILE.$(date +%s).old"
-    fi
-    local file index
-    local logs=()
-    for file in "$LOG_FILE".*.old; do
-        [[ -f "$file" ]] && logs+=("$file")
-    done
-    # Epoch timestamps in generated filenames sort from oldest to newest.
-    for ((index=0; index < ${#logs[@]} - 3; index++)); do
-        rm -f -- "${logs[$index]}"
-    done
-    return 0
 }
 
 check_connectivity() {
@@ -400,7 +386,7 @@ main() {
     acquire_lock || status=$?
     [[ $status -ne 75 ]] || return 0
     [[ $status -eq 0 ]] || return "$status"
-    rotate_logs
+    rotate_log "$LOG_FILE"
     # The work runs in a subshell without the lock's descriptor, while this
     # shell holds the lock until it returns. Otherwise a daemon a step starts
     # (op, gpg-agent, an ssh control master) inherits the descriptor and keeps

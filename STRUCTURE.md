@@ -126,6 +126,7 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [claude.sh](lib_sh/claude.sh) | Session helpers and prompt wrappers for docs, review, tests, maintenance, and PR preparation |
 | [iterm2.sh](lib_sh/iterm2.sh) | Terminal titles, badges, Claude/iTerm helpers |
 | [opencode.sh](lib_sh/opencode.sh) | `oc` attaches in $PWD; `ocweb` opens the UI and copies its password |
+| [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
 
@@ -156,7 +157,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-install-launchagents.sh](bin/dotfiles-install-launchagents.sh) | Copy templates, substitute $HOME, load/unload jobs, show status |
-| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew, install mise's missing tools, update Zinit, invoke full sync |
+| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew (cleanup runs even when an upgrade fails), install mise's missing tools, update Zinit, invoke full sync |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |

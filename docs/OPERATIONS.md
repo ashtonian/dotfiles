@@ -249,9 +249,10 @@ Idle scheduled jobs usually have no PID; check their last exit status and log.
 `sync.sh check` tests the lock, but also creates runtime directories and may
 rotate an oversized sync log. Busy locks and failed connectivity checks return
 success; operation errors return nonzero. Other repositories may still sync
-when one fails. The sync log rotates above 1 MiB and keeps three archives.
-Update and service logs have no rotation configured by these scripts. There
-is no metrics endpoint for sync or updates.
+when one fails. The sync and update logs (`logs/sync.log`, `logs/update.log`)
+rotate above 1 MiB and keep three archives each (`lib_sh/rotate-log.sh`).
+LaunchAgent stdout and stderr logs are capped daily by `bin/disk-hygiene`.
+There is no metrics endpoint for sync or updates.
 
 ### Codex service
 
@@ -438,7 +439,7 @@ state files, disable signing, or force-push to clear a failure.
 | `go: downloading go1.X.Y` in a build | A module's `go.mod` or `go.work` needs a newer Go than the pin, and `GOTOOLCHAIN=auto` fetched it (once per release, into the module cache). Expected for a module ahead of the fleet; to run it everywhere, raise the pin's minor. With `GOTOOLCHAIN=local` the same module fails with `requires go >= ...`. |
 | `go version` is not the pin in a checkout | `mise ls go` names the file that selected it: a `.go-version` or `mise.toml` there pins its own, or the module needs a newer Go (row above). A session started before an update keeps the `GOTOOLCHAIN` it inherited until it restarts. |
 | `The Go pin moves on the canary machine only` | Expected everywhere but the canary (`mise.canary`). On the canary, the update log names why a newer patch was left: the checkout is off its tracking branch, `conf.d/dotfiles.toml` has uncommitted edits, or the release would not install or run. Fix that and run `dotfiles-update.sh --go`. |
-| Update stops early | Read `logs/update.log`. Homebrew update, upgrade, cleanup, doctor, the Go pin, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. Run one step alone with `dotfiles-update.sh --brew`, `--go`, `--zinit` or `--sync`. |
+| Update stops early | Read `logs/update.log`. Homebrew update, cleanup, doctor, the Go pin, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. A failed `brew upgrade` (one cask that needs a password or a newer Xcode) still lets cleanup and doctor run, then fails the Homebrew step with the upgrade's exit code and `brew upgrade failed` in the log. Run one step alone with `dotfiles-update.sh --brew`, `--go`, `--zinit` or `--sync`. |
 
 ```sh
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \

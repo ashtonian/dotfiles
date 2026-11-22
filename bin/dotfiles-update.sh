@@ -28,6 +28,9 @@
 
 set -euo pipefail
 
+# shellcheck source=lib_sh/rotate-log.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/rotate-log.sh"
+
 #===============================================================================
 # CONFIGURATION
 #===============================================================================
@@ -83,8 +86,13 @@ update_brew() {
     log "Running brew update..."
     run_command brew update || return
 
+    # One formula or cask that fails to upgrade (an App Store prerequisite, a
+    # pkg installer that needs a password) must not also stop the cleanup, which
+    # is what bounds Homebrew's download cache and staged upgrades. The step
+    # still fails with the upgrade's status.
+    local status=0
     log "Running brew upgrade..."
-    run_command brew upgrade || return
+    run_command brew upgrade || status=$?
 
     log "Running brew cleanup..."
     run_command brew cleanup --prune=7 || return
@@ -92,6 +100,10 @@ update_brew() {
     log "Checking brew doctor..."
     run_command brew doctor || return
 
+    if (( status != 0 )); then
+        log_error "brew upgrade failed (exit $status); cleanup and doctor ran"
+        return "$status"
+    fi
     log "Homebrew update complete"
 }
 
@@ -260,6 +272,7 @@ main() {
         esac
     done
 
+    rotate_log "$LOG_FILE"
     case "$action" in
         brew)   update_brew ;;
         go)     update_go_pin ;;
