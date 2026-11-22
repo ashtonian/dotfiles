@@ -125,6 +125,7 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | `~/.dotfiles` | git, tracked files only | Every 4 hours |
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
 | This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
+| The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
 | Missing packages | brew bundle install `--no-upgrade` | Every sync |
 
 Sync publishes edits to files the repository already tracks. A new file is
@@ -154,6 +155,7 @@ pushes, and the checkout stays as it is.
 ~/.dotfiles/sync.sh mise      # Install the tools mise's shared defaults name (the pinned Go, Node LTS)
 ~/.dotfiles/sync.sh build     # Rebuild ~/.local/bin/dotfiles if its sources changed
 ~/.dotfiles/sync.sh apply     # Build if needed, then dotfiles apply
+~/.dotfiles/sync.sh otel-agent  # Install the pinned telemetry collector; restart it if it changed
 ~/.dotfiles/sync.sh all       # Same as sync
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
@@ -191,7 +193,7 @@ launchctl start com.dotfiles.sync
 # Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
 
-# Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
+# Agent telemetry collector only (after bin/otel-agent enroll, see docs/AGENT-TELEMETRY.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
 
 # Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)

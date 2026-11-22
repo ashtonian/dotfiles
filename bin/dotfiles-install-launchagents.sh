@@ -17,8 +17,8 @@
 #   - com.ashtonian.agent-monitor-gate : its token-checked LAN gate (only after
 #     `agent-monitor lan enable`)
 #   - com.ashtonian.otel-agent : the local collector that forwards coding-agent
-#     telemetry to the cluster (only after `otel-agent install` and `configure`;
-#     see docs/AGENT-TELEMETRY.md)
+#     telemetry to the cluster (only once `otel-agent enroll` or `configure`
+#     stored a gateway, token and host name; see docs/AGENT-TELEMETRY.md)
 #   - com.ashtonian.go-cache-trim : every hour, deletes Go build cache
 #     entries unused for 24 hours (only when go is installed; see bin/go-cache-trim)
 #   - com.ashtonian.disk-hygiene : every day, deletes agent scratch and caches
@@ -190,21 +190,19 @@ install_agent_monitor_gate_agent() {
     log_info "One-time: allow node to accept incoming connections when the macOS firewall asks"
 }
 
-# install_otel_agent installs the telemetry collector once bin/otel-agent has
-# installed its release and stored a gateway. The collector reaches the gateway
-# on the LAN, so its first connection raises macOS's Local Network prompt.
+# install_otel_agent installs the telemetry collector once this Mac is enrolled
+# (bin/otel-agent check). serve installs the pinned release if it is missing.
+# The collector reaches the gateway on the LAN, so each new release's first
+# connection raises macOS's Local Network prompt.
 install_otel_agent() {
-    if [[ ! -s "$HOME/.local/share/otel-agent/endpoint" || ! -s "$HOME/.local/share/otel-agent/token" ]]; then
-        log_warn "otel-agent is not configured (run $DOTFILES_DIR/bin/otel-agent configure); skipping $OTEL_AGENT"
-        return 0
-    fi
-    if ! compgen -G "$HOME/.local/libexec/otelcol/*/otelcol" >/dev/null; then
-        log_warn "otel-agent is not installed (run $DOTFILES_DIR/bin/otel-agent install); skipping $OTEL_AGENT"
+    local problem
+    if ! problem=$("$DOTFILES_DIR/bin/otel-agent" check 2>&1); then
+        log_warn "${problem#otel-agent: }; skipping $OTEL_AGENT"
         return 0
     fi
     mkdir -p "$HOME/Library/Logs/otel-agent" # launchd does not create log directories
     install_agent "$OTEL_AGENT"
-    log_info "One-time: allow otelcol to find devices on the local network when macOS asks"
+    log_info "One-time per collector release: allow otelcol-contrib to find devices on the local network when macOS asks"
 }
 
 install_go_cache_trim_agent() {

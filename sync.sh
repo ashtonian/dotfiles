@@ -351,6 +351,18 @@ apply_features() {
     return 1
 }
 
+# sync_otel_agent: a pull can move the telemetry collector's pinned release
+# together with a config only that release reads, and the config is a link into
+# the checkout. Converging right after apply installs the release and restarts
+# the collector on it, before anything else restarts it on the old binary.
+# Machines that never enrolled are skipped by the script itself.
+sync_otel_agent() {
+    if ! run_logged "$DOTFILES_DIR/bin/otel-agent" converge; then
+        log "ERROR: the telemetry collector did not converge; see above, or run: $DOTFILES_DIR/bin/otel-agent status"
+        return 1
+    fi
+}
+
 # run_mode MODE: one sync run's work.
 run_mode() {
     local status=0
@@ -359,11 +371,13 @@ run_mode() {
         sync|all)
             check_connectivity || return 0
             # Apply right after the merge: a pull that moves tracked files
-            # leaves links to their old paths until it runs. The Brewfile it
-            # generates is installed next, then mise's tools (mise is one of
-            # the packages).
+            # leaves links to their old paths until it runs. The telemetry
+            # collector converges on the files apply linked. The Brewfile
+            # apply generates is installed next, then mise's tools (mise is
+            # one of the packages).
             sync_dotfiles || status=1
             apply_features || status=1
+            sync_otel_agent || status=1
             sync_brewfile || status=1
             sync_mise_tools || status=1
             sync_auxiliary_repos || status=1
@@ -373,9 +387,10 @@ run_mode() {
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
         build) build_engine || status=$? ;;
         apply) apply_features || status=$? ;;
+        otel-agent) sync_otel_agent || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
         mise) sync_mise_tools || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|brewfile|mise|all|check}\n' "$0"; return 1 ;;
+        *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|otel-agent|brewfile|mise|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }
