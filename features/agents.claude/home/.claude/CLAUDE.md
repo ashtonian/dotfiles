@@ -128,6 +128,13 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
 - Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
 
+## Bounded growth, built for scale — hard rule
+
+- **Everything that persists records has a growth bound from its first commit.** That covers receipts, logs, ledgers, history and state files, lock records, caches, queues and CI artifacts. The bound is a retention period, a count or size cap, rotation or compaction, and the code that enforces it ships in the same change as the code that writes. "It's small for now" is not a bound. No one-file-per-event directory that nothing prunes, and no append-only file that nothing trims.
+- **Choose the data structure for the access pattern at full scale.** Hot-path lookups are O(1) or O(log n) by key: name the file by its key, keep an index, use a map or a database index. Never scan every record to find one. A scan whose cost grows with history is a bug even while n is small, and doubly so under a lock or on every call.
+- **Build for tier-1 production scale from the start.** Assume many concurrent agents in sustained use: thousands of events a day and months of history. Work out each operation's cost at that volume before writing it. State the bound (complexity, retention, maximum size) in the README or config table.
+- **The structural lever beats the hack.** Get the right key, index, layout or batching. Don't ship a workaround that holds only until the data grows. When existing code violates this, fix the structure, prune what has accumulated, and add the bound.
+
 ## Graceful Shutdown (services and long-running processes)
 
 - Handle `SIGTERM` and `SIGINT`. Stop accepting new work, drain in-flight work, close pools, flush logs/metrics, cancel goroutines via context.
