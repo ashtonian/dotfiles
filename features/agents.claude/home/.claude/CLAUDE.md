@@ -7,12 +7,13 @@
 - This bites hardest on claims that sound settled — "X is just a stub," "Y isn't built yet," "Z already handles this." Those are exactly the ones another agent quietly ships out from under you. Re-read before you say it, especially when a decision (what to build, bench, or recommend) rides on it.
 - A summary or prior-session note describes the past, not the present. Treat it as a lead to verify, not a fact to repeat. When you catch yourself about to assert state confidently, that's the trigger to go check.
 
-## Check long-running work every 10 minutes
+## Check long-running work every 10 minutes, for up to an hour
 
 - **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
 - Run it in the background, and set a 10-minute tick beside it (e.g. a background `sleep 600`, or a Monitor). On each tick, read its progress — log tail, lock holder/queue, container state, CI status — and give the user a one-line status. Act as soon as it goes wrong: a hang, an error in the log, no progress since the last tick.
 - A queued job counts too: check what is ahead of it and whether that holder is still making progress.
 - **Subagents and forks you are waiting on: never let 30 minutes pass without checking each one.** A hung agent never sends its completion notice, so waiting for it is how a session stalls. Check how recently its output file changed, following the symlink (`stat -L -f %m <file>` on macOS; without `-L` you read the link's own time), not its contents, or message it for a one-line status. If it has not moved since the last check, ask what it is blocked on; if it stays stuck, stop it and take the work back.
+- **Stop polling after an hour.** Each wait gets at most six ticks: an hour of checking the same CI run, deploy, queue or subagent. If it is still running then, tell the user its state, what it is waiting on and how to check it, and end the ticks. Resume only when the user asks or the work reports back. Every tick costs tokens, and an open-ended loop across many parallel waits can spend a week's budget in an afternoon.
 
 ## Analyze the profiles — never hand-wave a performance conclusion
 
