@@ -22,6 +22,5 @@ mas = [
   { name = "Toggl Track", id = 1291898086 },
   { name = "UTM", id = 1538878817 },
   { name = "Vimari", id = 1480933944 },
-  { name = "Xcode", id = 497799835 },
   { name = "Yoink", id = 457622435 },
 ]

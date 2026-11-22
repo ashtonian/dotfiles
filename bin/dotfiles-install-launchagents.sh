@@ -21,6 +21,8 @@
 #     see docs/AGENT-TELEMETRY.md)
 #   - com.ashtonian.go-cache-trim : every hour, deletes Go build cache
 #     entries unused for 24 hours (only when go is installed; see bin/go-cache-trim)
+#   - com.ashtonian.disk-hygiene : every day, deletes agent scratch and caches
+#     nobody has used recently and caps these agents' logs (see bin/disk-hygiene)
 #   - com.ashtonian.gpg-agent : keeps gpg-agent in the GUI login, where
 #     pinentry-mac reaches the login keychain, so SSH sessions can sign (only
 #     when gnupg is installed; see bin/gpg-agent-supervisor)
@@ -37,6 +39,7 @@
 #   --agent-monitor-gate-only  Install only the agent dashboard's LAN gate
 #   --otel-agent-only  Install only the agent telemetry collector
 #   --go-cache-trim-only  Install only the Go build cache trim
+#   --disk-hygiene-only  Install only the daily scratch, cache and log pruning
 #   --gpg-agent-only  Install only the gpg-agent supervisor
 #   --uninstall    Remove all dotfiles LaunchAgents
 #   --status       Show status of installed agents
@@ -55,6 +58,7 @@ AGENT_MONITOR_AGENT="com.ashtonian.agent-monitor"
 AGENT_MONITOR_GATE_AGENT="com.ashtonian.agent-monitor-gate"
 OTEL_AGENT="com.ashtonian.otel-agent"
 GO_CACHE_TRIM_AGENT="com.ashtonian.go-cache-trim"
+DISK_HYGIENE_AGENT="com.ashtonian.disk-hygiene"
 GPG_AGENT_AGENT="com.ashtonian.gpg-agent"
 
 # Colors
@@ -212,6 +216,12 @@ install_go_cache_trim_agent() {
     install_agent "$GO_CACHE_TRIM_AGENT"
 }
 
+install_disk_hygiene_agent() {
+    mkdir -p "$HOME/Library/Logs/disk-hygiene" # launchd does not create log directories
+    install_agent "$DISK_HYGIENE_AGENT"
+    log_info "One-time: allow bash to access files on a removable volume when macOS asks (disk-hygiene prunes each drive's tmp and cache/xdg)"
+}
+
 # install_gpg_agent_agent starts the supervisor, which replaces the running
 # gpg-agent; signing keeps working because pinentry-mac re-reads the passphrase.
 install_gpg_agent_agent() {
@@ -228,7 +238,7 @@ show_status() {
     echo "=== Dotfiles LaunchAgents Status ==="
     echo ""
 
-    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT" "$GO_CACHE_TRIM_AGENT" "$GPG_AGENT_AGENT"; do
+    for agent in com.dotfiles.sync com.dotfiles.update "$CODEX_AGENT" "$OPENCODE_AGENT" "$AGENT_MONITOR_AGENT" "$AGENT_MONITOR_GATE_AGENT" "$OTEL_AGENT" "$GO_CACHE_TRIM_AGENT" "$DISK_HYGIENE_AGENT" "$GPG_AGENT_AGENT"; do
         local dst="$LAUNCH_AGENTS_DST/${agent}.plist"
         printf "%-36s: " "$agent"
 
@@ -297,6 +307,7 @@ install_all() {
     install_agent_monitor_agent
     install_otel_agent
     install_go_cache_trim_agent
+    install_disk_hygiene_agent
     install_gpg_agent_agent
 
     echo ""
@@ -327,6 +338,7 @@ uninstall_all() {
     uninstall_agent "$AGENT_MONITOR_GATE_AGENT"
     uninstall_agent "$OTEL_AGENT"
     uninstall_agent "$GO_CACHE_TRIM_AGENT"
+    uninstall_agent "$DISK_HYGIENE_AGENT"
     uninstall_agent "$GPG_AGENT_AGENT"
 
     echo ""
@@ -365,6 +377,9 @@ main() {
             ;;
         --go-cache-trim-only)
             install_go_cache_trim_agent
+            ;;
+        --disk-hygiene-only)
+            install_disk_hygiene_agent
             ;;
         --gpg-agent-only)
             install_gpg_agent_agent

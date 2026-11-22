@@ -1,0 +1,7 @@
+id = "macos.spotlight"
+description = "Spotlight privacy exclusions for toolchains, package stores and app caches (docs/SPOTLIGHT.md)"
+category = "macos"
+platforms = ["darwin"]
+
+[provides]
+link = [".config/spotlight", ".local/bin/spotlight-exclusions"]

@@ -28,6 +28,7 @@ This file maps the checked-in implementation.
 ├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
+├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -58,17 +59,18 @@ where the feature is off.
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
-| `brew.apps` | desktop, work | darwin | Brewfile: 37 cask |
+| `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 19 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
-| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 17 mas |
+| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 16 mas |
 | `brew.mas.personal` | desktop | darwin | Brewfile: 9 mas |
 | `brew.vscode` | dev | darwin | Brewfile: 67 vscode |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
+| `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
 | `ssh` | base | darwin, linux | `~/.ssh/dotfiles.conf`; stubs `~/.ssh/config` (its Include before any `Host` or `Match`) |
@@ -124,6 +126,7 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [claude.sh](lib_sh/claude.sh) | Session helpers and prompt wrappers for docs, review, tests, maintenance, and PR preparation |
 | [iterm2.sh](lib_sh/iterm2.sh) | Terminal titles, badges, Claude/iTerm helpers |
 | [opencode.sh](lib_sh/opencode.sh) | `oc` attaches in $PWD; `ocweb` opens the UI and copies its password |
+| [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
 
@@ -154,7 +157,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-install-launchagents.sh](bin/dotfiles-install-launchagents.sh) | Copy templates, substitute $HOME, load/unload jobs, show status |
-| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew, install mise's missing tools, update Zinit, invoke full sync |
+| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew (cleanup runs even when an upgrade fails), install mise's missing tools, update Zinit, invoke full sync |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
@@ -164,6 +167,8 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Install the pinned OpenTelemetry Collector; `serve` forwards agent telemetry to the cluster gateway; `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
+| [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
+| [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
 
 ## Automation and data boundaries
@@ -178,6 +183,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `$AGENT_MONITOR_GATE_HOST:4821` (default `0.0.0.0`), token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on after `otel-agent configure`; OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
+| com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |
 
 Templates are copied, not linked. Reinstall the affected agent to apply a

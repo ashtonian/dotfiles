@@ -63,6 +63,16 @@ export GOPATH="${GOPATH:-$HOME/go}"
 export PAGER="${PAGER:-less}"      # plain less; bat as PAGER mangles man pages
 export LANG="${LANG:-en_US.UTF-8}" # LANG only; never force LC_ALL
 export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
+# A claudemore session working on an external drive sets DOTFILES_CACHE_HOME to
+# that drive's cache directory, so the commands it runs cache beside their work
+# instead of on the internal disk. It reaches only the session's shells: claude
+# resolves its own cache, update staging included, from XDG_CACHE_HOME.
+# gitstead keeps its workspace records in its cache directory, so it stays on
+# the one every other shell uses.
+if [ -n "${DOTFILES_CACHE_HOME:-}" ] && [ -d "$DOTFILES_CACHE_HOME" ]; then
+    export GITSTEAD_CACHE="${GITSTEAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/gitstead}"
+    export XDG_CACHE_HOME="$DOTFILES_CACHE_HOME"
+fi
 # zoxide's init-position check always warns (its plugin loads mid-.zshrc), and
 # the warning prints in every non-interactive zsh.
 export _ZO_DOCTOR=0

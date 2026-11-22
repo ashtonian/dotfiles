@@ -197,6 +197,9 @@ launchctl start com.dotfiles.sync
 # Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
+# Daily scratch, cache and log pruning only (see docs/OPERATIONS.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --disk-hygiene-only
+
 # gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --gpg-agent-only
 
@@ -249,7 +252,7 @@ removed.
 
 | Profile | Enables |
 | ------- | ------- |
-| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
+| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
 | `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
@@ -379,7 +382,7 @@ Interactive launchers from `~/.config/zsh/zshrc.zsh` (feature `shell.zsh`):
 | --------- | ------- | -------- | ---------- |
 | `gptmore [args...]` | GPT-6.1 Sol | `xhigh` | Connects to the local remote-control server in the current directory (`-C "$PWD"`; without it the session runs in the server's `~`) and skips Codex approvals and sandboxing |
 | `gptmax [args...]` | GPT-6 Astra | `max` | Same, with Astra |
-| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks |
+| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks. Started on a drive under `/Volumes`, the session keeps its scratch and its commands' caches on that drive (`CLAUDE_CODE_TMPDIR`, `DOTFILES_CACHE_HOME`; docs/OPERATIONS.md) |
 | `claudemax [args...]` | `fable[1m]` | `xhigh` | Same behavior with the Fable alias |
 
 The model and effort defaults are listed above. The launchers forward additional
@@ -477,6 +480,22 @@ AI-assisted development workflows from `lib_sh/claude.sh`:
 | `cdoc` | Generate `CLAUDE.md` |
 | `creview` | Review branch changes |
 | `csecurity` | Security audit |
+
+## Spotlight exclusions
+
+Feature `macos.spotlight` keeps Spotlight out of folders that hold no
+documents: app caches and databases under `~/Library/Application Support`,
+`~/Library/Logs`, the pnpm store, Go toolchains, `/usr/local` and the Command
+Line Tools. `apply` does not run it; after installing the feature, and after
+editing the list, run:
+
+```sh
+spotlight-exclusions apply    # add the folders in ~/.config/spotlight/exclusions
+spotlight-exclusions check    # exit 1 if a folder on the list is not excluded
+```
+
+The list, the commands and troubleshooting:
+[docs/SPOTLIGHT.md](docs/SPOTLIGHT.md).
 
 ## Multi-Machine Setup
 
