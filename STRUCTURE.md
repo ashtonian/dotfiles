@@ -59,13 +59,13 @@ where the feature is off.
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
-| `brew.apps` | desktop, work | darwin | Brewfile: 37 cask |
+| `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 19 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
-| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 17 mas |
+| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 16 mas |
 | `brew.mas.personal` | desktop | darwin | Brewfile: 9 mas |
 | `brew.vscode` | dev | darwin | Brewfile: 67 vscode |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |

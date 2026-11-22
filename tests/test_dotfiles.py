@@ -850,7 +850,7 @@ class RealFeatures(Fixture):
         brewfile = self.converge('base,dev,work')
         self.assertIn('cask "iterm2"', brewfile)
         self.assertIn('cask "slack"', brewfile, 'applications for any desk reach the work machine')
-        for general in ('mas "Okta Verify"', 'mas "Xcode"'):
+        for general in ('mas "Okta Verify"', 'mas "Keynote"'):
             self.assertIn(general, brewfile)
         for personal in ('cask "spotify"', 'cask "steam"', 'mas "Day One"', 'wakatime', 'rescuetime'):
             self.assertNotIn(personal, brewfile)
