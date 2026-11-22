@@ -75,34 +75,6 @@ host_name() {
 	fi
 }
 
-# local_host_name prints this Mac's LocalHostName as a source name: lowercase,
-# a hyphen for anything else, at most 32 characters.
-local_host_name() {
-	setopt local_options extended_glob
-	local name
-	name=$(scutil --get LocalHostName 2>/dev/null) || name=$(hostname -s)
-	name=${${(L)name}//[^a-z0-9-]##/-}
-	name=${${name##-#}%%-#}
-	print -r -- ${${name[1,32]}%%-#}
-}
-
-# migrate_host stores a host name for a Mac configured before host names
-# existed: its LocalHostName, which is the source name on studio. Stored rather
-# than derived on each start, so host.name stays put if the Mac is renamed and
-# the LaunchAgent's keep-alive path exists.
-migrate_host() {
-	[[ -s $home/endpoint && -s $home/token && ! -s $home/host ]] || return 0
-	local host
-	host=$(local_host_name)
-	valid_host $host || return 0
-	(
-		umask 077
-		print -r -- $host >$home/host
-	)
-	chmod 600 $home/host
-	print -u2 -r -- "otel-agent: no host name was enrolled; stored this Mac's LocalHostName, $host (otel-agent enroll HOST replaces it)"
-}
-
 # config_problem prints why the collector cannot start, or nothing.
 config_problem() {
 	local host
@@ -167,7 +139,6 @@ load_agent() {
 
 cmd_install() {
 	install_release
-	migrate_host
 	print "otel-agent: collector $OTELCOL_VERSION at $otelcol"
 	if [[ -z $(config_problem) ]]; then
 		load_agent
@@ -233,7 +204,6 @@ cmd_enroll() {
 # after every apply; a Mac that never enrolled runs no collector and is skipped.
 cmd_converge() {
 	[[ -e $home/endpoint ]] || return 0
-	migrate_host
 	local problem
 	problem=$(config_problem)
 	[[ -z $problem ]] || die 78 $problem
@@ -246,7 +216,6 @@ cmd_converge() {
 }
 
 cmd_check() {
-	migrate_host
 	local problem
 	problem=$(config_problem)
 	[[ -z $problem ]] || die 78 $problem
@@ -279,13 +248,7 @@ cmd_status() {
 	if [[ -x $otelcol ]]; then print "collector: otelcol-contrib $OTELCOL_VERSION ($platform)"; else print "collector: not installed"; fi
 	local host
 	host=$(host_name)
-	if [[ -n $host ]]; then
-		print "host:      $host"
-	elif [[ -s $home/endpoint ]]; then
-		print "host:      not stored; the next start stores $(local_host_name)"
-	else
-		print "host:      not configured"
-	fi
+	print "host:      ${host:-not configured}"
 	if [[ -s $home/endpoint ]]; then print "gateway:   $(<$home/endpoint)"; else print "gateway:   not configured"; fi
 	local -a files=($queue/exporter_*(N.))
 	if (( $#files )); then
