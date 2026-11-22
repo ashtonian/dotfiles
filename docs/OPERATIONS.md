@@ -20,13 +20,24 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
 | `MISE_DATA_DIR` | Directory path | `$XDG_DATA_HOME/mise` | mise's installed tools and `shims/`, which `env.sh` puts on PATH |
-| `XDG_CACHE_HOME` | Directory path | `~/.cache` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration |
+| `XDG_CACHE_HOME` | Directory path | `~/.cache`; in a drive session's shells, `DOTFILES_CACHE_HOME` | Cached Helm completion and tool init scripts (`zsh/init-*.zsh`); delete one to force regeneration. Every XDG-aware tool caches here, and `bin/disk-hygiene` deletes a tool's directory once nothing in it was used for `DISK_HYGIENE_CACHE_DAYS` |
+| `CLAUDE_CODE_TMPDIR` | Directory path | unset (`/tmp`); `claudemore`/`claudemax` set `<drive>/tmp` for a session whose working directory is on a drive under `/Volumes` | Base of Claude Code's per-session scratch, `claude-<uid>/<project>/<session>`. `bin/disk-hygiene` deletes a session's scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` |
+| `DOTFILES_CACHE_HOME` | Directory path | unset; `claudemore`/`claudemax` set `<drive>/cache/xdg` alongside `CLAUDE_CODE_TMPDIR` | `env.sh` exports it as `XDG_CACHE_HOME` in that session's shells, so the commands an agent runs cache on the drive it works on. The `claude` process keeps `~/.cache`: it stages its own updates there. Ignored unless the directory exists |
+| `GITSTEAD_CACHE` | Directory path | `$XDG_CACHE_HOME/gitstead` as it was before `DOTFILES_CACHE_HOME` moved it | gitstead's workspace records. `env.sh` pins it when it moves `XDG_CACHE_HOME`, so every shell uses the same records |
 | `HISTFILE` | File path | `~/.zsh_history` | Shared shell history |
 | `GOPATH` | Directory path | `~/go` | Go workspace and its bin path |
 | `GOTOOLCHAIN` | Go toolchain selection | `auto` | Run the Go on PATH (mise's pinned release, or a project's `.go-version`) unless the module's `go.mod`/`go.work` needs a newer one, which the `go` command downloads through `GOPROXY`, checked against `GOSUMDB`; `local` never switches. Setting `go.toolchain` (feature `tool.mise`), exported by the generated `env.sh` for every shell and agent; a value already in the environment wins |
 | `DOTFILES_MISE_CANARY` | LocalHostName | empty; the base profile sets `studio` | `dotfiles-update.sh`: the one machine whose weekly run moves the Go pin in `conf.d/dotfiles.toml` to its minor's newest patch and commits it. Setting `mise.canary` (feature `tool.mise`), exported by the generated `env.sh` |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
+| `DISK_HYGIENE_SCRATCH_DAYS` | Whole days, at least 1 | `7` | `bin/disk-hygiene`: delete a Claude Code session's scratch once nothing in it was used this long; set in the installed `com.ashtonian.disk-hygiene` plist |
+| `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the plist |
+| `DISK_HYGIENE_KEYED` | Space-separated names | `jobcrm estavelle` | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. Empty: none |
+| `DISK_HYGIENE_KEEP` | Space-separated names | empty | Cache directories `bin/disk-hygiene` never deletes, for a cache that is expensive to rebuild and used less often than the window |
+| `DISK_HYGIENE_LOG_MAX_BYTES` | Whole bytes, at least 1 | `1048576` | Each dotfiles LaunchAgent's stdout and stderr log is cut to its newest half once larger than this |
+| `DISK_HYGIENE_TMP` | Directory path | `/private/tmp` | Where sessions started without `CLAUDE_CODE_TMPDIR` keep their scratch |
+| `DISK_HYGIENE_VOLUMES` | Directory path | `/Volumes` | Its directories are the drives whose `tmp`, `cache/xdg` and `.pnpm-store` `bin/disk-hygiene` prunes |
+| `DISK_HYGIENE_LAUNCH_AGENTS` | Directory path | `~/Library/LaunchAgents` | Where `bin/disk-hygiene` reads the installed plists of the agents in `launchagents/` for their log paths |
 | `GPG_AGENT_SUPERVISOR_SECONDS` | Whole seconds, at least 1 | `10` | `bin/gpg-agent-supervisor`: how often it checks that the running gpg-agent is the one it started in the GUI login, and replaces it if not; set in the installed `com.ashtonian.gpg-agent` plist |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
 | `PAGER` | Command | less | Core pager default |
@@ -130,10 +141,10 @@ Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
 | Option | Behavior |
 | -------- | ---------- |
 | No options | Install/reload all eligible agents; sync starts at load |
-| `--sync-only` / `--update-only` / `--go-cache-trim-only` | Install/reload one scheduled job |
+| `--sync-only` / `--update-only` / `--go-cache-trim-only` / `--disk-hygiene-only` | Install/reload one scheduled job |
 | `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` / `--gpg-agent-only` | Install/reload one service if prerequisites exist |
 | `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all nine installed agent plists |
+| `--uninstall` | Unload and remove all ten installed agent plists |
 | `--help` | Show supported options |
 
 `com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour. Go
@@ -163,6 +174,53 @@ share one entry. A test that locates files from `runtime.Caller` sees a
 module-relative path under `-trimpath`; resolve such files from the working
 directory instead. Check with `go env GOFLAGS`; run one build without it with
 `GOFLAGS= go build ...`.
+
+`com.ashtonian.disk-hygiene` runs `bin/disk-hygiene` every day at 04:15, or at
+wake when the Mac slept through it. Nothing else removes what agent sessions
+and repository scripts leave behind, so each run deletes:
+
+- a Claude Code session's scratch (`<tmp>/claude-<uid>/<project>/<session id>`)
+  unused for `DISK_HYGIENE_SCRATCH_DAYS` (7), in `/private/tmp` and in each
+  drive's `tmp`. Other entries there, such as Claude Code's bundled skills, stay.
+- a tool's cache directory in `~/.cache` and in each drive's `cache/xdg` unused
+  for `DISK_HYGIENE_CACHE_DAYS` (14), whole, because one entry can depend on
+  another. A keyed cache (`DISK_HYGIENE_KEYED`: one directory per branch, agent
+  or tool version) loses only its unused keys. Symlinks and the names in
+  `DISK_HYGIENE_KEEP` stay.
+- goimports index files and pnpm metadata files unused for the same window.
+- packages no project links any more, through `pnpm store prune` on
+  `~/Library/pnpm/store` and each drive's `.pnpm-store`, unless a pnpm is
+  running. It uses the pnpm on PATH or the newest one corepack has cached, and
+  skips the stores when neither runs.
+
+Unused means no file was read or written and no directory gained or lost an
+entry in the window; the internal disk and the external drives record access
+times, so a cache that is only read stays. A directory holding a socket stays,
+and so does one the job cannot read all of.
+
+It also cuts each dotfiles LaunchAgent's stdout and stderr log (the paths in its
+installed plist) to the newest half once over `DISK_HYGIENE_LOG_MAX_BYTES`
+(1 MiB). launchd holds those files open for appending, so the cut rewrites the
+file in place; moving it aside would leave the agent writing to the moved file.
+
+Each run logs what it removed and a total line to
+`~/Library/Logs/disk-hygiene/disk-hygiene.log`; `bin/disk-hygiene --dry-run`
+reports what a run would remove. A run that could not remove something exits 1
+and logs `could not remove`: usually a file another user owns, or a drive that
+dropped mid-run; `launchctl print "gui/$(id -u)/com.ashtonian.disk-hygiene"`
+shows the last exit code. If a tool rebuilds a large cache every few weeks,
+add its directory name to `DISK_HYGIENE_KEEP` in the installed plist and
+reinstall with `--disk-hygiene-only`. macOS asks once for bash to read
+removable volumes; until that is allowed, the drives' entries are skipped.
+
+A `claudemore` or `claudemax` session started in a directory on a drive under
+`/Volumes` (`~/workgroups` resolves to E2TB) keeps its scratch in `<drive>/tmp`
+(`CLAUDE_CODE_TMPDIR`) and its commands' caches in `<drive>/cache/xdg`
+(`DOTFILES_CACHE_HOME`, which `env.sh` exports as `XDG_CACHE_HOME` in the
+session's shells). A session already running keeps what it started with until
+it restarts. Tools that ignore `XDG_CACHE_HOME` on macOS, such as Go's
+`os.UserCacheDir` users (gopls, goimports, golangci-lint), keep using
+`~/Library/Caches`.
 
 Source templates live in launchagents/; installed copies live in
 `~/Library/LaunchAgents/`. Pause a scheduled job without deleting its plist:

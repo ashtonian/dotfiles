@@ -197,6 +197,9 @@ launchctl start com.dotfiles.sync
 # Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
 
+# Daily scratch, cache and log pruning only (see docs/OPERATIONS.md)
+~/.dotfiles/bin/dotfiles-install-launchagents.sh --disk-hygiene-only
+
 # gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)
 ~/.dotfiles/bin/dotfiles-install-launchagents.sh --gpg-agent-only
 
@@ -379,7 +382,7 @@ Interactive launchers from `~/.config/zsh/zshrc.zsh` (feature `shell.zsh`):
 | --------- | ------- | -------- | ---------- |
 | `gptmore [args...]` | GPT-6.1 Sol | `xhigh` | Connects to the local remote-control server in the current directory (`-C "$PWD"`; without it the session runs in the server's `~`) and skips Codex approvals and sandboxing |
 | `gptmax [args...]` | GPT-6 Astra | `max` | Same, with Astra |
-| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks |
+| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks. Started on a drive under `/Volumes`, the session keeps its scratch and its commands' caches on that drive (`CLAUDE_CODE_TMPDIR`, `DOTFILES_CACHE_HOME`; docs/OPERATIONS.md) |
 | `claudemax [args...]` | `fable[1m]` | `xhigh` | Same behavior with the Fable alias |
 
 The model and effort defaults are listed above. The launchers forward additional

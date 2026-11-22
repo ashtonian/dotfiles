@@ -53,6 +53,21 @@ unset _dotfiles_generated_zshrc
 # Enable Claude Code agent teams
 export CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1
 
+# _claude_drive_env VOLUMES: set reply to the environment that keeps a session
+# working under VOLUMES/<drive> on that drive: its scratch (CLAUDE_CODE_TMPDIR)
+# and its commands' caches (DOTFILES_CACHE_HOME, which env.sh turns into
+# XDG_CACHE_HOME in the session's shells), where bin/disk-hygiene prunes them.
+# ${PWD:A} resolves links such as ~/workgroups to the drive they live on.
+_claude_drive_env() {
+  reply=()
+  local here=${PWD:A} drive
+  [[ $here == "$1"/?* ]] || return 0
+  drive=${here#"$1"/}
+  drive=$1/${drive%%/*}
+  command mkdir -p "$drive/tmp" "$drive/cache/xdg" 2>/dev/null || return 0
+  reply=(CLAUDE_CODE_TMPDIR="$drive/tmp" DOTFILES_CACHE_HOME="$drive/cache/xdg")
+}
+
 _claude_named_session() {
   local model="$1"
   shift
@@ -110,8 +125,12 @@ print(mx)
     fleet_env=(ENABLE_CLAUDEAI_MCP_SERVERS=false)
   fi
 
+  local -a reply drive_env
+  _claude_drive_env /Volumes
+  drive_env=("${reply[@]}")
+
   echo "Session: ${name}"
-  env "${fleet_env[@]}" claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --name "${name}" --remote-control "${name}" "$@"
+  env "${fleet_env[@]}" "${drive_env[@]}" claude --model "$model" --effort xhigh --dangerously-skip-permissions --permission-mode bypassPermissions --name "${name}" --remote-control "${name}" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc

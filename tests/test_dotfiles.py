@@ -1955,5 +1955,189 @@ class SpotlightExclusions(Fixture):
         self.assertEqual(result.absent, [absent])
 
 
+
+class DiskHygiene(Fixture):
+    """bin/disk-hygiene deletes what nobody has used for its window and caps agent logs."""
+
+    OLD = time.time() - 30 * 86400
+    SESSION = '0e351e5b-ab30-4b92-ba41-ef1112fdc582'
+    OTHER = '7afe0905-7498-4687-ad48-608587873eb8'
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.tmp = self.path / 'tmp'
+        self.volumes = self.path / 'Volumes'
+        self.agents = self.path / 'installed-agents'
+        for d in (self.home / '.cache', self.tmp, self.volumes, self.agents, self.path / 'launchagents'):
+            d.mkdir(parents=True)
+        self.env.update(HOME=str(self.home), DISK_HYGIENE_TMP=str(self.tmp),
+                        DISK_HYGIENE_VOLUMES=str(self.volumes),
+                        DISK_HYGIENE_LAUNCH_AGENTS=str(self.agents))
+        self.env.pop('DISK_HYGIENE_KEEP', None)
+
+    def tree(self, root, files=('data',), age=None):
+        """A directory holding FILES; with AGE, every entry was last used that long ago."""
+        root.mkdir(parents=True, exist_ok=True)
+        for name in files:
+            (root / name).parent.mkdir(parents=True, exist_ok=True)
+            (root / name).write_text('x')
+        if age is not None:
+            for entry in sorted(root.rglob('*'), key=lambda e: -len(e.parts)) + [root]:
+                os.utime(entry, (age, age), follow_symlinks=False)
+        return root
+
+    def run_hygiene(self, *args):
+        return subprocess.run([str(ROOT / 'bin/disk-hygiene'), *args], env=self.env,
+                              capture_output=True, text=True, timeout=60)
+
+    def scratch(self, tmp, project, session):
+        return tmp / f'claude-{os.getuid()}' / project / session
+
+    def test_deletes_only_scratch_of_sessions_unused_for_the_window(self):
+        stale = self.tree(self.scratch(self.tmp, '-Users-me', self.SESSION), ('tasks/a.output',), self.OLD)
+        # A live session's markers are directories with nothing inside.
+        live = self.scratch(self.tmp, '-Users-me', self.OTHER)
+        for d in ('started', 'scratchpad'):
+            (live / d).mkdir(parents=True)
+        not_a_session = self.tree(self.scratch(self.tmp, '-Users-me', 'notes'), age=self.OLD)
+        not_a_project = self.tree(self.scratch(self.tmp, 'bundled-skills', '2.1.325'), age=self.OLD)
+        on_drive = self.tree(self.scratch(self.volumes / 'D/tmp', '-Volumes-D-w', self.SESSION), age=self.OLD)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(stale.exists())
+        self.assertFalse(on_drive.exists())
+        self.assertFalse(on_drive.parent.exists(), 'an emptied project directory stays behind')
+        for kept in (live, not_a_session, not_a_project):
+            self.assertTrue(kept.exists(), kept)
+
+    def test_caches_go_whole_or_a_key_at_a_time(self):
+        cache = self.home / '.cache'
+        unused = self.tree(cache / 'oldtool', ('a', 'deep/b'), self.OLD)
+        in_use = self.tree(cache / 'livetool', ('old',), self.OLD)
+        (in_use / 'fresh').write_text('x')
+        old_key = self.tree(cache / 'jobcrm/pr1-sync', age=self.OLD)
+        new_key = self.tree(cache / 'jobcrm/pr2-sync')
+        kept = self.tree(cache / 'models', age=self.OLD)
+        target = self.tree(self.path / 'elsewhere', age=self.OLD)
+        (cache / 'linked').symlink_to(target)
+        on_drive = self.tree(self.volumes / 'D/cache/xdg/oldtool', age=self.OLD)
+        self.env['DISK_HYGIENE_KEEP'] = 'models'
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for gone in (unused, old_key, on_drive):
+            self.assertFalse(gone.exists(), gone)
+        for stays in (in_use / 'old', new_key, kept, target / 'data', cache / 'linked'):
+            self.assertTrue(stays.exists(), stays)
+
+    def test_read_only_trees_are_removed(self):
+        tool = self.tree(self.home / '.cache/tool', ('mod/example.com@v1/go.mod',), self.OLD)
+        module = tool / 'mod/example.com@v1'
+        (module / 'go.mod').chmod(0o444)
+        module.chmod(0o555)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse((self.home / '.cache/tool').exists())
+
+    def test_an_entry_it_cannot_read_all_of_counts_as_used(self):
+        tool = self.tree(self.home / '.cache/tool', ('private/data', 'other'), self.OLD)
+        (tool / 'private').chmod(0)
+        self.addCleanup((tool / 'private').chmod, 0o755)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue((tool / 'other').exists())
+
+    def test_file_caches_lose_only_their_unused_files(self):
+        index = self.home / 'Library/Caches/goimports'
+        self.tree(index, ('old.idx',), self.OLD)
+        (index / 'new.idx').write_text('x')
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sorted(f.name for f in index.iterdir()), ['new.idx'])
+
+    def agent(self, label, log):
+        plist = (f'<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>'
+                 f'<key>Label</key><string>{label}</string>'
+                 f'<key>StandardOutPath</key><string>{log}</string>'
+                 f'<key>StandardErrorPath</key><string>{log}</string></dict></plist>\n')
+        (self.agents / f'{label}.plist').write_text(plist)
+        return self.path / 'launchagents' / f'{label}.plist'
+
+    def test_caps_this_checkouts_agent_logs_in_place_from_a_line_boundary(self):
+        ours, theirs = self.path / 'ours.log', self.path / 'theirs.log'
+        lines = ''.join(f'line {n:04d}\n' for n in range(400))
+        for log in (ours, theirs):
+            log.write_text(lines)
+        self.agent('com.example.ours', ours).write_text('defined here')
+        self.agent('com.example.theirs', theirs)
+        inode = ours.stat().st_ino
+        self.env['DISK_HYGIENE_LOG_MAX_BYTES'] = '1000'
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        capped = ours.read_text()
+        self.assertEqual(ours.stat().st_ino, inode, 'launchd would go on writing to a moved file')
+        self.assertLessEqual(len(capped), 500)
+        self.assertTrue(capped.startswith('line ') and capped.endswith('line 0399\n'), capped[:20])
+        self.assertEqual(theirs.read_text(), lines)
+
+    def test_dry_run_changes_nothing(self):
+        stale = self.tree(self.scratch(self.tmp, '-Users-me', self.SESSION), age=self.OLD)
+        unused = self.tree(self.home / '.cache/oldtool', age=self.OLD)
+        p = self.run_hygiene('--dry-run')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(stale.exists() and unused.exists())
+        self.assertIn(f'would remove cache {unused}', p.stdout)
+
+    def test_rejects_windows_that_are_not_whole_days(self):
+        for value in ('0', '-1', '1.5', 'week'):
+            with self.subTest(value=value):
+                self.env['DISK_HYGIENE_CACHE_DAYS'] = value
+                p = self.run_hygiene('--dry-run')
+                self.assertEqual(p.returncode, 2)
+                self.assertIn('DISK_HYGIENE_CACHE_DAYS', p.stderr)
+
+
+class SessionDrive(Fixture):
+    """A session working on a drive keeps its scratch and its commands' caches there."""
+
+    def drive_env(self, cwd, volumes):
+        source = (ZSH_DIR / 'zshrc.zsh').read_text()
+        helper = source[source.index('_claude_drive_env() {'):]
+        helper = helper[:helper.index('\n}\n') + 3]
+        p = subprocess.run(['/bin/zsh', '-fc', helper + '_claude_drive_env "$1"; print -rl -- $reply',
+                            'test', str(volumes)], cwd=cwd, env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p.stdout.split()
+
+    def test_a_linked_directory_on_a_drive_uses_that_drive(self):
+        volumes = self.path.resolve() / 'Volumes'
+        work = volumes / 'D/workgroups/repo'
+        work.mkdir(parents=True)
+        (self.path / 'workgroups').symlink_to(volumes / 'D/workgroups')
+        env = self.drive_env(self.path / 'workgroups/repo', volumes)
+        self.assertEqual(env, [f'CLAUDE_CODE_TMPDIR={volumes}/D/tmp',
+                               f'DOTFILES_CACHE_HOME={volumes}/D/cache/xdg'])
+        self.assertTrue((volumes / 'D/tmp').is_dir() and (volumes / 'D/cache/xdg').is_dir())
+
+    def test_a_directory_off_the_drives_changes_nothing(self):
+        (self.path / 'Volumes').mkdir()
+        self.assertEqual(self.drive_env(self.path, self.path.resolve() / 'Volumes'), [])
+
+    def test_shells_cache_on_the_drive_but_gitstead_keeps_its_cache(self):
+        home = self.path / 'home'
+        home.mkdir()
+        install_shell(home, set())
+        drive_cache = self.path / 'cache-xdg'
+        drive_cache.mkdir()
+        code = '. "$HOME/.config/shell/env.sh"; . "$HOME/.config/shell/env.sh"; printf "%s\\n" "$XDG_CACHE_HOME" "$GITSTEAD_CACHE"'
+        for cache_home, expected in ((str(drive_cache), [str(drive_cache), f'{home}/.cache/gitstead']),
+                                     (str(self.path / 'missing'), ['', ''])):
+            with self.subTest(cache_home=cache_home):
+                env = {'HOME': str(home), 'PATH': '/usr/bin:/bin', 'DOTFILES_CACHE_HOME': cache_home}
+                p = subprocess.run(['/bin/sh', '-c', code], env=env, capture_output=True, text=True, timeout=20)
+                self.assertEqual(p.returncode, 0, p.stderr)
+                self.assertEqual(p.stdout.split('\n')[:2], expected)
+
+
 if __name__ == '__main__':
     unittest.main()
