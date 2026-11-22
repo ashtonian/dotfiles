@@ -58,7 +58,7 @@ so macOS asks for the Local Network grant once per release on each Mac.
 | --- | --- | --- | --- |
 | Gateway URL | `~/.local/share/otel-agent/endpoint` (0600) | `https://otel.<internal domain>` | Written by `otel-agent enroll` or `configure`; kept out of this public repository. |
 | Ingest token | `~/.local/share/otel-agent/token` (0600) | 48 characters | This Mac's own token, the gateway's `otel-gateway-token-<host>` Secret. |
-| Host name | `~/.local/share/otel-agent/host` (0600) | `studio`, `mbp` or `mini` | The source name enrolled with the token, written to `host.name` on everything forwarded. Lowercase letters, digits and inner hyphens, at most 32. The LaunchAgent keeps the collector alive only while this file exists. |
+| Host name | `~/.local/share/otel-agent/host` (0600) | `studio`, `mbp` or `mini` | The source name enrolled with the token, written to `host.name` on everything forwarded. Lowercase letters, digits and inner hyphens, at most 32. A Mac configured before host names existed gets its `LocalHostName`, lowercased, stored on the next `serve`, `converge`, `install` or `check` (studio's is `studio`); `enroll` replaces it. Stored, not derived per start, so renaming the Mac does not move its series. The LaunchAgent keeps the collector alive only while this file exists. |
 | `OTEL_AGENT_HOME` | environment | `~/.local/share/otel-agent` | Enrollment directory (endpoint, token, host), mode 0700. |
 | `OTEL_AGENT_STATE` | environment | `$XDG_STATE_HOME/otel-agent`, `~/.local/state/otel-agent` | Runtime state: the disk queue (`queue/`, mode 0700) and the `serving` fingerprint. |
 | `OTEL_AGENT_LIBEXEC` | environment | `~/.local/libexec/otelcol` | Where the pinned collector is installed, one directory per version and platform. |
@@ -112,7 +112,7 @@ otelcol-contrib 0.165.0.
   verified against the pinned SHA-256.
 - **The OpenCode plugin** from npm, MPL-2.0, resolved by OpenCode at server start.
 - `kubectl` with access to the cluster, for `enroll` only.
-- `curl`, `shasum`, `tar`, `launchctl`, `uname`, `sw_vers`, `du` from the base system.
+- `curl`, `shasum`, `tar`, `launchctl`, `scutil`, `uname`, `sw_vers`, `du` from the base system.
 
 ## API / Interfaces
 
@@ -209,9 +209,13 @@ new Local Network grant.
 **Failure modes:**
 
 - *`health: unreachable`, `service: loaded, not running`.* `serve` refused to
-  start; the stderr log says why. `no host name configured` or `no gateway
-  configured`: run `otel-agent enroll HOST`. launchd does not restart a Mac
-  that is not enrolled, so the refusal is logged once.
+  start; the stderr log says why. `no gateway configured`: run
+  `otel-agent enroll HOST`. launchd does not restart a Mac that is not
+  enrolled, so the refusal is logged once.
+- *The log shows `no host name was enrolled; stored this Mac's LocalHostName`.*
+  The Mac was configured before host names existed and now reports that name.
+  If it is not this Mac's source name, or the gateway answers `401` because the
+  shared token was retired, run `otel-agent enroll HOST`.
 - *The disk queue is full.* `status` shows a signal's queue at its capacity,
   `exporter_enqueue_failed_*` grows, and the log shows `Exporting failed.
   Rejecting data.` with `sending queue is full`. New data is dropped and the

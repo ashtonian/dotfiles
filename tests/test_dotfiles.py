@@ -1837,20 +1837,43 @@ class OtelAgent(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('host=mini', p.stdout)
 
-    def test_serve_refuses_until_the_mac_is_enrolled_with_a_host(self):
+    def test_serve_refuses_without_a_gateway_or_with_a_bad_host_override(self):
         self.install_collector()
         p = self.run_agent('serve')
         self.assertEqual(p.returncode, 78)
         self.assertIn('otel-agent enroll', p.stderr)
-        # Enrolled before host names existed: the token is the old shared one.
-        self.enroll(host=None)
-        p = self.run_agent('serve')
-        self.assertEqual(p.returncode, 78)
-        self.assertIn('no host name configured', p.stderr)
+        self.enroll()
         self.env['OTEL_AGENT_HOST'] = 'Example-Mac-mini'
         p = self.run_agent('serve')
         self.assertEqual(p.returncode, 78)
         self.assertIn('not a short lowercase name', p.stderr)
+
+    def test_a_mac_configured_before_host_names_keeps_serving_as_its_local_host_name(self):
+        self.install_collector()
+        self.enroll(host=None)
+        self.cli('scutil', '[ "$*" = "--get LocalHostName" ] && echo Studio')
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('host=studio', p.stdout)
+        self.assertIn("stored this Mac's LocalHostName, studio", p.stderr)
+        self.assertEqual((self.enrolled / 'host').read_text(), 'studio\n')
+        self.assertEqual(stat.S_IMODE((self.enrolled / 'host').stat().st_mode), 0o600)
+        # Stored once: a later rename of the Mac does not move its series.
+        self.cli('scutil', 'echo Renamed-Mac')
+        p = self.run_agent('serve')
+        self.assertIn('host=studio', p.stdout)
+        self.assertEqual(p.stderr, '')
+
+    def test_local_host_names_become_short_lowercase_source_names(self):
+        self.enroll(host=None)
+        for local, host in (('Example-Mac-mini', 'example-mac-mini'),
+                            ("Someone's Mac", 'someone-s-mac'),
+                            ('A' * 40 + '-b', 'a' * 32)):
+            with self.subTest(local=local):
+                (self.enrolled / 'host').unlink(missing_ok=True)
+                self.cli('scutil', f"echo \"{local}\"")
+                self.assertEqual(self.run_agent('check').returncode, 0)
+                self.assertEqual((self.enrolled / 'host').read_text(), host + '\n')
 
     def test_serve_installs_a_release_the_pin_moved_to_and_verifies_it(self):
         # A pull moved the pin; the old release is still installed.
@@ -1980,13 +2003,15 @@ class OtelAgent(Fixture):
         self.assertIn(f'load {installed}', self.calls())
         self.assertIn('restarted the collector', p.stdout)
 
-    def test_converge_reports_a_mac_enrolled_without_a_host(self):
+    def test_converge_migrates_a_mac_configured_before_host_names(self):
         self.install_collector()
         self.enroll(host=None)
+        self.cli('scutil', 'echo studio')
         p = self.run_agent('converge')
-        self.assertEqual(p.returncode, 78)
-        self.assertIn('otel-agent enroll HOST', p.stderr)
-        self.assertEqual(self.calls(), [])
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual((self.enrolled / 'host').read_text(), 'studio\n')
+        installed = self.home / 'Library/LaunchAgents/com.ashtonian.otel-agent.plist'
+        self.assertIn(f'load {installed}', self.calls())
 
     def test_launchagent_installer_waits_for_enrollment(self):
         p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-install-launchagents.sh'), '--otel-agent-only'],
