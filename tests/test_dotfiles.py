@@ -793,6 +793,42 @@ class SyncGit(SignedRepo):
         self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
 
 
+class SyncOverlays(SignedRepo):
+    """sync_overlays: the overlays the engine names are synced before apply."""
+
+    def setUp(self):
+        super().setUp()
+        origin = self.path / 'overlay.git'
+        subprocess.run(['git', 'init', '-q', '--bare', '-b', 'master', str(origin)], check=True, env=self.env)
+        self.git('remote', 'add', 'origin', str(origin))
+        self.git('push', '-q', '-u', 'origin', 'master')
+        self.origin = origin
+        machine = Path(self.env['HOME']) / '.config/dotfiles/machine.toml'
+        machine.parent.mkdir(parents=True)
+        machine.write_text('overlays = ["repo", "missing"]\nprofiles = ["base"]\n')
+        self.missing = self.path / 'missing'
+        engine_calls = self.stub_engine()
+        self.cli('dotfiles', f'printf "%s\\n" "$*" >> {self.path / "engine-audit"}\n'
+                             f'[ "$1" = overlays ] && printf "%s\\n%s\\n" {self.repo} {self.missing}\nexit 0')
+        self.engine_calls = engine_calls
+
+    def test_listed_overlays_publish_and_a_missing_one_is_reported(self):
+        self.edit('tracked')
+        p = self.bash('sync_overlays')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.engine_calls(), [f'overlays --machine {self.env["HOME"]}/.config/dotfiles/machine.toml'])
+        pushed = subprocess.run(['git', '--git-dir', str(self.origin), 'log', '-1', '--format=%s'],
+                                env=self.env, capture_output=True, text=True, check=True).stdout
+        self.assertTrue(pushed.startswith('auto: sync'), "the overlay's tracked edit is published to its own remote")
+        self.assertIn(f'lists overlay missing, which is not cloned at {self.missing}', p.stdout)
+
+    def test_a_machine_without_a_manifest_has_no_overlays(self):
+        (Path(self.env['HOME']) / '.config/dotfiles/machine.toml').unlink()
+        p = self.bash('sync_overlays')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.engine_calls(), [])
+
+
 MISE_PIN = 'features/tool.mise/home/.config/mise/conf.d/dotfiles.toml'
 
 

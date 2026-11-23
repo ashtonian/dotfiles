@@ -358,8 +358,8 @@ func TestLeavingLaunchAgentsKeepsTheirRecords(t *testing.T) {
 	before := m.state.Agents
 
 	m.disable = []string{"jobs"}
-	report, next, err := Run(context.Background(), m.plan(), m.state, Env{Home: m.home, RepoRoot: m.repo,
-		Tracked: func(string) bool { return false }, LeaveLaunchAgents: true}, false)
+	report, next, err := Run(context.Background(), m.plan(), m.state, Env{Home: m.home,
+		Roots: []Root{{Dir: m.repo, Tracked: func(string) bool { return false }}}, LeaveLaunchAgents: true}, false)
 	require.NoError(t, err)
 	assert.Empty(t, agentKinds(report))
 	assert.Equal(t, before, next.Agents)

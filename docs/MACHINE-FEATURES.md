@@ -77,7 +77,8 @@ in the repository, and the emptied directories there are removed.
 | --- | --- | --- | --- |
 | Feature | `features/<id>/feature.toml` plus payload files | yes | The unit of toggling: what to install, link, schedule and check |
 | Profile | `profiles/<name>.toml` | yes | A named set of feature decisions and setting values (`base`, `dev`, `desktop`, `server`, `work`, `studio`) |
-| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's profiles, feature overrides and setting overrides |
+| Overlay | `~/.dotfiles-overlays/<context>`, a private repository per context | in its own repository | One context's features and profiles (personal work, or one client), loaded after the repository's when `machine.toml` lists it; its IDs all start with its name |
+| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's overlays, profiles, feature overrides and setting overrides |
 | Setting | declared by a feature, valued by profiles and the machine manifest | values may be either | Typed configuration a feature consumes, such as `paths.playwright_browsers` |
 | Secret | The OS secret store (see [Platforms](#platforms)), seeded from 1Password | never | Referenced by name in a feature; the value never appears in a manifest, the environment or a log |
 | Generated output | `~/.config/dotfiles/generated/` (`%LOCALAPPDATA%\\dotfiles\\generated\\` on Windows) | no | Files `apply` renders from the enabled features: Brewfile, WinGet configuration, shell fragments, git and ssh includes |
@@ -102,7 +103,8 @@ only and shows on the status page.
 
 ```toml
 # ~/.config/dotfiles/machine.toml
-profiles = ["base", "dev", "desktop", "server"]
+overlays = ["personal"]
+profiles = ["base", "dev", "desktop", "server", "personal"]
 
 [features]
 enable  = ["tool.toggl-focus", "browser.firefox.bypass-paywalls"]
@@ -113,7 +115,9 @@ disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
 ```
 
 `dotfiles init --profiles base,dev,...` writes this file (`install.sh` runs it
-from `--profiles`). `apply` and `doctor` refuse to run without it: with no
+from `--profiles`); `--overlays` adds the contexts the machine works in, each
+of which must be cloned first. Overlays are described in the README's
+[Overlays](../README.md#overlays) section. `apply` and `doctor` refuse to run without it: with no
 profiles, nothing would be enabled, and `apply` would remove everything the
 profiles install. `dotfiles feature enable|disable <id>` edits this file and
 runs `apply` for that feature.
@@ -463,9 +467,9 @@ engine wraps every call:
 
 ### Store: per machine, with a shared common set
 
-Decision D27 (recommended): one private repository per context, so a work
-machine never holds personal data and a personal machine never holds work
-data. Each profile names its context's store (`mackup.store`). Inside it:
+Decision D27: one private repository per context (the context's overlay), so
+a client's machine never holds personal data and a personal machine holds a
+client's only when it is worked from there. Each profile names its context's store (`mackup.store`). Inside it:
 
 ```text
 mackup-personal/
@@ -968,6 +972,7 @@ and its status. Decided entries record who decided.
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
 | D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zlogin.zsh` hands a marked `zsh -lc` command to Homebrew bash (`zshenv.zsh` a plain `zsh -c` one); `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 | D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
+| D27 | One private repository per context (personal work, and each client), cloned as an overlay at `~/.dotfiles-overlays/<context>`. It holds the context's features and profiles. A machine lists only its own contexts in `machine.toml`, so a client's machine never holds personal data or another client's, and a personal machine holds a client's only when it is worked from there | owner, 2026-11-23 |
 
 ### Open
 
@@ -1048,14 +1053,6 @@ Both extensions are approved (D24), and neither can authenticate while the
 API path requires an SSO session. The change lands in the home cluster
 repository, not here.
 Status: needed before PR 9.
-
-**D27. Mackup store per context?**
-Work and personal machines must not exchange app settings.
-Options: one private repository per context (personal, work), with `common/`
-and one directory per machine inside it; or one shared repository with
-`personal/...` and `work/...`. Trade-off: a shared repository gives every machine read access
-to the other context's data.
-Recommendation: one repository per context. Status: open.
 
 **D28. Windows app settings?**
 Mackup does not run on Windows.

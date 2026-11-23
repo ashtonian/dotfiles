@@ -10,6 +10,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | ---------- | ------ | --------- | ---------------- |
 | `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
+| `DOTFILES_OVERLAY_DIR` | Directory path | `~/.dotfiles-overlays` | The engine's `--overlay-dir`: one overlay checkout per context, at `<dir>/<overlay>`. Sync asks the engine (`dotfiles overlays`) which to sync, so it never needs this itself |
 | `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh`, `bin/otel-agent` and `bin/agent-monitor` run the same path |
 | `DOTFILES_LAUNCHCTL` | File path | `/bin/launchctl` | The launchctl the engine runs to load and unload LaunchAgents; tests point it at a stand-in |
 | `XPC_SERVICE_NAME` | launchd label | set by launchd in a job's processes | The job a `dotfiles apply` runs in. apply never reloads or unloads that job, which would stop the run; a later apply outside it does ([LaunchAgents](#launchagents)) |
@@ -59,14 +60,16 @@ The `dotfiles` engine's flags:
 | `--home` | Directory path | `$HOME` | All commands: the home directory to manage |
 | `--repo` | Directory path | `$DOTFILES_DIR`, else `~/.dotfiles` | All commands: the checkout whose `features/` and `profiles/` are read |
 | `--machine` | File path | `~/.config/dotfiles/machine.toml` | All commands: this machine's manifest |
+| `--overlay-dir` | Directory path | `$DOTFILES_OVERLAY_DIR`, else `~/.dotfiles-overlays` | All commands: where the overlays `machine.toml` lists are cloned, each at `<dir>/<overlay>` |
+| `--overlays` | Comma-separated names | none | `init`: the overlays this machine belongs to; each must be cloned |
 | `--profiles` | Comma-separated names | none (required) | `init`: the profiles to write, in order |
 | `--force` | Boolean | `false` | `init`: replace an existing manifest |
 | `--dry-run` | Boolean | `false` | `apply`: report what would change, change nothing (`doctor` always does this) |
 | `--lock-wait` | Duration | `1m` | `apply`, `adopt`: how long to wait for another run's `apply.lock` |
-| `--git-timeout` | Duration | `30s` | `apply`, `doctor`: how long `git ls-files` may take; apply needs the tracked-file list so unfolding never moves a tracked file |
+| `--git-timeout` | Duration | `30s` | `apply`, `doctor`, `status`: how long each git call per checkout may take; apply needs each checkout's tracked-file list so unfolding never moves a tracked file |
 | `--launchctl-timeout` | Duration | `30s` | `apply`, `doctor`: how long one launchctl call may take; a bootstrap is tried five times, 0.25 s to 1 s apart |
 | `--launch-agents` | Boolean | `true` | `apply`: install, load and remove LaunchAgents. `false` leaves them, and their records, as they are; `install.sh` applies so before installing packages |
-| `--json` | Boolean | `false` | `status`: print JSON |
+| `--json` | Boolean | `false` | `status`: print JSON, an object with `roots` (name, directory, commit, uncommitted changes) and `features` |
 
 OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
@@ -524,6 +527,8 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | `.bashrc: add this line` on Linux | The distribution's `~/.bashrc` from `/etc/skel` existed first. Add the line at the top, above its `case $- in` (or `[ -z "$PS1" ] && return`) guard, which returns early in non-interactive shells. Login bash loads `env.sh` through `~/.bash_profile` either way. |
 | `skipped until these settings have values` | A required setting has no value. Set it in a profile or `machine.toml`; secrets are `{ secret = "op://..." }` references. |
 | `no machine manifest at ...` (exit 2) | This machine has no `~/.config/dotfiles/machine.toml`. Run `dotfiles init --profiles <names>` with this machine's profiles (see the README's machine table); apply refuses to guess, since no profiles would remove everything they install. |
+| `overlay not cloned: <name> is not at ...` (exit 2) | `machine.toml` lists an overlay that has no checkout. Clone that context's overlay repository to the path named, or remove the overlay from `overlays` if this machine left the context. Apply stops rather than run without it, which would remove what its features install. Sync logs the same as `lists overlay <name>, which is not cloned`. |
+| `... is in overlay <name>, so its name must be ...` or `... in the repository starts with the name of overlay <name>` (exit 2) | A feature or profile is in the wrong checkout. An overlay's feature IDs and profile names start with the overlay's name and a dot (or are the name), and the repository's never do. Rename the directory and its `id`. |
 | `a link to ... is in the way` | A link that points outside the repository sits where a link, copy or stub goes. Check what it points at, remove it if it is stale, and run `dotfiles apply`. |
 | `unfold` and `move-home` in the output | Expected once per machine: a directory the old stow layout had linked into the repository becomes a real directory, and the untracked files tools wrote through it (such as gh's `hosts.yml`) move into it. Tracked files are never moved. A leftover `<dir>.dotfiles-unfold-<pid>` directory means a run died mid-unfold: compare it with `<dir>`, move any missing file into `<dir>`, then delete it. |
 | Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |

@@ -141,7 +141,9 @@ uses the engine, sync checks that this machine can install it: the machine has
 `~/.config/dotfiles/machine.toml` (otherwise it logs the profiles upstream
 offers), and the upstream's own engine builds with this machine's Go and plans
 that manifest (`dotfiles check`). If any of that fails, sync neither merges nor
-pushes, and the checkout stays as it is.
+pushes, and the checkout stays as it is. Sync then brings this machine's
+overlays up to date (see [Overlays](#overlays)) before `dotfiles apply` reads
+them.
 
 ### Manual Sync Commands
 
@@ -151,6 +153,7 @@ pushes, and the checkout stays as it is.
 
 # Individual operations
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
+~/.dotfiles/sync.sh overlays  # Sync only the overlays machine.toml lists
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
 ~/.dotfiles/sync.sh brewfile  # Install the enabled features' missing packages
 ~/.dotfiles/sync.sh mise      # Install the tools mise's shared defaults name (the pinned Go, Node LTS)
@@ -167,6 +170,7 @@ pushes, and the checkout stays as it is.
 | `SYNC_DIR` | path | `~/.sync` | Directory whose Git repositories sync also publishes |
 | `SYNC_QUIET_MINUTES` | minutes | `30` | A tracked edit newer than this makes sync skip the repository for this run |
 | `DOTFILES_BIN` | path | `~/.local/bin/dotfiles` | The engine binary sync builds and runs |
+| `DOTFILES_OVERLAY_DIR` | path | `~/.dotfiles-overlays` | Directory holding one overlay checkout per context, each named for its overlay; the engine reads it, and sync syncs the ones `machine.toml` lists |
 
 Full sync commits and pushes eligible changes. A busy lock or unavailable network
 is logged and skipped successfully; other operation failures return nonzero.
@@ -205,11 +209,13 @@ after every merge.
 
 ```sh
 dotfiles init --profiles base,dev,desktop   # write this machine's manifest (once)
-dotfiles status            # every feature, enabled or not, and which layer decided
+dotfiles init --overlays personal --profiles base,dev,desktop,personal --force   # the same, in an overlay's context
+dotfiles status            # each checkout's commit, then every feature, enabled or not, and which layer decided
 dotfiles apply --dry-run   # what apply would change
 dotfiles apply             # converge this machine
 dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if any
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
+dotfiles overlays          # the checkout directory of each overlay machine.toml lists
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
 ```
 
@@ -246,11 +252,11 @@ removed.
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
 
-| Machine | Profiles |
-| ------- | -------- |
-| studio | `base, dev, desktop, studio` |
-| Mac mini | `base, dev, desktop, server` |
-| Work machine | `base, dev, work` |
+| Machine | Profiles | Overlays |
+| ------- | -------- | -------- |
+| studio | `base, dev, desktop, studio` | `personal` and the clients worked from it |
+| Mac mini | `base, dev, desktop, server` | `personal` and the clients worked from it |
+| A client's machine | `base, dev, work` | that client's only |
 
 Override one feature or setting for one machine in `machine.toml`:
 
@@ -264,11 +270,42 @@ disable = ["tool.colorls"]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
 ```
 
+### Overlays
+
+This repository is public, so it names no client, private repository or
+internal host. Those facts live in overlays: one private repository per
+context (personal work, and each client), cloned at
+`~/.dotfiles-overlays/<context>` (`DOTFILES_OVERLAY_DIR`). An overlay has this
+repository's layout (`features/`, `profiles/`), and the engine loads the ones
+`machine.toml` lists after this repository's:
+
+```toml
+overlays = ["personal"]
+profiles = ["base", "dev", "desktop", "studio", "personal"]
+```
+
+- Every feature ID and profile name in an overlay is the overlay's name or
+  starts with it and a dot (`personal.claude`, `personal.studio`), and this
+  repository's never do. So an ID says which context it comes from, and no
+  overlay can replace a feature here or another overlay's.
+- An overlay feature with `default = true` is on wherever its overlay is
+  listed. An overlay profile can set the settings this repository's features
+  declare, which is how a private value (a cache list, a path) reaches a
+  public feature.
+- A machine lists only the contexts it works in. A client's machine lists that
+  client's overlay and nothing else, so it never holds personal facts or
+  another client's.
+- A listed overlay that is not cloned stops `apply` (exit 2) instead of
+  removing what its features installed. Sync pulls and publishes each listed
+  overlay, to its own remote, before `apply` reads it.
+- Taking an overlay off the list removes what its features installed on the
+  next `apply`.
+
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
 | 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
-| 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict) |
+| 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict), or a listed overlay is not cloned |
 | 64 | Usage |
 | 70 | An I/O failure |
 

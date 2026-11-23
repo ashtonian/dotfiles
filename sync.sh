@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Sync dotfiles and auxiliary repositories; install missing shared packages.
+# Sync dotfiles, this machine's overlays and auxiliary repositories; install
+# missing shared packages.
 set -euo pipefail
 umask 077
 
@@ -355,6 +356,29 @@ sync_auxiliary_repos() {
 }
 sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
 
+# sync_overlays: bring each overlay machine.toml lists (one private checkout per
+# context this machine belongs to) up to date before apply reads it. The engine
+# names them, so where overlays live is decided in one place.
+sync_overlays() {
+    local dirs dir result=0
+    [[ -f "$MACHINE_FILE" ]] || return 0
+    build_engine || return
+    if ! dirs=$("$DOTFILES_BIN" overlays --machine "$MACHINE_FILE"); then
+        log "ERROR: Cannot list the overlays in $MACHINE_FILE"
+        return 1
+    fi
+    while IFS= read -r dir; do
+        [[ -n "$dir" ]] || continue
+        if [[ ! -d "$dir/.git" && ! -f "$dir/.git" ]]; then
+            log "ERROR: $MACHINE_FILE lists overlay ${dir##*/}, which is not cloned at $dir; clone its repository there, or remove it from the list"
+            result=1
+            continue
+        fi
+        sync_git_repo "$dir" || result=1
+    done <<< "$dirs"
+    return "$result"
+}
+
 # build_engine: rebuild the binary when the checkout's engine sources are newer
 # than it, which a pull that changes them makes them. GOTOOLCHAIN=local: a
 # background job never downloads a Go toolchain.
@@ -419,12 +443,13 @@ run_mode() {
         check) log "INFO: Sync lock is available" ;;
         sync|all)
             check_connectivity || return 0
-            # Apply right after the merge: a pull that moves tracked files
-            # leaves links to their old paths until it runs. The telemetry
-            # collector converges on the files apply linked. The Brewfile
-            # apply generates is installed next, then mise's tools (mise is
-            # one of the packages).
+            # Apply right after the merges: a pull that moves tracked files
+            # leaves links to their old paths until it runs, and apply reads
+            # the overlays too. The telemetry collector converges on the files
+            # apply linked. The Brewfile apply generates is installed next,
+            # then mise's tools (mise is one of the packages).
             sync_dotfiles || status=1
+            sync_overlays || status=1
             apply_features || status=1
             sync_otel_agent || status=1
             sync_brewfile || status=1
@@ -433,13 +458,14 @@ run_mode() {
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
         dotfiles) check_connectivity || return 0; sync_dotfiles || status=$? ;;
+        overlays) check_connectivity || return 0; sync_overlays || status=$? ;;
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
         build) build_engine || status=$? ;;
         apply) apply_features || status=$? ;;
         otel-agent) sync_otel_agent || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
         mise) sync_mise_tools || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|repos|build|apply|otel-agent|brewfile|mise|all|check}\n' "$0"; return 1 ;;
+        *) printf 'Usage: %s {sync|dotfiles|overlays|repos|build|apply|otel-agent|brewfile|mise|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }

@@ -66,6 +66,7 @@ func main() {
 type paths struct {
 	home, repo, machine, generated, state, lock string
 	config                                      string // ~/.config
+	overlays                                    string // holds one checkout per overlay, named for it
 }
 
 // applyOptions are apply's and doctor's limits and their launchd domain.
@@ -79,7 +80,7 @@ type applyOptions struct {
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|adopt [flags]")
+		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt [flags]")
 		return exitUsage
 	}
 	cmd := args[0]
@@ -92,11 +93,13 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	flags.SetOutput(stderr)
 	homeDir := flags.String("home", home, "home directory to manage")
 	repo := flags.String("repo", envOr("DOTFILES_DIR", filepath.Join(home, ".dotfiles")), "repository checkout")
+	overlayDir := flags.String("overlay-dir", envOr("DOTFILES_OVERLAY_DIR", filepath.Join(home, ".dotfiles-overlays")), "directory holding one checkout per overlay, named for it")
 	machine := flags.String("machine", "", "machine manifest (default <config>/dotfiles/machine.toml)")
 	dryRun := flags.Bool("dry-run", false, "apply: report what would change without changing it")
 	jsonOut := flags.Bool("json", false, "status: print JSON")
 	lockWait := flags.Duration("lock-wait", time.Minute, "apply: how long to wait for another run to finish")
 	profiles := flags.String("profiles", "", "init: comma-separated profiles, in order")
+	overlays := flags.String("overlays", "", "init: comma-separated overlays this machine belongs to")
 	force := flags.Bool("force", false, "init: replace an existing machine manifest")
 	gitTimeout := flags.Duration("git-timeout", 30*time.Second, "apply: how long listing the repository's tracked files may take")
 	launchctlTimeout := flags.Duration("launchctl-timeout", 30*time.Second, "apply: how long one launchctl call may take")
@@ -117,6 +120,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		config:    config,
 		home:      *homeDir,
 		repo:      *repo,
+		overlays:  *overlayDir,
 		machine:   *machine,
 		generated: filepath.Join(config, "dotfiles", "generated"),
 		state:     filepath.Join(stateHome, "dotfiles", "applied.json"),
@@ -130,42 +134,62 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents}
 	switch cmd {
 	case "init":
-		return cmdInit(p, *profiles, *force, stdout, stderr)
+		return cmdInit(p, *overlays, *profiles, *force, stdout, stderr)
 	case "apply":
 		return cmdApply(ctx, p, opts, false, stdout, stderr)
 	case "doctor":
 		opts.dryRun = true
 		return cmdApply(ctx, p, opts, true, stdout, stderr)
 	case "status":
-		return cmdStatus(p, *jsonOut, stdout, stderr)
+		return cmdStatus(ctx, p, *jsonOut, *gitTimeout, stdout, stderr)
 	case "check":
 		return cmdCheck(p, stdout, stderr)
+	case "overlays":
+		return cmdOverlays(p, stdout, stderr)
 	case "adopt":
 		return cmdAdopt(ctx, p, flags.Args(), *lockWait, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check or adopt\n", cmd)
+		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check, overlays or adopt\n", cmd)
 		return exitUsage
 	}
 }
 
 type loaded struct {
+	roots    []manifest.Root // the repository first, then the machine's overlays
 	features map[string]*manifest.Feature
 	result   *resolve.Result
 }
 
+// roots returns the repository's root followed by the named overlays'.
+func (p paths) roots(overlays []string) ([]manifest.Root, error) {
+	extra, err := manifest.OverlayRoots(p.overlays, overlays)
+	if err != nil {
+		return nil, err
+	}
+	return append([]manifest.Root{{Dir: p.repo}}, extra...), nil
+}
+
 func load(p paths) (*loaded, error) {
-	features, err := manifest.LoadFeatures(p.repo)
-	if err != nil {
-		return nil, err
-	}
-	profiles, err := manifest.LoadProfiles(p.repo)
-	if err != nil {
-		return nil, err
-	}
 	machine, err := manifest.LoadMachine(p.machine)
 	if errors.Is(err, manifest.ErrNoMachine) {
+		profiles, perr := manifest.LoadProfiles(manifest.Root{Dir: p.repo})
+		if perr != nil {
+			return nil, perr
+		}
 		return nil, fmt.Errorf("%w; run `dotfiles init --profiles <names>` with profiles from %v", err, sortedKeys(profiles))
 	}
+	if err != nil {
+		return nil, err
+	}
+	roots, err := p.roots(machine.Overlays)
+	if err != nil {
+		return nil, err
+	}
+	features, err := manifest.LoadFeatures(roots...)
+	if err != nil {
+		return nil, err
+	}
+	profiles, err := manifest.LoadProfiles(roots...)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +197,7 @@ func load(p paths) (*loaded, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &loaded{features: features, result: result}, nil
+	return &loaded{roots: roots, features: features, result: result}, nil
 }
 
 // plan builds the desired state for this machine from what load resolved.
@@ -187,7 +211,7 @@ func exitFor(err error, stderr io.Writer) int {
 	if errors.Is(err, apply.ErrNotCopy) {
 		return exitUsage
 	}
-	if errors.Is(err, manifest.ErrInvalid) || errors.Is(err, manifest.ErrNoMachine) ||
+	if errors.Is(err, manifest.ErrInvalid) || errors.Is(err, manifest.ErrNoMachine) || errors.Is(err, manifest.ErrNoOverlay) ||
 		errors.Is(err, resolve.ErrConflict) || errors.Is(err, plan.ErrPlan) {
 		return exitManifest
 	}
@@ -221,12 +245,15 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	tracked, err := trackedFiles(ctx, p.repo, opts.gitTimeout)
-	if err != nil {
-		return exitFor(err, stderr)
+	env := apply.Env{Home: p.home, StowTree: filepath.Join(p.repo, retiredStowTree)}
+	for _, root := range l.roots {
+		tracked, err := trackedFiles(ctx, root.Dir, opts.gitTimeout)
+		if err != nil {
+			return exitFor(err, stderr)
+		}
+		env.Roots = append(env.Roots, apply.Root{Dir: root.Dir,
+			Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }})
 	}
-	env := apply.Env{Home: p.home, RepoRoot: p.repo, StowTree: filepath.Join(p.repo, retiredStowTree),
-		Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }}
 	env.LeaveLaunchAgents = !opts.launchAgents
 	if runtime.GOOS == "darwin" && opts.launchAgents {
 		env.Launchd = launchd.New(opts.launchctl, os.Getuid(), opts.launchctlTimeout)
@@ -282,15 +309,23 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	return exitOK
 }
 
-// cmdInit writes the machine manifest. It checks the profiles exist and that
-// the features resolve with them, so a manifest it writes always loads.
-func cmdInit(p paths, list string, force bool, stdout, stderr io.Writer) int {
-	var names []string
-	for _, n := range strings.Split(list, ",") {
-		if n = strings.TrimSpace(n); n != "" {
-			names = append(names, n)
+// splitList returns the non-empty, trimmed items of a comma-separated list.
+func splitList(list string) []string {
+	var items []string
+	for _, item := range strings.Split(list, ",") {
+		if item = strings.TrimSpace(item); item != "" {
+			items = append(items, item)
 		}
 	}
+	return items
+}
+
+// cmdInit writes the machine manifest. It checks the overlays are cloned, the
+// profiles exist, and the features resolve with them, so a manifest it writes
+// always loads.
+func cmdInit(p paths, overlayList, list string, force bool, stdout, stderr io.Writer) int {
+	names := splitList(list)
+	overlays := splitList(overlayList)
 	if len(names) == 0 {
 		fmt.Fprintln(stderr, "dotfiles init: --profiles is required, such as --profiles base,dev")
 		return exitUsage
@@ -299,29 +334,33 @@ func cmdInit(p paths, list string, force bool, stdout, stderr io.Writer) int {
 		fmt.Fprintf(stderr, "dotfiles init: %s exists; edit it, or pass --force to replace it\n", p.machine)
 		return exitUsage
 	}
-	features, err := manifest.LoadFeatures(p.repo)
+	roots, err := p.roots(overlays)
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	profiles, err := manifest.LoadProfiles(p.repo)
+	features, err := manifest.LoadFeatures(roots...)
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	if _, err := resolve.Resolve(features, profiles, &manifest.Machine{Profiles: names}, runtime.GOOS); err != nil {
+	profiles, err := manifest.LoadProfiles(roots...)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	if _, err := resolve.Resolve(features, profiles, &manifest.Machine{Overlays: overlays, Profiles: names}, runtime.GOOS); err != nil {
 		return exitFor(err, stderr)
 	}
 	if err := os.MkdirAll(filepath.Dir(p.machine), 0o700); err != nil {
 		return exitFor(err, stderr)
 	}
 	tmp := p.machine + ".tmp"
-	if err := os.WriteFile(tmp, manifest.MachineFile(names), 0o644); err != nil {
+	if err := os.WriteFile(tmp, manifest.MachineFile(overlays, names), 0o644); err != nil {
 		return exitFor(err, stderr)
 	}
 	if err := os.Rename(tmp, p.machine); err != nil {
 		_ = os.Remove(tmp)
 		return exitFor(err, stderr)
 	}
-	fmt.Fprintf(stdout, "wrote %s with profiles %v; run `dotfiles apply`\n", p.machine, names)
+	fmt.Fprintf(stdout, "wrote %s with overlays %v and profiles %v; run `dotfiles apply`\n", p.machine, overlays, names)
 	return exitOK
 }
 
@@ -340,7 +379,24 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	for _, id := range sortedKeys(l.result.Missing) {
 		fmt.Fprintf(stdout, "note: %s is skipped until these settings have values: %v\n", id, l.result.Missing[id])
 	}
+	for _, root := range l.roots[1:] {
+		fmt.Fprintf(stdout, "overlay: %s at %s\n", root.Overlay, root.Dir)
+	}
 	fmt.Fprintf(stdout, "ok: %d features plan for %s\n", len(l.result.Runnable(l.features)), p.machine)
+	return exitOK
+}
+
+// cmdOverlays prints the checkout directory of each overlay the machine
+// manifest lists, one per line, cloned or not. sync.sh syncs them before
+// apply reads them.
+func cmdOverlays(p paths, stdout, stderr io.Writer) int {
+	machine, err := manifest.LoadMachine(p.machine)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	for _, name := range machine.Overlays {
+		fmt.Fprintln(stdout, filepath.Join(p.overlays, name))
+	}
 	return exitOK
 }
 
@@ -391,39 +447,95 @@ func cmdAdopt(ctx context.Context, p paths, targets []string, lockWait time.Dura
 	return exitOK
 }
 
-func cmdStatus(p paths, jsonOut bool, stdout, stderr io.Writer) int {
+// cmdStatus prints each root's commit and whether it has uncommitted
+// changes, then every feature's decision and the layer that made it.
+func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Duration, stdout, stderr io.Writer) int {
 	l, err := load(p)
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	type row struct {
+	type rootRow struct {
+		Name   string `json:"name"`
+		Dir    string `json:"dir"`
+		Commit string `json:"commit,omitempty"`
+		Dirty  bool   `json:"dirty"`
+		Error  string `json:"error,omitempty"`
+	}
+	type featureRow struct {
 		ID      string `json:"id"`
 		Enabled bool   `json:"enabled"`
 		Source  string `json:"source"`
 	}
-	ids := sortedKeys(l.result.Decisions)
-	rows := make([]row, 0, len(ids))
-	for _, id := range ids {
+	var out struct {
+		Roots    []rootRow    `json:"roots"`
+		Features []featureRow `json:"features"`
+	}
+	for _, root := range l.roots {
+		row := rootRow{Name: root.Overlay, Dir: root.Dir}
+		if row.Name == "" {
+			row.Name = "repository"
+		}
+		row.Commit, row.Dirty, err = gitState(ctx, root.Dir, gitTimeout)
+		if err != nil {
+			row.Error = err.Error()
+		}
+		out.Roots = append(out.Roots, row)
+	}
+	for _, id := range sortedKeys(l.result.Decisions) {
 		d := l.result.Decisions[id]
-		rows = append(rows, row{ID: id, Enabled: d.Enabled, Source: d.Source})
+		out.Features = append(out.Features, featureRow{ID: id, Enabled: d.Enabled, Source: d.Source})
 	}
 	if jsonOut {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
-		if err := enc.Encode(rows); err != nil {
+		if err := enc.Encode(out); err != nil {
 			return exitFor(err, stderr)
 		}
 		return exitOK
 	}
 	w := tabwriter.NewWriter(stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(w, "ROOT\tCOMMIT\tUNCOMMITTED\tDIRECTORY")
+	for _, r := range out.Roots {
+		commit := r.Commit
+		if r.Error != "" {
+			commit = "unknown: " + r.Error
+		}
+		fmt.Fprintf(w, "%s\t%s\t%t\t%s\n", r.Name, commit, r.Dirty, r.Dir)
+	}
+	fmt.Fprintln(w)
 	fmt.Fprintln(w, "FEATURE\tENABLED\tDECIDED BY")
-	for _, r := range rows {
+	for _, r := range out.Features {
 		fmt.Fprintf(w, "%s\t%t\t%s\n", r.ID, r.Enabled, r.Source)
 	}
 	if err := w.Flush(); err != nil {
 		return exitFor(err, stderr)
 	}
 	return exitOK
+}
+
+// gitState returns the checkout's short commit and whether a tracked file has
+// uncommitted changes.
+func gitState(ctx context.Context, dir string, timeout time.Duration) (commit string, dirty bool, err error) {
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	git := func(args ...string) (string, error) {
+		cmd := exec.CommandContext(ctx, "git", append([]string{"-C", dir}, args...)...)
+		var stderr bytes.Buffer
+		cmd.Stderr = &stderr
+		out, err := cmd.Output()
+		if err != nil {
+			return "", fmt.Errorf("git %s in %s: %w: %s", args[0], dir, err, strings.TrimSpace(stderr.String()))
+		}
+		return strings.TrimSpace(string(out)), nil
+	}
+	if commit, err = git("rev-parse", "--short", "HEAD"); err != nil {
+		return "", false, err
+	}
+	changes, err := git("status", "--porcelain", "--untracked-files=no")
+	if err != nil {
+		return commit, false, err
+	}
+	return commit, changes != "", nil
 }
 
 // trackedFiles lists the files git tracks in repo, slash-separated and
