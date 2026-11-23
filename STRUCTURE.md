@@ -56,10 +56,11 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 
 | Feature | Profiles | Platforms | Installs |
 | ------- | -------- | --------- | -------- |
-| `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp` |
+| `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
-| `agents.claude` | dev | all | `~/.claude/CLAUDE.md` |
-| `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask) |
+| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/agents/{scout,reader}.md`, `~/.claude/claudemix/policy.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax` |
+| `agents.claude.guard` | dev | all | `~/.claude/skills/repo-guard/` (the repo-guard plugin; lists come from overlays) |
+| `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax` |
 | `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup) |
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`) |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
@@ -104,7 +105,7 @@ Edit linked files in place. Add, remove or move files, then run
 | `zshenv.zsh` | Every Zsh, through the `~/.zshenv` stub: sources `env.sh`; a marked Codex `zsh -c` (`AGENT_SHELL`) runs in bash 4+, or with bash-like globbing and word splitting |
 | `zprofile.zsh` | Login shells, through `~/.zprofile`: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; OrbStack integration where installed |
 | `zlogin.zsh` | Login shells, through `~/.zlogin`: a marked Codex `zsh -lc` hands off to bash here, after the other entry points and the lines installers appended to them |
-| `zshrc.zsh` | Interactive shells, through `~/.zshrc`: classify real terminal vs zsh `-ic`; source the numbered modules, the generated `zshrc.zsh` fragments, then `~/.zshrc.local`; define CLI launchers and invoke optional greeting |
+| `zshrc.zsh` | Interactive shells, through `~/.zshrc`: classify real terminal vs zsh `-ic`; source the numbered modules, the generated `zshrc.zsh` fragments (the Claude and GPT launchers among them), then `~/.zshrc.local`; define `claudeclean` and `claudefleet`, and invoke optional greeting |
 | `00-init.zsh` | Bootstrap Zinit, define `_dotfiles_cached_eval` (tool init scripts cached per binary release), set shell options |
 | `20-history.zsh` | Shared history, 50,000-entry limits, duplicate/space handling |
 | `30-plugins.zsh` | Theme, completions, compinit (one dump per zsh version under `$XDG_CACHE_HOME/zsh`; full security check once a day, `-C` otherwise); deferred autosuggestions, plugins and selected OMZ snippets; syntax highlighting last |
@@ -170,7 +171,12 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync; all under the sync lock |
-| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
+| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in (bash for agent commands, attribution off) and the Codex system config that runs agent commands in bash |
+| [features/agents.claude/bin/claude-subagent-economics](features/agents.claude/bin/claude-subagent-economics) | Price recent subagent runs from Claude Code transcripts and the break-even size of re-reading what they cited; `--days`, `--projects` |
+| [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`), with the delegation policy appended and drive-local scratch |
+| [features/agents.codex/zshrc.zsh](features/agents.codex/zshrc.zsh) | `gptmore`, `gptmax`: Codex sessions on the local app-server in the current directory |
+| [features/agents.claude.guard/home/.claude/skills/repo-guard/scripts/guard.sh](features/agents.claude.guard/home/.claude/skills/repo-guard/scripts/guard.sh) | repo-guard's `PreToolUse` hook: deny commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt` (or `REPO_GUARD_LIST`) |
+| [features/agents.claude.guard/guard_test.sh](features/agents.claude.guard/guard_test.sh) | repo-guard's cases against throwaway clones; `GUARD_BASH` picks the bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |

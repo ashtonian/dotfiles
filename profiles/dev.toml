@@ -6,6 +6,8 @@ enable = [
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
+  # Blocks agent writes to the repositories the overlays protect.
+  "agents.claude.guard",
   "agents.agent-mcp",
   # The Codex app-server, and the agent dashboard once agent-monitor install ran.
   "agents.codex",

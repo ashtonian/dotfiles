@@ -400,13 +400,16 @@ SHOW_COWSAY=true
 
 ## AI CLI Helpers
 
-Interactive launchers from `~/.config/zsh/zshrc.zsh` (feature `shell.zsh`):
+Interactive launchers from the generated zshrc fragment of the dev features
+`agents.claude` (`features/agents.claude/zshrc.zsh`) and `agents.codex`
+(`features/agents.codex/zshrc.zsh`, macOS only). `~/.zshrc.local` loads after
+them, so a local definition replaces one.
 
 | Command | Model | Effort | Behavior |
 | --------- | ------- | -------- | ---------- |
 | `gptmore [args...]` | GPT-6.1 Sol | `xhigh` | Connects to the local remote-control server in the current directory (`-C "$PWD"`; without it the session runs in the server's `~`) and skips Codex approvals and sandboxing |
 | `gptmax [args...]` | GPT-6 Astra | `max` | Same, with Astra |
-| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks. Started on a drive under `/Volumes`, the session keeps its scratch and its commands' caches on that drive (`CLAUDE_CODE_TMPDIR`, `DOTFILES_CACHE_HOME`; docs/OPERATIONS.md) |
+| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks. Leaves out the claude.ai connectors (`ENABLE_CLAUDEAI_MCP_SERVERS=false`) unless the launch sets `CLAUDE_CONNECTORS=1`, and appends the delegation policy (`--append-system-prompt-file ~/.claude/claudemix/policy.md`). Started on a drive under `/Volumes`, the session keeps its scratch and its commands' caches on that drive (`CLAUDE_CODE_TMPDIR`, `DOTFILES_CACHE_HOME`; docs/OPERATIONS.md) |
 | `claudemax [args...]` | `fable[1m]` | `xhigh` | Same behavior with the Fable alias |
 
 The model and effort defaults are listed above. The launchers forward additional
@@ -418,6 +421,69 @@ Availability and supported effort levels depend on the authenticated provider.
 See the [official OpenAI CLI reference](https://learn.chatgpt.com/docs/cli/reference)
 for Codex flags. Use the underlying CLIs directly when bypassing permissions is
 not appropriate.
+
+Every session these launchers start bypasses permissions, so claude.ai
+connector content (mail, calendar, Drive, Docs) stays out of it by default.
+`CLAUDE_CONNECTORS=1 claudemore` brings the connectors back for that one
+launch.
+
+### Subagents and the delegation policy
+
+`agents.claude` links two user subagents into `~/.claude/agents/`, so every
+Claude Code session has them, a bare `claude` and `claude -p` included:
+
+| Subagent | Model | Effort | Tools | Role |
+| -------- | ----- | ------ | ----- | ---- |
+| `scout` | Haiku | `medium` | Read, Glob, Grep, Bash | Finds and quotes files, symbols, call sites, config keys and log lines; never judges |
+| `reader` | Sonnet | `xhigh` | Read, Glob, Grep, Bash, WebFetch | Answers one bounded question about named files or output, tagging each claim VERIFIED (cited) or INFERRED |
+
+`~/.claude/claudemix/policy.md` says what the session hands them and what it
+keeps on its own model, and that their reports are leads to check, not facts.
+The launchers append it to the main session's system prompt; subagents never
+see it, and a bare `claude` runs without it. A session records its system
+prompt on its first request, so a resumed conversation picks up a changed
+policy only after it compacts.
+
+`claude-subagent-economics [--days N] [--projects DIR]` (default 30 days,
+`~/.claude/projects`) prices the recent `scout`, `reader`, Explore and
+general-purpose runs from the transcripts at Opus rates, and the break-even
+size of the main session re-reading what a cheaper subagent cited.
+
+`~/.claude/statusline-p10k.sh`, the status line `settings.json` runs, is linked
+by `agents.claude` too.
+
+### Repository guard
+
+`agents.claude.guard` (dev profile) installs repo-guard, a Claude Code plugin
+linked into `~/.claude/skills/repo-guard/`. A plugin folder there loads in
+every session as `repo-guard@skills-dir`, with no install step. Its
+`PreToolUse` hook on the Bash tool denies a commit, a tag, a push or a GitHub
+write (`gh pr|issue|release|repo|... <verb>` other than view, list and the
+other read verbs; `gh api` with a non-GET method, fields, `--input`, or a
+GraphQL mutation) when the command names a protected repository or runs in, or
+points git at, a clone of one. Reading, cloning and local builds pass, and so
+does anything aimed at other repositories.
+
+This repository lists no protected repository. Each context's overlay links its
+own list to `~/.config/repo-guard/protected.d/<context>.txt` (see
+[Overlays](#overlays)): one `owner/name` per line, `#` comments and blank
+lines allowed, names compared in any case. The hook reads every `*.txt` there;
+with none, nothing is protected. `REPO_GUARD_LIST` names one file to read
+instead, for one session or a test; set to an empty value it protects nothing.
+
+| Path or setting | Effect |
+| --------------- | ------ |
+| `~/.config/repo-guard/protected.d/*.txt` | The protected repositories, one list per overlay |
+| `REPO_GUARD_LIST` | One file read instead of the directory; empty protects nothing |
+| `features/agents.claude.guard/guard_test.sh` | The hook's cases against throwaway clones (`GUARD_BASH=/bin/bash` runs them under bash 3.2) |
+
+The hook blocks the call (`onFailure: "block"`) if it crashes, takes longer than
+10 s, cannot read a list, finds a line that is not `owner/name`, or has no
+`jq`. It errs toward denying: it reads the command's text, not its shell
+syntax, so `echo git push` in a protected clone is denied too. It sees the Bash
+tool only; a GitHub MCP server with write tools would bypass it, so keep that
+server read-only. To make a change you were given permission for, run the
+command yourself, or start that session with `REPO_GUARD_LIST=`.
 
 The short launchers in `lib_sh/claude.sh` (`c`, `ccont` for `claude --continue`,
 `cr`, `cf`, `co` and the rest) exist only in real terminal sessions, as do
@@ -437,7 +503,7 @@ system configs once per machine (they need sudo):
 
 | File | Effect |
 | ---- | ------ |
-| `/Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json` (`/etc/claude-code/...` on Linux) | Sets `CLAUDE_CODE_SHELL` to Homebrew bash. Managed settings outrank user settings and merge `env` per variable |
+| `/Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json` (`/etc/claude-code/...` on Linux) | Sets `CLAUDE_CODE_SHELL` to Homebrew bash, and `"attribution": false`, which hides Claude Code's commit trailer, PR line and session link (Claude Code 2.1.281 or later). Managed settings outrank user and project settings, a CLAUDE.md rule cannot override their attribution, and `env` merges per variable |
 | `/etc/codex/config.toml` | Codex's system config layer: turns shell snapshots off and sets `AGENT_SHELL` in every command shell. Codex always starts the passwd login shell (`zsh -lc <command>`), and `~/.zshenv` hands a marked command to bash |
 
 `dotfiles-agents` never overwrites a file it did not write (exit 73), and
@@ -449,8 +515,10 @@ The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`
 and `gitstead cd <query>` jumps to a repository. The `brew.dev-apps` feature
 installs [gitstead](https://github.com/ashtonian/gitstead); fleet definitions,
 agent profiles, and workspace paths live in the machine-local
-`~/.config/gitstead/config.yaml` and are not supplied by this repository. Claude
-launchers disable claude.ai connectors in `wg-*` tmux sessions.
+`~/.config/gitstead/config.yaml` and are not supplied by this repository. Fleet
+sessions run `claudemore` or `claudemax`, which leave the claude.ai connectors
+out of every launch, so gitstead's agent profiles need no
+`ENABLE_CLAUDEAI_MCP_SERVERS` of their own.
 
 ### Coordinator (OpenCode)
 
@@ -736,7 +804,9 @@ python3 -B -m unittest discover -s tests -v
 
 The suite uses temporary files and mock external commands. Git operation guards
 use temporary clones. `RealFeatures` builds the engine with the installed Go and
-applies the repository's own features to temporary homes. Engine unit tests:
+applies the repository's own features to temporary homes. `RepoGuard` runs
+`features/agents.claude.guard/guard_test.sh` under the current bash and macOS's
+bash 3.2; it needs jq. Engine unit tests:
 `go test -race ./...`. Kernel-lock checks require macOS `lockf`; the agent
 dashboard checks require Node.js; OpenCode worker checks require Bun and the
 plugin dependencies OpenCode installs in `~/.config/opencode` (or a directory

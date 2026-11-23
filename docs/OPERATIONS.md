@@ -50,6 +50,10 @@ relocate the installer or rewrite LaunchAgent templates.
 | `AWS_CONFIG_FILE` | File path | `~/.aws/config` | AWS helper region/profile config |
 | `AGENT_SHELL` | Marker | unset; Codex sets it through `[shell_environment_policy] set` in `/etc/codex/config.toml` (`bin/dotfiles-agents`) | A marked `zsh -lc` hands off in `zlogin.zsh`, after the other entry points ran; a marked plain `zsh -c` in `zshenv.zsh`. Either unsets it and runs the command in Homebrew bash (or `/usr/bin/bash` 4+); with neither, it turns off `NOMATCH`, `BAD_PATTERN`, `EQUALS` and turns on `SH_WORD_SPLIT` instead. `env.sh` unsets it in any other shell, so a zsh a bash command starts stays zsh |
 | `CLAUDE_CODE_SHELL` | File path | Homebrew bash, from `bin/dotfiles-agents`'s managed-settings drop-in | Shell Claude Code's Bash tool runs |
+| `CLAUDE_CONNECTORS` | `1` or unset | unset | `claudemore`/`claudemax`: `1` keeps the claude.ai connectors (Gmail, Calendar, Drive, Docs) for that launch. Otherwise the launcher sets `ENABLE_CLAUDEAI_MCP_SERVERS=false` |
+| `ENABLE_CLAUDEAI_MCP_SERVERS` | `false` or unset | `false` in every session `claudemore`/`claudemax` start without `CLAUDE_CONNECTORS=1` | Claude Code fetches no claude.ai connectors. A running session keeps what it started with |
+| `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | `1` in interactive zsh (feature `agents.claude`'s fragment) | Turns on Claude Code's agent teams for sessions started from a terminal |
+| `REPO_GUARD_LIST` | File path | unset: every `~/.config/repo-guard/protected.d/*.txt` | repo-guard's protected repositories, one `owner/name` per line; when set, the only list read. Empty protects nothing. Set it in the environment a session starts with; the hook reads Claude Code's environment, not a command's |
 | `DOTFILES_ENV_PATH` | PATH value | set by `env.sh` | The PATH `env.sh` last composed. A nested shell whose PATH still ends with it keeps PATH unchanged, so directories a command put first stay first; do not set it by hand |
 | `DOTFILES_SYSTEM_ROOT` | Directory path | empty (`/`) | Prefix for every path `bin/dotfiles-agents` writes; for testing and packaging |
 
@@ -551,6 +555,20 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | Missing Rust toolchain | Run `rustup default stable` after a fresh Rustup install. |
 | `gh auth status`: "The token in default is invalid" over SSH | gh found no token. It is usually in the login keychain, which SSH sessions can't read while it is locked (`security show-keychain-info` fails with "User interaction is not allowed"), and git's `osxkeychain` helper reports `failed to store: -25308` for the same reason. Log in once with file storage as shown in [Git identity and signing](#git-identity-and-signing). |
 | A `gh` scope disappeared | `gh auth login` issues a new token with only the default scopes. Add scopes with `gh auth refresh -h github.com -s <scope>`, which keeps the existing ones; see [Git identity and signing](#git-identity-and-signing) for the set this setup uses. |
+
+## Agent troubleshooting
+
+| Symptom | Check and recovery |
+| ------- | ------------------ |
+| `claudemore: command not found` (or `gptmore`) | The launchers live in the generated zshrc fragment of `agents.claude` (`agents.codex` for the GPT ones, macOS only), which the dev profile enables. Run `dotfiles apply` (sync runs it) and open a new shell; `grep -c 'agents.claude' ~/.config/dotfiles/generated/zshrc.zsh` should be 1. |
+| `claude: ~/.claude/claudemix/policy.md is missing; starting without the delegation policy` | The `agents.claude` link is missing or broken. `dotfiles doctor` names it; `dotfiles apply` restores it. The session itself starts normally. |
+| `/agents` lists no `scout` or `reader` | `~/.claude/agents/scout.md` and `reader.md` must link into `features/agents.claude/home/`. Run `dotfiles doctor`, then `dotfiles apply`; a running session picks new subagent files up only after a restart. |
+| A launched session still shows `mcp__claude_ai_*` tools | It was started with `CLAUDE_CONNECTORS=1`, by plain `claude`, or before this launcher. Check with `ps -E -o command= -p <pid> \| tr ' ' '\n' \| grep ENABLE_CLAUDEAI`; restart it with `claudemore`. |
+| A command is denied with `Changes to <owner>/<name> need the user's explicit permission` | repo-guard matched a protected repository: the command names it, or runs in or points git at a clone of it. `claude plugin list` shows `repo-guard@skills-dir`; the lists are `~/.config/repo-guard/protected.d/*.txt`. If the change is permitted, run it yourself, or start the session with `REPO_GUARD_LIST=` (empty). If the repository should not be protected, remove it from its overlay's list. |
+| `PreToolUse:Bash hook error` naming `repo-guard: <list>:<n>: '<line>' is not owner/name` | A protected list has a bad line, so every write-shaped command is blocked. Fix the line in the overlay that owns the list; reads keep working meanwhile. `cannot read the protected list` means a listed file is unreadable or `REPO_GUARD_LIST` names a missing file. |
+| `repo-guard: jq is not installed` | Every Bash command is blocked while a protected list exists, because the hook cannot read its input. Install jq (`brew.base` lists it; macOS 15 and later also ship `/usr/bin/jq`). |
+| `failed; blocking because onFailure is "block"` or `timed out` for repo-guard | The hook crashed or ran past 10 s. Run `features/agents.claude.guard/guard_test.sh`; it prints each failing case. |
+| `dotfiles apply` reports `a file is in the way` for `~/.claude/statusline-p10k.sh` or a `~/.claude/mcp/*.sh` helper | The machine's untracked copy predates the feature. Compare it with the tracked file the message names, move it aside, and apply. |
 
 Before publishing, run the [validation commands](../README.md#validation) and
 review `git diff`. Update configuration tables when defaults or interfaces change.

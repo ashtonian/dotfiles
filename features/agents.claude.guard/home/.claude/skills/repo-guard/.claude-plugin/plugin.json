@@ -1,0 +1,5 @@
+{
+  "name": "repo-guard",
+  "version": "0.1.0",
+  "description": "Blocks commits, tags, pushes and GitHub writes to repositories on the machine's protected lists"
+}

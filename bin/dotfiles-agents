@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 #===============================================================================
-# dotfiles-agents - system configs that make Claude Code and Codex use bash
+# dotfiles-agents - system configs that make Claude Code and Codex use bash,
+#                   and keep Claude Code's attribution out of commits and PRs
 #===============================================================================
 #
 # USAGE:
@@ -9,8 +10,11 @@
 #   dotfiles-agents uninstall   remove both files
 #
 # Claude Code: a managed-settings drop-in sets CLAUDE_CODE_SHELL to a current
-# bash. Managed settings outrank user settings and merge `env` per variable,
-# and Claude Code never writes the file itself.
+# bash and hides all attribution (`"attribution": false`, Claude Code 2.1.281
+# or later): no Co-Authored-By trailer, PR line or session link. Managed
+# settings outrank user and project settings, a CLAUDE.md rule cannot override
+# their attribution, `env` merges per variable, and Claude Code never writes
+# the file itself.
 # Codex: it always runs the passwd login shell, with no setting to change it.
 # Its system config layer turns shell snapshots off and marks every command
 # shell with AGENT_SHELL; ~/.zshenv then hands the command to bash.
@@ -46,7 +50,7 @@ agent_bash() {
 }
 
 render_claude() {
-    printf '{\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
+    printf '{\n  "attribution": false,\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
 }
 
 render_codex() {

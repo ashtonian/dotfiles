@@ -1,7 +1,10 @@
 id = "agents.codex"
-description = "The local Codex app-server with remote control, which gptmore and gptmax connect to (bin/codex-daemon)"
+description = "Codex: the local app-server with remote control (bin/codex-daemon) and the gptmore and gptmax launchers that connect to it"
 category = "agents"
 platforms = ["darwin"]
+
+[provides]
+zshrc = "zshrc.zsh" # gptmore, gptmax
 
 [[provides.launch_agent]]
 plist = "launchagents/com.ashtonian.codex-remote-control.plist"

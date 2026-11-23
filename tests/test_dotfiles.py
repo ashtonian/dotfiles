@@ -1136,6 +1136,22 @@ class RealFeatures(Fixture):
         self.assertEqual(ssh_option('appended.invalid', 'controlmaster'), 'false',
                          'a host an installer appends to ~/.ssh/config wins over the defaults')
 
+    def test_a_dev_machine_gets_the_agent_launchers_subagents_and_guard(self):
+        self.converge('base,dev')
+        claude = self.home / '.claude'
+        for rel in ('agents/scout.md', 'agents/reader.md', 'claudemix/policy.md', 'statusline-p10k.sh',
+                    'skills/repo-guard/.claude-plugin/plugin.json', 'skills/repo-guard/hooks/hooks.json',
+                    'skills/repo-guard/scripts/guard.sh', 'mcp/github-headers.sh'):
+            self.assertTrue((claude / rel).is_symlink(), rel)
+        self.assertFalse((claude / 'skills/repo-guard').is_symlink(), 'linked file by file')
+        self.assertFalse((self.home / '.config/repo-guard').exists(), 'the protected lists come from overlays')
+        self.assertTrue((self.home / '.local/bin/claude-subagent-economics').is_symlink())
+        launchers = 'claudemore claudemax' + (' gptmore gptmax' if sys.platform == 'darwin' else '')
+        p = subprocess.run(['/bin/zsh', '-fc', f'source {self.home}/.config/dotfiles/generated/zshrc.zsh; whence -w {launchers}'],
+                           env={'HOME': str(self.home), 'PATH': '/usr/bin:/bin'}, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout.count(': function'), len(launchers.split()), p.stdout)
+
     def test_a_host_profile_sets_its_values(self):
         self.converge('base,dev,desktop,studio')
         env = (self.home / '.config/dotfiles/generated/env.sh').read_text()
@@ -1744,7 +1760,9 @@ class DotfilesAgents(Fixture):
         self.assertEqual(self.agents('check').returncode, 1)
         p = self.agents('install')
         self.assertEqual(p.returncode, 0, p.stderr)
-        shell = json.loads(self.claude.read_text())['env']['CLAUDE_CODE_SHELL']
+        claude = json.loads(self.claude.read_text())
+        self.assertIs(claude['attribution'], False, 'no Co-Authored-By trailer, PR line or session link')
+        shell = claude['env']['CLAUDE_CODE_SHELL']
         self.assertEqual(subprocess.run([shell, '-c', '(( BASH_VERSINFO[0] >= 4 ))']).returncode, 0)
         codex = self.codex.read_text()
         self.assertIn('shell_snapshot = false', codex)
@@ -1775,6 +1793,100 @@ class DotfilesAgents(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertFalse(self.claude.exists())
         self.assertFalse(self.codex.exists())
+
+
+class ClaudeLaunchers(Fixture):
+    """claudemore and claudemax from the agents.claude fragment, with a stub claude."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.policy = self.home / '.claude/claudemix/policy.md'
+        self.policy.parent.mkdir(parents=True)
+        self.policy.write_text('# policy\n')
+        self.work = self.path / 'work/repo'
+        self.work.mkdir(parents=True)
+        self.out = self.path / 'out'
+        self.out.mkdir()
+        self.cli('claude', f'printf "%s\\n" "$@" > {self.out}/argv\nenv > {self.out}/env')
+        self.env.update(HOME=str(self.home))
+        for name in ('CLAUDE_CONNECTORS', 'ENABLE_CLAUDEAI_MCP_SERVERS'):
+            self.env.pop(name, None)
+
+    def launch(self, launcher, *args, **env):
+        p = subprocess.run(['/bin/zsh', '-fc', f'source {FEATURES / "agents.claude/zshrc.zsh"}; "$@"', 'test',
+                            launcher, *args], cwd=self.work, env=dict(self.env, **env),
+                           capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        argv = (self.out / 'argv').read_text().splitlines()
+        environment = dict(line.split('=', 1) for line in (self.out / 'env').read_text().splitlines() if '=' in line)
+        return p, argv, environment
+
+    def test_sessions_get_the_policy_and_no_connectors(self):
+        p, argv, env = self.launch('claudemore', '--resume', 'x')
+        self.assertEqual(argv[argv.index('--model') + 1], 'opus[1m]')
+        self.assertEqual(argv[argv.index('--append-system-prompt-file') + 1], str(self.policy))
+        self.assertEqual(argv[-2:], ['--resume', 'x'], 'arguments pass through last')
+        self.assertRegex(argv[argv.index('--name') + 1], r'^repo@.+-1$')
+        self.assertEqual(env.get('ENABLE_CLAUDEAI_MCP_SERVERS'), 'false')
+        _, argv, _ = self.launch('claudemax')
+        self.assertEqual(argv[argv.index('--model') + 1], 'fable[1m]')
+
+    def test_connectors_are_opt_in_per_launch(self):
+        _, _, env = self.launch('claudemore', CLAUDE_CONNECTORS='1')
+        self.assertNotIn('ENABLE_CLAUDEAI_MCP_SERVERS', env)
+
+    def test_a_missing_policy_is_reported_and_left_out(self):
+        self.policy.unlink()
+        p, argv, _ = self.launch('claudemore')
+        self.assertNotIn('--append-system-prompt-file', argv)
+        self.assertIn('policy.md is missing', p.stderr)
+
+
+class RepoGuard(unittest.TestCase):
+    """The repo-guard hook's own cases, under current bash and macOS's bash 3.2."""
+
+    def test_guard_cases_pass(self):
+        if not shutil.which('jq'):
+            self.skipTest('jq required by the hook')
+        script = FEATURES / 'agents.claude.guard/guard_test.sh'
+        for shell in dict.fromkeys(filter(None, [current_bash(), '/bin/bash' if Path('/bin/bash').exists() else None])):
+            with self.subTest(bash=shell):
+                p = subprocess.run([shell, str(script)], env=dict(os.environ, GUARD_BASH=shell),
+                                   capture_output=True, text=True, timeout=120)
+                self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+                self.assertIn('fail=0', p.stdout)
+
+
+class SubagentEconomics(Fixture):
+    SCRIPT = FEATURES / 'agents.claude/bin/claude-subagent-economics'
+
+    def run_script(self, projects):
+        return subprocess.run([sys.executable, '-I', str(self.SCRIPT), '--projects', str(projects), '--days', '7'],
+                              env=self.env, capture_output=True, text=True, timeout=30)
+
+    def test_prices_a_subagent_run_against_its_parent(self):
+        session = self.path / 'projects/project/session'
+        (session / 'subagents').mkdir(parents=True)
+        usage = {'input_tokens': 1000, 'cache_creation_input_tokens': 2000, 'cache_read_input_tokens': 3000,
+                 'output_tokens': 400}
+        (session / 'subagents/agent-1.meta.json').write_text(json.dumps({'agentType': 'scout', 'toolUseId': 'toolu_1'}))
+        (session / 'subagents/agent-1.jsonl').write_text(
+            json.dumps({'type': 'assistant', 'message': {'id': 'm1', 'usage': usage,
+                                                         'content': [{'type': 'text', 'text': 'x' * 40}]}}) + '\n')
+        parent = [{'type': 'user', 'toolUseId': 'toolu_1'}] + [
+            {'type': 'assistant', 'message': {'id': f'p{i}'}} for i in range(3)]
+        (self.path / 'projects/project/session.jsonl').write_text(''.join(json.dumps(e) + '\n' for e in parent))
+        p = self.run_script(self.path / 'projects')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('runs: 1  by type: scout=1', p.stdout)
+        self.assertRegex(p.stdout, r'parent requests until the next compaction +p25= +3\.00')
+
+    def test_no_runs_is_exit_1(self):
+        (self.path / 'projects').mkdir()
+        p = self.run_script(self.path / 'projects')
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('no subagent runs', p.stderr)
 
 
 class AgentMonitorFixture(Fixture):
@@ -2742,7 +2854,7 @@ class SessionDrive(Fixture):
     """A session working on a drive keeps its scratch and its commands' caches there."""
 
     def drive_env(self, cwd, volumes):
-        source = (ZSH_DIR / 'zshrc.zsh').read_text()
+        source = (FEATURES / 'agents.claude/zshrc.zsh').read_text()
         helper = source[source.index('_claude_drive_env() {'):]
         helper = helper[:helper.index('\n}\n') + 3]
         p = subprocess.run(['/bin/zsh', '-fc', helper + '_claude_drive_env "$1"; print -rl -- $reply',
