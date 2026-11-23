@@ -139,6 +139,7 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
 | [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`, `bin/agent-monitor`) |
 | [brew-root.sh](lib_sh/brew-root.sh) | `brew_root_available`, `brew_casks_needing_root`: which Homebrew steps a run without a terminal must leave for one (`sync.sh`, `dotfiles-update.sh`) |
+| [sync-lock.sh](lib_sh/sync-lock.sh) | `sync_lock_take`, `without_sync_lock`: the `logs/sync.flock` lock that makes sync and update runs exclusive, and runs a step without its descriptor (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
 
@@ -168,7 +169,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | Script | Responsibility |
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
-| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync |
+| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync; all under the sync lock |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
@@ -204,7 +205,8 @@ job mid-run, which a later apply reloads; restarting a loaded job by hand keeps
 its loaded plist settings. Reloading always-on services interrupts attached
 sessions.
 
-Sync holds `logs/sync.flock` using macOS lockf, runs `dotfiles apply` right after
+Sync holds `logs/sync.flock` using macOS lockf (the weekly update holds it for
+its whole run too, so the two never overlap), runs `dotfiles apply` right after
 the dotfiles merge (refusing to merge an engine layout this machine cannot
 install: no `machine.toml`, no Go, or an upstream engine that does not build here
 or cannot plan the manifest), then installs the generated Brewfile's missing packages with
