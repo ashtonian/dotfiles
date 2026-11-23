@@ -1217,6 +1217,10 @@ else:
         p = self.dotfiles('check')
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn('[prefs] "muxy:terminal.font_siz": no feature enabled here owns this setting', p.stderr)
+        status = self.dotfiles('status')
+        self.assertEqual(status.returncode, 2, 'status reports the plan error')
+        self.assertIn('tool.muxy', status.stdout, 'after showing what it can')
+        self.assertIn('no feature enabled here owns this setting', status.stderr)
 
         machine.write_text(manifest + '\n[features]\ndisable = ["tool.muxy"]\n')
         p = self.dotfiles('apply')

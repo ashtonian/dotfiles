@@ -485,10 +485,8 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	pl, err := l.plan(p)
-	if err != nil {
-		return exitFor(err, stderr)
-	}
+	// A plan error is reported after the rest, which still helps find it.
+	pl, planErr := l.plan(p)
 	type rootRow struct {
 		Name   string `json:"name"`
 		Dir    string `json:"dir"`
@@ -530,14 +528,19 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 		d := l.result.Decisions[id]
 		out.Features = append(out.Features, featureRow{ID: id, Enabled: d.Enabled, Source: d.Source})
 	}
-	for _, pr := range pl.Prefs {
-		out.Prefs = append(out.Prefs, prefRow{ID: pr.ID(), Value: pr.Value, SetBy: pr.SetBy(), Feature: pr.Feature, Shared: pr.Shared})
+	if planErr == nil {
+		for _, pr := range pl.Prefs {
+			out.Prefs = append(out.Prefs, prefRow{ID: pr.ID(), Value: pr.Value, SetBy: pr.SetBy(), Feature: pr.Feature, Shared: pr.Shared})
+		}
 	}
 	if jsonOut {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
 			return exitFor(err, stderr)
+		}
+		if planErr != nil {
+			return exitFor(planErr, stderr)
 		}
 		return exitOK
 	}
@@ -555,7 +558,7 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	for _, r := range out.Features {
 		fmt.Fprintf(w, "%s\t%t\t%s\n", r.ID, r.Enabled, r.Source)
 	}
-	if len(pl.Prefs) > 0 {
+	if len(out.Prefs) > 0 {
 		fmt.Fprintln(w)
 		fmt.Fprintln(w, "APP SETTING\tVALUE\tSET BY")
 		for _, pr := range pl.Prefs {
@@ -568,6 +571,9 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	}
 	if err := w.Flush(); err != nil {
 		return exitFor(err, stderr)
+	}
+	if planErr != nil {
+		return exitFor(planErr, stderr)
 	}
 	return exitOK
 }
