@@ -59,7 +59,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
-| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`; requires `agents.delegation` |
+| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation` |
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
@@ -111,7 +111,7 @@ remove or move files, then run `dotfiles apply`; a file in the way is reported, 
 | `zshenv.zsh` | Every Zsh, through the `~/.zshenv` stub: sources `env.sh`; a marked Codex `zsh -c` (`AGENT_SHELL`) runs in bash 4+, or with bash-like globbing and word splitting |
 | `zprofile.zsh` | Login shells, through `~/.zprofile`: re-apply `env.sh` after `/etc/zprofile`'s path_helper reorders PATH; OrbStack integration where installed |
 | `zlogin.zsh` | Login shells, through `~/.zlogin`: a marked Codex `zsh -lc` hands off to bash here, after the other entry points and the lines installers appended to them |
-| `zshrc.zsh` | Interactive shells, through `~/.zshrc`: classify real terminal vs zsh `-ic`; source the numbered modules, the generated `zshrc.zsh` fragments (the Claude and GPT launchers among them), then `~/.zshrc.local`; define `claudeclean` and `claudefleet`, and invoke optional greeting |
+| `zshrc.zsh` | Interactive shells, through `~/.zshrc`: classify real terminal vs zsh `-ic`; source the numbered modules, the generated `zshrc.zsh` fragments (the Claude and GPT launchers among them), then `~/.zshrc.local`; invoke optional greeting |
 | `00-init.zsh` | Bootstrap Zinit, define `_dotfiles_cached_eval` (tool init scripts cached per binary release), set shell options |
 | `20-history.zsh` | Shared history, 50,000-entry limits, duplicate/space handling |
 | `30-plugins.zsh` | Theme, completions, compinit (one dump per zsh version under `$XDG_CACHE_HOME/zsh`; full security check once a day, `-C` otherwise); deferred autosuggestions, plugins and selected OMZ snippets; syntax highlighting last |
@@ -181,7 +181,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync; all under the sync lock |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in (bash for agent commands, attribution off) and the Codex system config (bash for agent commands, repo-guard as a managed hook) |
 | [features/agents.claude/bin/claude-subagent-economics](features/agents.claude/bin/claude-subagent-economics) | Price recent subagent runs from Claude Code transcripts and the break-even size of re-reading what they cited; `--days`, `--projects` |
-| [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`), with the delegation policy appended and drive-local scratch |
+| [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`), with the delegation policy appended and drive-local scratch; `claudefleet` opens gitstead's `fleet`; `claudeclean` drops session files of exited sessions |
 | [features/agents.codex/zshrc.zsh](features/agents.codex/zshrc.zsh) | `gptmore`, `gptmax`: Codex sessions on the local app-server in the current directory, without ChatGPT apps unless `CODEX_CONNECTORS=1` |
 | [features/agents.repo-guard/bin/repo-guard](features/agents.repo-guard/bin/repo-guard) | The `PreToolUse` hook Claude Code and Codex run: deny commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt` (or `REPO_GUARD_LIST`) |
 | [features/agents.repo-guard/guard_test.sh](features/agents.repo-guard/guard_test.sh) | repo-guard's cases against throwaway clones, in both harnesses' input shapes; `GUARD_BASH` picks the bash |

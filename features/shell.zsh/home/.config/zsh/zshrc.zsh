@@ -50,25 +50,4 @@ unset _dotfiles_generated_zshrc
 #=============================================================================
 [[ -f "$HOME/.zshrc.local" ]] && source "$HOME/.zshrc.local"
 
-claudeclean() {
-  local removed=0
-  for f in ~/.claude/sessions/*.json(N); do
-    local pid="${f:t:r}"
-    if ! kill -0 "$pid" 2>/dev/null; then
-      rm -f "$f"
-      ((removed++))
-    fi
-  done
-  echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
-}
-
-# Open the gitstead fleet `fleet` (its workspaces come from the overlays'
-# gitstead config): one tab per workspace, one split per agent, claudemore in
-# each, as tmux -CC panes inside iTerm. gitstead flags pass through:
-# `claudefleet --agent astra`, `--launcher iterm`, `--launcher muxy`, `--fresh`.
-# One workspace: `gitstead ws open <workspace>`.
-claudefleet() {
-  gitstead fleet open fleet "$@"
-}
-
 (( $+functions[dotfiles_greeting] )) && dotfiles_greeting
