@@ -990,6 +990,10 @@ class RealFeatures(Fixture):
         brewfile = self.converge('base,dev,desktop,server')
         self.assertIn('cask "', brewfile)
         self.assertIn('vscode "', brewfile)
+        if sys.platform == 'darwin':
+            karabiner = self.home / '.config/karabiner/karabiner.json'
+            self.assertTrue(karabiner.is_file() and not karabiner.is_symlink(),
+                            'Karabiner replaces karabiner.json when it saves, so the file is a copy')
         for stub in ('.zshenv', '.zprofile', '.zshrc', '.zlogin', '.bashrc', '.bash_profile', '.gitconfig', '.ssh/config'):
             self.assertFalse((self.home / stub).is_symlink(), stub + ' is a local stub')
         self.assertTrue((self.home / '.config/zsh/00-init.zsh').is_symlink())
@@ -2783,6 +2787,40 @@ process.stdout.write(JSON.stringify({
         self.assertTrue(any(l.startswith('Brave-Browser Profile 2: Passkeys Off not loaded') for l in lines), p.stdout)
         self.assertFalse(any('System Profile' in l for l in lines))
         self.assertTrue(any(l.strip().startswith('1Password, in each browser') for l in lines), p.stdout)
+
+
+
+class Karabiner(unittest.TestCase):
+    """The managed karabiner.json (tool.karabiner, docs/KARABINER.md)."""
+    CONFIG = FEATURES / 'tool.karabiner/home/.config/karabiner/karabiner.json'
+
+    def setUp(self):
+        self.profile, = json.loads(self.CONFIG.read_text())['profiles']
+
+    def rule(self, description_start):
+        rules = [r for r in self.profile['complex_modifications']['rules']
+                 if r['description'].startswith(description_start)]
+        self.assertEqual(len(rules), 1, description_start)
+        return rules[0]
+
+    def test_the_mouse_rule_names_only_mice_karabiner_modifies(self):
+        # Karabiner ignores a pointing device unless `devices` enables it, so a rule naming any
+        # other mouse would never see its buttons.
+        modified = [d['identifiers'] for d in self.profile['devices'] if d.get('ignore') is False]
+        manipulator, = self.rule('G502 X PLUS')['manipulators']
+        self.assertEqual(manipulator['to'], [{'key_code': 'mission_control'}])
+        condition, = manipulator['conditions']
+        self.assertEqual(condition['type'], 'device_if')
+        self.assertTrue(condition['identifiers'])
+        for mouse in condition['identifiers']:
+            self.assertIn(dict(mouse, is_pointing_device=True), modified)
+
+    def test_non_apple_keyboards_keep_plain_function_keys(self):
+        manipulators = self.rule('Non-Apple keyboards')['manipulators']
+        self.assertEqual([m['from']['key_code'] for m in manipulators], [f'f{i}' for i in range(1, 13)])
+        for m in manipulators:
+            self.assertEqual(m['to'], [{'key_code': m['from']['key_code']}])
+            self.assertEqual([c['type'] for c in m['conditions']], ['device_unless'])
 
 
 if __name__ == '__main__':
