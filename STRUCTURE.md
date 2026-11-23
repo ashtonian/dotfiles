@@ -70,7 +70,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
 | `brew.apps` | desktop, work | darwin | Brewfile: 32 cask |
-| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 97 brew |
+| `brew.base` | base | darwin, linux | Brewfile: 6 tap, 97 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 10 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 18 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
