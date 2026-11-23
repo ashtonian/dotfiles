@@ -38,6 +38,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/rotate-log.sh"
 # shellcheck source=lib_sh/brew-root.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/brew-root.sh"
+# shellcheck source=lib_sh/machine-setting.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
 # shellcheck source=lib_sh/sync-lock.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/sync-lock.sh"
 
@@ -189,18 +191,6 @@ update_brew() {
         return "$status"
     fi
     log "Homebrew update complete"
-}
-
-# machine_setting VAR: a setting's value on this machine, as `dotfiles apply`
-# generated it, unless the environment already sets VAR. Read in a subshell, so
-# the other settings stay out of this run's environment.
-machine_setting() {
-    local generated="$HOME/.config/dotfiles/generated/env.sh"
-    (
-        # shellcheck source=/dev/null
-        if [[ -r "$generated" ]]; then . "$generated" >/dev/null 2>&1; fi
-        printf '%s' "${!1:-}"
-    )
 }
 
 # The Go release every machine builds with is pinned in the tracked mise

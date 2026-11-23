@@ -508,6 +508,10 @@ class Sync(Fixture):
     def setUp(self):
         super().setUp()
         (self.path / 'logs').mkdir()
+        # Never the developer's home: its machine.toml and overlays would
+        # decide what these runs publish.
+        (self.path / 'empty-home').mkdir()
+        self.env['HOME'] = str(self.path / 'empty-home')
 
     @unittest.skipUnless(Path('/usr/bin/lockf').exists(), 'macOS lockf required')
     def test_kernel_lock_blocks_concurrency_and_recovers_after_crash(self):
@@ -827,6 +831,46 @@ class SyncOverlays(SignedRepo):
         p = self.bash('sync_overlays')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(self.engine_calls(), [])
+
+
+class PrivateNames(SignedRepo):
+    """The public checkout names nothing an overlay's denylist.txt keeps private."""
+
+    def setUp(self):
+        super().setUp()
+        overlay = self.path / 'overlays/personal'
+        overlay.mkdir(parents=True)
+        (overlay / 'denylist.txt').write_text('# private repositories\nsecret-repo\n\nclient-org  # a client\n')
+        machine = Path(self.env['HOME']) / '.config/dotfiles/machine.toml'
+        machine.parent.mkdir(parents=True)
+        machine.write_text('overlays = ["personal"]\nprofiles = ["base"]\n')
+        self.cli('dotfiles', f'[ "$1" = overlays ] && echo {overlay} && echo {self.path / "overlays/unlisted"}\nexit 0')
+        self.env['DOTFILES_BIN'] = str(self.bin / 'dotfiles')
+
+    def check(self):
+        return subprocess.run([str(ROOT / 'bin/check-private-names'), str(self.repo)], env=self.env,
+                              capture_output=True, text=True, timeout=20)
+
+    def test_a_tracked_line_with_a_listed_name_fails(self):
+        self.assertEqual(self.check().returncode, 0, 'a clean tree passes')
+        (self.repo / 'tracked').write_text('see Client-Org/infra\nsecret-repository is fine\n')
+        p = self.check()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('tracked:1:see Client-Org/infra', p.stdout)
+        self.assertNotIn('secret-repository', p.stdout, 'names match whole words only')
+
+    def test_sync_publishes_nothing_that_names_one(self):
+        self.env['DOTFILES_DIR'] = str(self.repo)
+        (self.repo / 'logs').mkdir()
+        if not shutil.which('gitleaks'):
+            self.skipTest('gitleaks required by the publish scan')
+        self.edit('tracked')
+        (self.repo / 'tracked').write_text('moved to secret-repo\n')
+        age(self.repo / 'tracked', 120)
+        p = self.bash('sync_dotfiles')
+        self.assertNotEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('name what an overlay keeps private', p.stdout)
+        self.assertEqual(self.git('log', '-1', '--format=%s'), 'initial\n')
 
 
 MISE_PIN = 'features/tool.mise/home/.config/mise/conf.d/dotfiles.toml'
@@ -2686,6 +2730,7 @@ class DiskHygiene(Fixture):
         self.env.update(HOME=str(self.home), DISK_HYGIENE_TMP=str(self.tmp),
                         DISK_HYGIENE_VOLUMES=str(self.volumes), XDG_STATE_HOME=str(self.path / 'state'))
         self.env.pop('DISK_HYGIENE_KEEP', None)
+        self.env.pop('DISK_HYGIENE_KEYED', None)
 
     def tree(self, root, files=('data',), age=None):
         """A directory holding FILES; with AGE, every entry was last used that long ago."""
@@ -2727,8 +2772,11 @@ class DiskHygiene(Fixture):
         unused = self.tree(cache / 'oldtool', ('a', 'deep/b'), self.OLD)
         in_use = self.tree(cache / 'livetool', ('old',), self.OLD)
         (in_use / 'fresh').write_text('x')
-        old_key = self.tree(cache / 'jobcrm/pr1-sync', age=self.OLD)
-        new_key = self.tree(cache / 'jobcrm/pr2-sync')
+        old_key = self.tree(cache / 'repo-a/pr1-sync', age=self.OLD)
+        new_key = self.tree(cache / 'repo-a/pr2-sync')
+        generated = self.home / '.config/dotfiles/generated'
+        generated.mkdir(parents=True)
+        (generated / 'env.sh').write_text("export DISK_HYGIENE_KEYED='repo-a'\n")
         kept = self.tree(cache / 'models', age=self.OLD)
         target = self.tree(self.path / 'elsewhere', age=self.OLD)
         (cache / 'linked').symlink_to(target)
