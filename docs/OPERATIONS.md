@@ -8,14 +8,16 @@ relocate the installer or rewrite LaunchAgent templates.
 
 | Variable | Type | Default | Scope / effect |
 | ---------- | ------ | --------- | ---------------- |
-| `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, LaunchAgent installer, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
+| `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
-| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh` builds and runs the same path |
+| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh`, `bin/otel-agent` and `bin/agent-monitor` run the same path |
+| `DOTFILES_LAUNCHCTL` | File path | `/bin/launchctl` | The launchctl the engine runs to load and unload LaunchAgents; tests point it at a stand-in |
+| `XPC_SERVICE_NAME` | launchd label | set by launchd in a job's processes | The job a `dotfiles apply` runs in. apply never reloads or unloads that job, which would stop the run; a later apply outside it does ([LaunchAgents](#launchagents)) |
 | `DOTFILES_PROFILES` | Comma-separated names | unset | `install.sh`: the profiles to write, as `--profiles` does; without either it keeps an existing manifest or asks |
 | `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
-| `SYNC_CONNECTIVITY_URL` | URL | `https://github.com` | Sync's reachability check, a HEAD request before any network step; set it in the installed plist to probe another host |
+| `SYNC_CONNECTIVITY_URL` | URL | `https://github.com` | Sync's reachability check, a HEAD request before any network step; set it in the `dotfiles.sync` template's `EnvironmentVariables` to probe another host |
 | `SYNC_CONNECTIVITY_TIMEOUT` | Seconds | `15` | How long that HEAD request may take (connecting is capped at 5 s) before sync logs "No network connectivity" and skips the run |
-| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/applied.json` is what `dotfiles apply` installed and `dotfiles/apply.lock` serialises runs |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/applied.json` is what `dotfiles apply` installed, LaunchAgents included (`bin/disk-hygiene` reads their log paths from it), and `dotfiles/apply.lock` serialises runs |
 | `XDG_CONFIG_HOME` | Directory path | `~/.config` | Not followed: the engine, sync and the installer always use `~/.config` (the stubs and the shared git and ssh configs name it), with `~/.config/dotfiles/machine.toml` as this machine's manifest and `~/.config/dotfiles/generated/` for the generated outputs. `zshrc.zsh` loads its modules from its own directory. git reads `$XDG_CONFIG_HOME/git/config`, so `dotfiles doctor` reports a value other than `~/.config` |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
@@ -29,16 +31,15 @@ relocate the installer or rewrite LaunchAgent templates.
 | `GOTOOLCHAIN` | Go toolchain selection | `auto` | Run the Go on PATH (mise's pinned release, or a project's `.go-version`) unless the module's `go.mod`/`go.work` needs a newer one, which the `go` command downloads through `GOPROXY`, checked against `GOSUMDB`; `local` never switches. Setting `go.toolchain` (feature `tool.mise`), exported by the generated `env.sh` for every shell and agent; a value already in the environment wins |
 | `DOTFILES_MISE_CANARY` | LocalHostName | empty; the base profile sets `studio` | `dotfiles-update.sh`: the one machine whose weekly run moves the Go pin in `conf.d/dotfiles.toml` to its minor's newest patch and commits it. Setting `mise.canary` (feature `tool.mise`), exported by the generated `env.sh` |
 | `PLAYWRIGHT_BROWSERS_PATH` | Directory path | unset (Playwright's own default); the `studio` profile sets `/Volumes/E2TB/cache/ms-playwright` | Browser builds Playwright downloads. Setting `paths.playwright_browsers` (feature `shell.env`), exported by the generated `env.sh`; a value already in the environment wins |
-| `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the installed `com.ashtonian.go-cache-trim` plist |
-| `DISK_HYGIENE_SCRATCH_DAYS` | Whole days, at least 1 | `7` | `bin/disk-hygiene`: delete a Claude Code session's scratch once nothing in it was used this long; set in the installed `com.ashtonian.disk-hygiene` plist |
-| `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the plist |
+| `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the `tool.go-cache-trim` feature's template |
+| `DISK_HYGIENE_SCRATCH_DAYS` | Whole days, at least 1 | `7` | `bin/disk-hygiene`: delete a Claude Code session's scratch once nothing in it was used this long; set in the `macos.disk-hygiene` feature's template |
+| `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the template |
 | `DISK_HYGIENE_KEYED` | Space-separated names | `jobcrm estavelle` | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. Empty: none |
 | `DISK_HYGIENE_KEEP` | Space-separated names | empty | Cache directories `bin/disk-hygiene` never deletes, for a cache that is expensive to rebuild and used less often than the window |
-| `DISK_HYGIENE_LOG_MAX_BYTES` | Whole bytes, at least 1 | `1048576` | Each dotfiles LaunchAgent's stdout and stderr log is cut to its newest half once larger than this |
+| `DISK_HYGIENE_LOG_MAX_BYTES` | Whole bytes, at least 1 | `1048576` | Each LaunchAgent `dotfiles apply` installed has its stdout and stderr log cut to its newest half once larger than this |
 | `DISK_HYGIENE_TMP` | Directory path | `/private/tmp` | Where sessions started without `CLAUDE_CODE_TMPDIR` keep their scratch |
 | `DISK_HYGIENE_VOLUMES` | Directory path | `/Volumes` | Its directories are the drives whose `tmp`, `cache/xdg` and `.pnpm-store` `bin/disk-hygiene` prunes |
-| `DISK_HYGIENE_LAUNCH_AGENTS` | Directory path | `~/Library/LaunchAgents` | Where `bin/disk-hygiene` reads the installed plists of the agents in `launchagents/` for their log paths |
-| `GPG_AGENT_SUPERVISOR_SECONDS` | Whole seconds, at least 1 | `10` | `bin/gpg-agent-supervisor`: how often it checks that the running gpg-agent is the one it started in the GUI login, and replaces it if not; set in the installed `com.ashtonian.gpg-agent` plist |
+| `GPG_AGENT_SUPERVISOR_SECONDS` | Whole seconds, at least 1 | `10` | `bin/gpg-agent-supervisor`: how often it checks that the running gpg-agent is the one it started in the GUI login, and replaces it if not; set in the `tool.gpg-agent` feature's template |
 | `EDITOR` / `VISUAL` | Command | nvim if it is on the composed PATH, else vim / `$EDITOR` | Core editor defaults from `env.sh`, chosen after PATH is composed |
 | `PAGER` | Command | less | Core pager default |
 | `LANG` | Locale string | en_US.UTF-8 | Existing value is preserved |
@@ -62,15 +63,18 @@ The `dotfiles` engine's flags:
 | `--dry-run` | Boolean | `false` | `apply`: report what would change, change nothing (`doctor` always does this) |
 | `--lock-wait` | Duration | `1m` | `apply`, `adopt`: how long to wait for another run's `apply.lock` |
 | `--git-timeout` | Duration | `30s` | `apply`, `doctor`: how long `git ls-files` may take; apply needs the tracked-file list so unfolding never moves a tracked file |
+| `--launchctl-timeout` | Duration | `30s` | `apply`, `doctor`: how long one launchctl call may take; a bootstrap is tried five times, 0.25 s to 1 s apart |
+| `--launch-agents` | Boolean | `true` | `apply`: install, load and remove LaunchAgents. `false` leaves them, and their records, as they are; `install.sh` applies so before installing packages |
 | `--json` | Boolean | `false` | `status`: print JSON |
 
 OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
 agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), and the agent
 telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config).
-LaunchAgents do not read `~/.zshrc.local`. Set service overrides in an installed
-plist's `EnvironmentVariables` and reload it. Reinstallation replaces local plist
-edits with the checked-in template.
+LaunchAgents do not read `~/.zshrc.local`. Set a service's variables in its
+template's `EnvironmentVariables` (`features/<id>/launchagents/`); the next
+`dotfiles apply` writes the plist and reloads the job. apply never overwrites an
+installed plist edited by hand: it reports it every run and leaves it loaded.
 
 ## Git identity and signing
 
@@ -136,16 +140,67 @@ Running `gh auth login` again issues a token with only the defaults.
 
 ## LaunchAgents
 
-Use these options with `~/.dotfiles/bin/dotfiles-install-launchagents.sh`:
+`dotfiles apply` installs, loads, reloads and removes this repository's
+LaunchAgents. Each is a template in the feature that declares it
+(`[[provides.launch_agent]]`, see
+[MACHINE-FEATURES.md](MACHINE-FEATURES.md#launchagents)); apply replaces `$HOME`
+in it, writes `~/Library/LaunchAgents/<label>.plist`, creates the directories of
+its `StandardOutPath` and `StandardErrorPath` under `$HOME` (launchd does not),
+and bootstraps it into `gui/<uid>`. Every sync runs apply, so a pulled template
+change reaches each Mac within one sync, and a Mac gets every agent its
+profiles enable without running an installer.
 
-| Option | Behavior |
-| -------- | ---------- |
-| No options | Install/reload all eligible agents; sync starts at load |
-| `--sync-only` / `--update-only` / `--go-cache-trim-only` / `--disk-hygiene-only` | Install/reload one scheduled job |
-| `--codex-only` / `--opencode-only` / `--agent-monitor-only` / `--agent-monitor-gate-only` / `--otel-agent-only` / `--gpg-agent-only` | Install/reload one service if prerequisites exist |
-| `--status` | Show installed/loaded/running state and recent logs |
-| `--uninstall` | Unload and remove all ten installed agent plists |
-| `--help` | Show supported options |
+| Label | Feature (profile) | Runs | Installed once these exist |
+| ----- | ----------------- | ---- | -------------------------- |
+| `com.dotfiles.sync` | `dotfiles.sync` (base) | Every 4 hours and at load | |
+| `com.dotfiles.update` | `dotfiles.update` (base) | Fridays 09:00, or at wake | |
+| `com.ashtonian.disk-hygiene` | `macos.disk-hygiene` (base) | Daily 04:15, or at wake | |
+| `com.ashtonian.go-cache-trim` | `tool.go-cache-trim` (base) | Hourly and at load | `/opt/homebrew/bin/go` |
+| `com.ashtonian.gpg-agent` | `tool.gpg-agent` (base) | Service, GUI login only | `/opt/homebrew/bin/gpgconf` |
+| `com.ashtonian.codex-remote-control` | `agents.codex` (dev) | Service | `/opt/homebrew/bin/codex` |
+| `com.ashtonian.agent-monitor` | `agents.agent-monitor` (dev) | Service, while the data link resolves | `agent-monitor install`'s release |
+| `com.ashtonian.agent-monitor-gate` | `agents.agent-monitor` (dev) | Service | `agent-monitor lan enable`'s token |
+| `com.ashtonian.opencode` | `agents.opencode` (desktop) | Service | opencode, and its `server-password` ([setup](../features/agents.opencode/README.md)) |
+| `com.ashtonian.otel-agent` | `agents.otel-agent` (desktop) | Service, while enrolled | `otel-agent enroll`'s endpoint, token and host |
+
+On each run, for each agent its features declare:
+
+- **Waiting for a path.** Until every `when_exists` path exists, apply leaves the
+  agent out, and unloads and removes one it installed before. `dotfiles doctor`
+  lists it: `waiting <label>: installs once <path> exists`.
+- **Not loaded.** apply loads it. An agent booted out by hand is loaded again at
+  the next apply: to stop one, turn its feature off (below).
+- **Template changed.** apply writes the new plist and reloads the job, which
+  restarts a service. A change to comments or layout only (no key or value
+  changed) rewrites the file without a reload. Two reloads wait for a later apply, and `dotfiles doctor`
+  lists both: the job the run executes in (`XPC_SERVICE_NAME`), so a change to
+  the sync job's own plist takes effect at the weekly update's sync or at a
+  `dotfiles apply` from a terminal; and a scheduled job in the middle of a run,
+  which reloads once the run ends. Neither is a problem.
+- **Feature off.** apply unloads and removes the agent; a scheduled job in the
+  middle of a run finishes first.
+- **Edited by hand.** An installed plist that differs from what apply last
+  wrote is a problem: apply leaves it in place and loaded, and reports it on
+  every run until the change moves into the template or the file is deleted.
+
+The retired `bin/dotfiles-install-launchagents.sh` wrote the same paths. The
+first apply on a Mac it set up takes its plists over: one defining the
+template's job is recorded as loaded (rewritten if its comments differ), one
+that differs in a key or value is rewritten and reloaded, and
+one whose feature is off here, or whose `when_exists` path is missing, is
+unloaded and removed. `applied.json` keeps, per label, the plist's path, the hash
+apply wrote and a fingerprint of the job launchd last loaded, so its size is bounded by the
+agents the features declare.
+
+macOS asks once for some of these jobs; answer on the Mac's screen:
+
+| Agent | Prompt or grant |
+| ----- | --------------- |
+| `com.dotfiles.sync`, `com.dotfiles.update`, `com.ashtonian.disk-hygiene` | Allow `bash` to access files on a removable volume (Go caches on a drive, the drives' `tmp` and `cache/xdg`) |
+| `com.ashtonian.codex-remote-control` | Full Disk Access for `~/.local/libexec/codex-stable/bin/codex` ([Codex service](#codex-service)) |
+| `com.ashtonian.opencode` | Full Disk Access for `~/.local/libexec/opencode-stable/bin/opencode` |
+| `com.ashtonian.agent-monitor` | Allow node to access the data volume; the gate: allow node to accept incoming connections |
+| `com.ashtonian.otel-agent` | Allow `otelcol-contrib` to find devices on the local network, once per release |
 
 `com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour. Go
 trims its build cache only of entries unused for five days. The agent
@@ -201,10 +256,11 @@ entry in the window; the internal disk and the external drives record access
 times, so a cache that is only read stays. A directory holding a socket stays,
 and so does one the job cannot read all of.
 
-It also cuts each dotfiles LaunchAgent's stdout and stderr log (the paths in its
-installed plist) to the newest half once over `DISK_HYGIENE_LOG_MAX_BYTES`
-(1 MiB). launchd holds those files open for appending, so the cut rewrites the
-file in place; moving it aside would leave the agent writing to the moved file.
+It also cuts the stdout and stderr log of each LaunchAgent `dotfiles apply`
+installed (the agents in `applied.json`, at the paths in their installed
+plists) to the newest half once over `DISK_HYGIENE_LOG_MAX_BYTES` (1 MiB).
+launchd holds those files open for appending, so the cut rewrites the file in
+place; moving it aside would leave the agent writing to the moved file.
 
 Each run logs what it removed and a total line to
 `~/Library/Logs/disk-hygiene/disk-hygiene.log`; `bin/disk-hygiene --dry-run`
@@ -212,8 +268,9 @@ reports what a run would remove. A run that could not remove something exits 1
 and logs `could not remove`: usually a file another user owns, or a drive that
 dropped mid-run; `launchctl print "gui/$(id -u)/com.ashtonian.disk-hygiene"`
 shows the last exit code. If a tool rebuilds a large cache every few weeks,
-add its directory name to `DISK_HYGIENE_KEEP` in the installed plist and
-reinstall with `--disk-hygiene-only`. macOS asks once for bash to read
+add its directory name to `DISK_HYGIENE_KEEP` in the template
+(`features/macos.disk-hygiene/launchagents/`); the next apply reloads the job.
+macOS asks once for bash to read
 removable volumes; until that is allowed, the drives' entries are skipped.
 
 A `claudemore` or `claudemax` session started in a directory on a drive under
@@ -225,24 +282,19 @@ it restarts. Tools that ignore `XDG_CACHE_HOME` on macOS, such as Go's
 `os.UserCacheDir` users (gopls, goimports, golangci-lint), keep using
 `~/Library/Caches`.
 
-Source templates live in launchagents/; installed copies live in
-`~/Library/LaunchAgents/`. Pause a scheduled job without deleting its plist:
+Turn an agent off on one Mac by disabling its feature in
+`~/.config/dotfiles/machine.toml`, then apply; remove the line to turn it back on
+(the sync job's RunAtLoad starts a sync as it loads):
 
-```sh
-launchctl bootout "gui/$(id -u)/com.dotfiles.sync"
+```toml
+[features]
+disable = ["dotfiles.sync"]
 ```
 
-Resume it when ready (RunAtLoad starts a sync immediately):
+Inspect or trigger a loaded job:
 
 ```sh
-launchctl bootstrap "gui/$(id -u)" \
-  "$HOME/Library/LaunchAgents/com.dotfiles.sync.plist"
-```
-
-Inspect or trigger a loaded scheduled job:
-
-```sh
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --status
+dotfiles doctor                                   # pending changes and waiting agents
 launchctl print "gui/$(id -u)/com.dotfiles.sync"
 launchctl kickstart "gui/$(id -u)/com.dotfiles.sync"
 tail -50 ~/.dotfiles/logs/sync.log
@@ -279,8 +331,8 @@ launchctl kickstart -k "gui/$(id -u)/com.ashtonian.codex-remote-control"
 ```
 
 For Too many open files errors, inspect the loaded job's maxfiles value. The
-template sets a soft limit of 65,536. Apply plist changes with `--codex-only`;
-`kickstart -k` alone keeps the previously loaded settings. If sessions repeatedly
+template sets a soft limit of 65,536. `dotfiles apply` reloads the job when the
+template changes; `kickstart -k` alone keeps the previously loaded settings. If sessions repeatedly
 drop, inspect the log and `launchctl list` for duplicate jobs before removing a
 specific stale job. OpenCode has separate [operations instructions](../features/agents.opencode/README.md#operations),
 and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
@@ -303,8 +355,8 @@ socket and replaces any other agent. An agent started elsewhere can therefore
 fail signatures for at most that long. Each replacement drops the agent's
 cached passphrases; pinentry-mac reads them back from the keychain on the next
 signature, or asks on the Mac's screen if the passphrase was never saved.
-Reinstalling the LaunchAgent replaces the agent the same way. Stopping the
-supervisor leaves its agent running.
+Reloading the LaunchAgent (apply does when its template changes) replaces the
+agent the same way. Stopping the supervisor leaves its agent running.
 
 The LaunchAgent runs only while someone is logged in at the Mac's screen.
 After a restart, log in there (unlocking FileVault does) before signing from
@@ -395,11 +447,10 @@ ssh -G github.com >/dev/null && echo ssh ok
 zsh -lic 'echo shell ok'
 ```
 
-Reinstall the sync and update agents once
-(`~/.dotfiles/bin/dotfiles-install-launchagents.sh --sync-only`, then
-`--update-only`): an installed plist is a copy, and plists from before the
-rollout run `bash -l`, whose `path_helper` puts Apple's bash 3.2 and git ahead
-of Homebrew's. Where Go's caches are on an external volume (`go env GOCACHE`),
+The first `dotfiles apply` takes over the sync and update agents' plists and
+reloads any that differ from the templates ([LaunchAgents](#launchagents)):
+plists from before the rollout run `bash -l`, whose `path_helper` puts Apple's
+bash 3.2 and git ahead of Homebrew's. Where Go's caches are on an external volume (`go env GOCACHE`),
 the first run asks whether `bash` may access files on a removable volume: the
 job runs Homebrew's bash, and macOS holds it responsible for every step. Allow
 it on the machine's screen (System Settings > Privacy & Security > Files and
@@ -418,14 +469,14 @@ state files, disable signing, or force-push to clear a failure.
 | Detached HEAD / missing tracking branch | Check out the intended branch and set its same-named origin upstream after fetching. |
 | Gitleaks fails | Fix staged content or the outgoing commit. Rotate/revoke an exposed secret; deleting the current file does not remove Git history. |
 | Signing fails | Check effective Git config, key availability, GPG/pinentry, and background unlock behavior. Diagnose with a deliberate signed commit interactively; never disable signing. |
-| `gpg: signing failed: No pinentry` | The gpg-agent that answered runs outside the GUI login, where pinentry-mac cannot reach the keychain or show a dialog. Check `launchctl print "gui/$(id -u)/com.ashtonian.gpg-agent"`: not found means install it (`dotfiles-install-launchagents.sh --gpg-agent-only`); running means the supervisor replaces that agent within `GPG_AGENT_SUPERVISOR_SECONDS`, so retry. If nobody is logged in at the Mac's screen, log in there. If pinentry-mac asks on every signature, tick "Save in Keychain" in its dialog ([GPG agent](#gpg-agent)). |
+| `gpg: signing failed: No pinentry` | The gpg-agent that answered runs outside the GUI login, where pinentry-mac cannot reach the keychain or show a dialog. Check `launchctl print "gui/$(id -u)/com.ashtonian.gpg-agent"`: not found means `dotfiles doctor` shows why apply has not loaded it (gnupg missing, or the `tool.gpg-agent` feature off); running means the supervisor replaces that agent within `GPG_AGENT_SUPERVISOR_SECONDS`, so retry. If nobody is logged in at the Mac's screen, log in there. If pinentry-mac asks on every signature, tick "Save in Keychain" in its dialog ([GPG agent](#gpg-agent)). |
 | GitHub reports bad_email | Correct the affected commit to a signing-key email verified on GitHub. Keep a backup ref before any authorized history repair. |
 | GitHub verification fails after push | Publication already occurred. Inspect the reason and GitHub status; repair only affected commits within authorized history scope. |
 | Merge conflict | Automation aborts the merge. Resolve and sign the integration deliberately. Dotfiles has no conflict preference; auxiliary repos use local-preferred conflicting hunks (`-X ours`). |
 | Push rejected | Check permissions and remote changes. Sync tries at most three times with fetch and signed merge; it never force-pushes. |
 | Excluded tracked changes remain | Review tracked `*.local`, `.env*` or `*.secret*` paths in any directory. Sync skips merge/push while excluded tracked changes remain. |
 | Sync leaves a repository alone | The log says why: a Git index lock (another Git command is running, or one crashed and left `.git/index.lock`; check `ps` before removing it), or a tracked edit newer than `SYNC_QUIET_MINUTES`. The next run picks it up. |
-| `No network connectivity (... did not answer within ...s), skipping sync` | The HEAD request to `SYNC_CONNECTIVITY_URL` failed. Check `curl -sfI https://github.com` from a terminal; if it answers only slowly, raise `SYNC_CONNECTIVITY_TIMEOUT` in the installed plist. The next run retries. |
+| `No network connectivity (... did not answer within ...s), skipping sync` | The HEAD request to `SYNC_CONNECTIVITY_URL` failed. Check `curl -sfI https://github.com` from a terminal; if it answers only slowly, raise `SYNC_CONNECTIVITY_TIMEOUT` in the `dotfiles.sync` template. The next run retries. |
 | Sync never finishes; `ps` shows a Go command at 0% CPU under it | macOS is waiting for an answer to "bash would like to access files on a removable volume" because Go's caches are on an external drive. Answer it on the machine's screen, or allow `bash` under System Settings > Privacy & Security > Files and Folders. `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' \| grep AUTHREQ_PROMPTING` names the binary it is waiting on; after a `brew upgrade bash` it is the new build. |
 | New files are not published | By design: sync stages tracked files only (`git add -u`). Commit new files yourself. |
 | `installs machine features and this machine has no .../machine.toml` | Upstream uses the feature engine and this machine has no manifest, so sync neither merges nor pushes (merging would leave the old stow links pointing at moved files). Write `~/.config/dotfiles/machine.toml` with this machine's profiles from the list in the message, such as `profiles = ["base", "dev", "desktop"]`, then run `sync.sh`: the same run merges and applies. |
@@ -437,13 +488,18 @@ state files, disable signing, or force-push to clear a failure.
 | Theme repo cannot push | Installer theme clones point at upstream projects. Use an owned fork as origin before publishing local changes. All immediate Git repos under `SYNC_DIR` participate. |
 | Package install fails | Run the check below. Check App Store sign-in and tapped/private package access; sync does not upgrade existing packages. |
 | `Refusing to load formula ... from untrusted tap` | Homebrew loads third-party tap items only once trusted. The generated Brewfile trusts every `brew` or `cask` a feature names in full (`user/repo/name`); an item listed by its short name cannot be trusted that way, so name it in full in its feature. Trusted entries are in `~/.homebrew/trust.json` (`brew trust --json=v1` lists them). |
-| `Installing <cask> has failed!` with `sudo: a password is required` | The cask runs a `.pkg` installer, which needs root, and the LaunchAgent has no terminal to ask for a password. Install it once from a terminal (`brew install --cask <cask>`); later syncs find it installed. |
+| `WARN: Left cask <name>, mas <app> (<id>) for a terminal` | Expected under the LaunchAgent, which has no terminal for sudo to ask a password in: a cask whose install runs a `.pkg`, a keyboard layout or a `sudo` installer step, and every App Store app (mas 7 installs as root), wait instead of failing the run, and sync still exits 0. Run the command the line ends with from a terminal (`brew bundle install --file=...`); later syncs find them installed. A run with passwordless sudo, or from a terminal, installs them itself. |
+| `Installing <cask> has failed!` with `sudo is disabled by HOMEBREW_NO_SUDO` | The cask needs root for a step the pkg/installer check above does not see. Install it from a terminal (`brew install --cask <cask>`). |
+| `Could not tell which of Brewfile's missing casks need root` | `brew info --json=v2 --cask` failed for a missing cask, usually one renamed or removed upstream; the lines above name it. Fix the feature's entry. Root-needing casks then fail with `HOMEBREW_NO_SUDO` instead of waiting, and sync reports an error until then. |
 | `Could not symlink ...` / `is a symlink belonging to <formula>` | Another installed formula owns the same files, usually the one a feature's entry replaced (`tldr` for `tlrc`). `brew uninstall <old formula>`, then `brew link <new formula>`. |
 | `mise could not install every tool` | Sync installs what `conf.d/dotfiles.toml` and `~/.config/mise/config.toml` name after the Brewfile. Run `mise -C ~ install` from a terminal for the full error: usually no network, or a pin (such as a Go release) that does not exist. The next sync retries. |
 | `go: downloading go1.X.Y` in a build | A module's `go.mod` or `go.work` needs a newer Go than the pin, and `GOTOOLCHAIN=auto` fetched it (once per release, into the module cache). Expected for a module ahead of the fleet; to run it everywhere, raise the pin's minor. With `GOTOOLCHAIN=local` the same module fails with `requires go >= ...`. |
 | `go version` is not the pin in a checkout | `mise ls go` names the file that selected it: a `.go-version` or `mise.toml` there pins its own, or the module needs a newer Go (row above). A session started before an update keeps the `GOTOOLCHAIN` it inherited until it restarts. |
 | `The Go pin moves on the canary machine only` | Expected everywhere but the canary (`mise.canary`). On the canary, the update log names why a newer patch was left: the checkout is off its tracking branch, `conf.d/dotfiles.toml` has uncommitted edits, or the release would not install or run. Fix that and run `dotfiles-update.sh --go`. |
-| Update stops early | Read `logs/update.log`. Homebrew update, cleanup, doctor, the Go pin, Zinit updates, and sync must succeed in sequence; `brew doctor` failures stop later actions. A failed `brew upgrade` (one cask that needs a password or a newer Xcode) still lets cleanup and doctor run, then fails the Homebrew step with the upgrade's exit code and `brew upgrade failed` in the log. Run one step alone with `dotfiles-update.sh --brew`, `--go`, `--zinit` or `--sync`. |
+| `Full update finished; failed stages: ...` | Every stage (Homebrew, the Go pin, Zinit, sync) runs whatever the others did; the run exits 1 when any failed, and `logs/update.log` has each one's `ERROR:` lines. Within Homebrew, update, the formula and cask upgrades, and cleanup each run regardless. Rerun one stage with `dotfiles-update.sh --brew`, `--go`, `--zinit` or `--sync`. |
+| `brew upgrade --formula failed for <name>` | When one run of `brew upgrade` fails, each item still outdated is retried alone, so the others upgrade. The item's own output is above the line: `Your Xcode (...) is too outdated` means a formula that builds from source needs a newer Xcode or Command Line Tools (update Xcode from the App Store, or `sudo rm -rf /Library/Developer/CommandLineTools && sudo xcode-select --install`); anything else is the item's own error. |
+| `WARN: Left <casks> for a terminal: upgrading them needs root` | Run unattended, upgrades run with `HOMEBREW_NO_SUDO`; an item that fails on it or on a permission error (an app installed root-owned) waits. Run the command the line names from a terminal. Not a failure. |
+| `WARN: brew doctor reported problems` | Advisory: `brew doctor` exits 1 for any warning. Read its output above the line and fix what matters by hand (an outdated Xcode, deprecated casks); it never fails the update. |
 
 ```sh
 HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
@@ -471,6 +527,11 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |
 | `another dotfiles apply holds ...apply.lock` | Another run is in progress (sync, or a manual run). Wait, or raise `--lock-wait`. The lock is released when that process exits; never delete the file by hand. |
 | `state ... has version N` | The state file is from a different engine build. Rebuild `dotfiles` from the current checkout. |
+| `waiting <label>: installs once <path> exists` (doctor) | Expected until the agent's setup step runs: install the package, or run the step the [LaunchAgents table](#launchagents) names. The next apply installs and loads it. |
+| `waiting <label>: reloads ...` or `unloads ...` (doctor) | Expected: the job is running, so apply left the reload or removal for a later run. If it stays for days, `launchctl print "gui/$(id -u)/<label>"` shows whether a run is stuck. |
+| `<label>.plist: edited here since dotfiles last wrote it` | Someone changed the installed plist; launchd keeps running that version. Move the change into the template in `features/<id>/launchagents/` (every Mac gets it), or delete the installed file; the next apply writes the template and reloads the job. |
+| `launchctl bootstrap gui/<uid> ...: ... Input/output error` | launchd refused the plist five times. `plutil -lint <plist>` checks it; a job that needs the GUI login (`LimitLoadToSessionType Aqua`, gpg-agent) loads only while someone is logged in at the screen. The next apply retries. |
+| `launchctl ...: signal: killed` | launchctl took longer than `--launchctl-timeout`; the next apply retries. Raise the timeout only if `time launchctl print "gui/$(id -u)"` by hand takes longer than it. |
 
 ## Shell troubleshooting
 

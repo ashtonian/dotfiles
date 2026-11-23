@@ -3,7 +3,7 @@
 <!--
   The OpenCode server: web UI and API for the coordinator agent, which `oc` and
   browsers attach to. Runs through bin/opencode-server (see features/agents.opencode/README.md).
-  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+  dotfiles apply installs it for the agents.opencode feature, with $HOME replaced.
 -->
 <plist version="1.0">
 <dict>

@@ -1,7 +1,8 @@
 // Package apply converges a machine on a plan: it makes the planned links,
-// managed copies, generated outputs and stubs, and removes what an earlier
-// run installed for features that are no longer enabled. It never overwrites
-// a file it did not create.
+// managed copies, generated outputs, stubs and LaunchAgents, and removes what
+// an earlier run installed for features that are no longer enabled. It never
+// overwrites a file it did not create, except a LaunchAgent plist at a label a
+// feature declares, which the retired LaunchAgent installer wrote.
 package apply
 
 import (
@@ -12,11 +13,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
 
@@ -33,11 +36,33 @@ type Env struct {
 	// untracked files a tool wrote, or that an older sync linked one by one;
 	// apply moves each one that $HOME still links to home. Empty for none.
 	StowTree string
+	// Launchd is the user's launchd GUI domain. Required when the plan or the
+	// previous state has LaunchAgents.
+	Launchd Launchd
+	// Job is the label of the launchd job this run executes in
+	// ($XPC_SERVICE_NAME), or empty. apply never unloads that job, which
+	// would kill the run: it writes the new plist and leaves the reload to a
+	// run outside the job.
+	Job string
+	// LeaveLaunchAgents skips LaunchAgents entirely: none is installed,
+	// loaded or removed, and their records carry over. The installer applies
+	// this way before it installs packages, so a job that runs at load does
+	// not start in the middle of the install.
+	LeaveLaunchAgents bool
+}
+
+// Launchd loads and unloads jobs in the user's launchd GUI domain.
+type Launchd interface {
+	State(ctx context.Context, label string) (launchd.State, error)
+	// Load bootstraps the plist at path; launchd starts the job if its plist says to.
+	Load(ctx context.Context, path string) error
+	// Unload boots the job out, stopping it if it runs.
+	Unload(ctx context.Context, label string) error
 }
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, adopt
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, adopt, agent, update-agent, load, reload, unload, remove-agent
 	Path   string
 	Detail string
 }
@@ -48,10 +73,18 @@ type Problem struct {
 	Detail string
 }
 
+// Waiting is a LaunchAgent change apply leaves for a later run: an install
+// until a path it needs exists, or a reload or removal that would stop the
+// job in the middle of a run.
+type Waiting struct {
+	Label, Reason string
+}
+
 // Report lists what a run did and what it left alone.
 type Report struct {
 	Actions  []Action
 	Problems []Problem
+	Waiting  []Waiting
 }
 
 type runner struct {
@@ -66,6 +99,9 @@ type runner struct {
 	// repository; unfolding leaves them in place even before they are tracked.
 	sources  map[string]bool
 	unfolded map[string]bool // folded directories handled this run
+	// unrecorded maps the labels of LaunchAgents to remove that apply has no
+	// record of installing to their plists: the retired installer's.
+	unrecorded map[string]string
 }
 
 // Run converges the machine on p. prev is the state the last run saved; the
@@ -76,8 +112,16 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 	if env.Tracked == nil {
 		return nil, nil, errors.New("apply: Env.Tracked is required")
 	}
+	if env.Launchd == nil && !env.LeaveLaunchAgents && (len(p.LaunchAgents) > 0 || len(p.OffAgents) > 0 || len(prev.Agents) > 0) {
+		return nil, nil, errors.New("apply: LaunchAgents need Env.Launchd, and launchd runs only on macOS")
+	}
 	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun,
-		sources: map[string]bool{}, unfolded: map[string]bool{}}
+		sources: map[string]bool{}, unfolded: map[string]bool{}, unrecorded: map[string]string{}}
+	for label, target := range p.OffAgents {
+		if _, recorded := prev.Agents[label]; !recorded {
+			r.unrecorded[label] = target
+		}
+	}
 	r.repos = []string{filepath.Clean(env.RepoRoot)}
 	if resolved, err := filepath.EvalSymlinks(env.RepoRoot); err == nil && resolved != r.repos[0] {
 		r.repos = append(r.repos, resolved)
@@ -93,6 +137,11 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 		}
 	}
 
+	agents, teardownAgents := func() error { return eachItem(r, p.LaunchAgents, r.launchAgent) }, r.teardownAgents
+	if env.LeaveLaunchAgents {
+		maps.Copy(r.next.Agents, prev.Agents)
+		agents, teardownAgents = func() error { return nil }, func() error { return nil }
+	}
 	steps := []func() error{
 		func() error { return eachItem(r, p.Generated, r.generated) },
 		func() error { return eachItem(r, p.Links, r.link) },
@@ -100,7 +149,9 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 		func() error { return eachItem(r, p.Stubs, r.stub) },
 		func() error { return eachItem(r, p.Retire, r.retire) },
 		r.rescueStowTree,
+		agents,
 		func() error { return r.teardown(p) },
+		teardownAgents,
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {

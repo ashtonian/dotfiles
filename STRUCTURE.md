@@ -8,20 +8,20 @@ This file maps the checked-in implementation.
 
 ```text
 ~/.dotfiles/
-├── install.sh               # Bootstrap: Go, engine build, machine manifest, apply, packages
+├── install.sh               # Bootstrap: Go, engine build, machine manifest, apply, packages, LaunchAgents
 ├── config.sh                # Optional system/app preferences
 ├── sync.sh                  # Signed Git publication, engine build and apply, packages
 ├── go.mod                   # The feature engine's Go module
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
-├── internal/plan/           # Links, managed copies, generated outputs and stubs to install
-├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, state, teardown, locking
-├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig
+├── internal/plan/           # Links, managed copies, generated outputs, stubs and LaunchAgents to install
+├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, state, teardown, locking
+├── internal/launchd/        # LaunchAgent plist reading; launchctl print, bootstrap and bootout in gui/<uid>
+├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig, launchagents/
 ├── profiles/                # Named feature sets: base, dev, desktop, server, work, studio
 ├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
 ├── bin/                     # Executable entry points
-├── launchagents/            # Templates copied to ~/Library/LaunchAgents
 ├── lib_sh/                  # Libraries sourced by Zsh or config.sh
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
@@ -51,14 +51,17 @@ sourced by the modular Zsh configuration.
 Each directory under `features/` is one feature; `home/` mirrors `$HOME`, and
 `apply` links every file under a `link` entry on its own. `retire` lists where
 the old stow package linked a file, so `apply` removes the link on a machine
-where the feature is off.
+where the feature is off. A `launch_agent` is a plist template under the
+feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 
 | Feature | Profiles | Platforms | Installs |
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp` |
+| `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
 | `agents.claude` | dev | all | `~/.claude/CLAUDE.md` |
-| `agents.opencode` | desktop | all | `~/.config/opencode` |
-| `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
+| `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask) |
+| `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup) |
+| `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`) |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
@@ -71,8 +74,11 @@ where the feature is off.
 | `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 15 mas |
 | `brew.mas.personal` | desktop | darwin | Brewfile: 6 mas |
 | `brew.vscode` | dev | darwin | Brewfile: 66 vscode |
+| `dotfiles.sync` | base | darwin | LaunchAgent `com.dotfiles.sync` |
+| `dotfiles.update` | base | darwin | LaunchAgent `com.dotfiles.update` |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
+| `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene` |
 | `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
@@ -80,6 +86,8 @@ where the feature is off.
 | `tool.atuin` | base | all | `~/.config/atuin` |
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
+| `tool.go-cache-trim` | base | darwin | LaunchAgent `com.ashtonian.go-cache-trim` (with Homebrew's go) |
+| `tool.gpg-agent` | base | darwin | LaunchAgent `com.ashtonian.gpg-agent` (with Homebrew's gnupg) |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
@@ -129,6 +137,8 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [iterm2.sh](lib_sh/iterm2.sh) | Terminal titles, badges, Claude/iTerm helpers |
 | [opencode.sh](lib_sh/opencode.sh) | `oc` attaches in $PWD; `ocweb` opens the UI and copies its password |
 | [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
+| [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`, `bin/agent-monitor`) |
+| [brew-root.sh](lib_sh/brew-root.sh) | `brew_root_available`, `brew_casks_needing_root`: which Homebrew steps a run without a terminal must leave for one (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
 
@@ -158,8 +168,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | Script | Responsibility |
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
-| [bin/dotfiles-install-launchagents.sh](bin/dotfiles-install-launchagents.sh) | Copy templates, substitute $HOME, load/unload jobs, show status |
-| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Update Homebrew (cleanup runs even when an upgrade fails), install mise's missing tools, update Zinit, invoke full sync |
+| [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync |
 | [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in and Codex system config that run agent commands in bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-daemon](bin/codex-daemon) | Forward Codex arguments to `stable-exec codex` |
@@ -189,9 +198,11 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |
 
-Templates are copied, not linked. Reinstall the affected agent to apply a
-template change; restarting a loaded job keeps its loaded plist settings.
-Reloading always-on services interrupts attached sessions.
+Templates are rendered copies, not links. `dotfiles apply` (every sync) writes a
+changed template and reloads the job, except the job it runs in and a scheduled
+job mid-run, which a later apply reloads; restarting a loaded job by hand keeps
+its loaded plist settings. Reloading always-on services interrupts attached
+sessions.
 
 Sync holds `logs/sync.flock` using macOS lockf, runs `dotfiles apply` right after
 the dotfiles merge (refusing to merge an engine layout this machine cannot

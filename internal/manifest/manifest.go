@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -80,6 +81,26 @@ type Provides struct {
 	Link      []string        `toml:"link"`       // files under home/, linked one by one
 	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
 	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
+	// LaunchAgent lists launchd jobs for the user's GUI session. They are
+	// installed on macOS only; elsewhere the rest of the feature applies.
+	LaunchAgent []LaunchAgent `toml:"launch_agent"`
+}
+
+// LaunchAgent is a launchd job that apply installs into ~/Library/LaunchAgents
+// and loads. Its plist is a template: every $HOME in it becomes the home
+// directory. The template is named <Label>.plist, and so is the installed file.
+type LaunchAgent struct {
+	Plist string `toml:"plist"` // relative to the feature's directory
+	// WhenExists lists paths, absolute or starting with ~/, that must all
+	// exist before the agent is installed: the program it runs, or a file a
+	// person creates during setup. Until then apply leaves the agent out, and
+	// removes it if it had installed it.
+	WhenExists []string `toml:"when_exists"`
+}
+
+// Label is the launchd label the template's file name declares.
+func (a LaunchAgent) Label() string {
+	return strings.TrimSuffix(path.Base(a.Plist), ".plist")
 }
 
 // MasApp is a Mac App Store app.
@@ -149,6 +170,7 @@ func LoadFeatures(root string) (map[string]*Feature, error) {
 	}
 	features := make(map[string]*Feature, len(paths))
 	settingOwner := map[string]string{}
+	agentOwner := map[string]string{}
 	for _, path := range paths {
 		var f Feature
 		if err := decodeStrict(path, &f, settingDefault); err != nil {
@@ -163,6 +185,12 @@ func LoadFeatures(root string) (map[string]*Feature, error) {
 				return nil, fmt.Errorf("%w: setting %q is declared by both %s and %s", ErrInvalid, name, owner, f.ID)
 			}
 			settingOwner[name] = f.ID
+		}
+		for _, a := range f.Provides.LaunchAgent {
+			if owner, taken := agentOwner[a.Label()]; taken {
+				return nil, fmt.Errorf("%w: LaunchAgent %s is declared by both %s and %s", ErrInvalid, a.Label(), owner, f.ID)
+			}
+			agentOwner[a.Label()] = f.ID
 		}
 		features[f.ID] = &f
 	}
@@ -296,6 +324,19 @@ func validateFeature(f *Feature, dirName string) error {
 	for _, p := range f.Retire {
 		if err := checkRelative(p); err != nil {
 			return err
+		}
+	}
+	for _, a := range f.Provides.LaunchAgent {
+		if err := checkRelative(a.Plist); err != nil {
+			return err
+		}
+		if !strings.HasSuffix(a.Plist, ".plist") {
+			return fmt.Errorf("launch_agent %q must be a .plist file named for its Label", a.Plist)
+		}
+		for _, w := range a.WhenExists {
+			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
+				return fmt.Errorf("launch_agent %s: when_exists %q must be absolute or start with ~/", a.Plist, w)
+			}
 		}
 	}
 	for _, list := range [][]string{f.Provides.Tap, f.Provides.Brew, f.Provides.Cask, f.Provides.Flatpak, f.Provides.Vscode, f.Provides.Go} {

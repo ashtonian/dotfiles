@@ -4,7 +4,7 @@
   Every hour, deletes Go build cache entries no build has used for 24
   hours (bin/go-cache-trim). Go's own trim waits five days, which the shared
   agent cache would outgrow. Set GO_CACHE_TRIM_HOURS below to change the window.
-  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+  dotfiles apply installs it for the tool.go-cache-trim feature, with $HOME replaced.
 -->
 <plist version="1.0">
 <dict>

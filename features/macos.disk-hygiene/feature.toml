@@ -1,0 +1,7 @@
+id = "macos.disk-hygiene"
+description = "Daily: deletes stale agent scratch and caches, prunes pnpm stores, caps the LaunchAgents' logs (bin/disk-hygiene)"
+category = "macos"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.disk-hygiene.plist"

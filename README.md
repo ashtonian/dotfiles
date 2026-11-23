@@ -26,8 +26,9 @@ Pick the [profiles](#profiles-and-machines) this machine runs; without
 `desktop` is a broad personal app collection, including paid apps. The
 installer requests sudo, offers passwordless sudo, installs Go, builds the
 `dotfiles` engine, writes `~/.config/dotfiles/machine.toml`, applies the
-enabled features, installs their packages, and loads LaunchAgents. The sync
-agent runs immediately at load. Apply problems and package failures are
+enabled features, installs their packages, then applies again to load the
+features' LaunchAgents, so the sync job (which runs at load) starts after the
+packages are in. Apply problems and package failures are
 warnings, so inspect the output before relying on the completion message.
 
 The final prompt offers `config.sh`, which applies broad system/app preferences,
@@ -47,6 +48,7 @@ recognize `/usr/local` Homebrew installations.
 | Git, GnuPG, usable signing key | Repository sync and signed commits |
 | Homebrew, Go (version in `go.mod`), Python 3 | Packages, building the `dotfiles` engine, and AWS profile helpers |
 | Gitleaks | Scanning dotfiles before automatic publication |
+| jq (`/usr/bin/jq` on macOS 15 and later, or the `brew.base` formula) | Sync and the weekly update telling which casks need root, and the update's retries |
 | GitHub CLI (gh), authenticated for each destination | Checking GitHub commit verification after a push |
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
@@ -65,13 +67,13 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every hour, eligible Codex/OpenCode/agent dashboard services |
+| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
 
 ## Architecture
 
 ```text
 ~/.dotfiles/                    # This repo - synced via git
-├── features/<id>/              # One capability each: feature.toml, home/ (files linked into ~)
+├── features/<id>/              # One capability each: feature.toml, home/ (files linked into ~), launchagents/
 │   ├── shell.env/, shell.zsh/  # Shared environment; zsh modules and entry files
 │   ├── git/, ssh/              # Shared git and ssh settings
 │   ├── tool.*/, agents.*/      # Tool and coding-agent configs
@@ -80,7 +82,6 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 ├── cmd/dotfiles/, internal/    # The feature engine (Go)
 ├── lib_sh/                     # Shell libraries
 ├── bin/                        # Scripts
-├── launchagents/               # Automation plists
 ├── install.sh                  # Bootstrap script
 ├── config.sh                   # macOS preferences
 └── sync.sh                     # Sync automation
@@ -126,7 +127,7 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
 | This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
 | The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
-| Missing packages | brew bundle install `--no-upgrade` | Every sync |
+| Missing packages | brew bundle install `--no-upgrade` | Every sync; under the LaunchAgent, casks that install as root and App Store apps wait for a terminal, named in a `WARN` line |
 
 Sync publishes edits to files the repository already tracks. A new file is
 never published until you commit it yourself. A repository with a Git index
@@ -174,40 +175,24 @@ Check `logs/sync.log` for the outcome. Runtime overrides are listed in the
 
 ### LaunchAgents
 
+Each LaunchAgent is a template in the feature that declares it
+(`features/<id>/launchagents/`), and `dotfiles apply`, which every sync runs,
+installs, loads, reloads and removes them as the profiles say. An agent whose
+program or setup is missing waits for it: the Codex service for the codex cask,
+OpenCode for its local setup, the dashboard for `agent-monitor install`, the
+telemetry collector for `otel-agent enroll`. The full list, the one-time macOS
+prompts, and what apply does when a template changes are in
+[OPERATIONS.md](docs/OPERATIONS.md#launchagents).
+
 ```sh
-# Install
-~/.dotfiles/bin/dotfiles-install-launchagents.sh
-
-# Status
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --status
-
-# Manual trigger
-launchctl start com.dotfiles.sync
-
-# Codex app-server only (privacy setup: docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --codex-only
-
-# OpenCode server only (local setup first, see features/agents.opencode/README.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
-
-# Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
-
-# Agent telemetry collector only (after bin/otel-agent enroll, see docs/AGENT-TELEMETRY.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
-
-# Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
-
-# Daily scratch, cache and log pruning only (see docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --disk-hygiene-only
-
-# gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --gpg-agent-only
-
-# Uninstall
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
+dotfiles doctor                                    # pending changes, and agents still waiting
+launchctl print "gui/$(id -u)/com.dotfiles.sync"   # one agent's state and last exit
+launchctl kickstart "gui/$(id -u)/com.dotfiles.sync"   # run a scheduled job now
 ```
+
+To turn an agent off on one Mac, disable its feature in
+`~/.config/dotfiles/machine.toml` (`[features] disable = ["dotfiles.update"]`)
+and run `dotfiles apply`.
 
 ## Feature engine
 
@@ -232,8 +217,8 @@ dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the r
 writes managed copies for files a tool rewrites (gh, htop and Karabiner
 settings, and everything under `~/Library` on macOS), renders the generated
 outputs in `~/.config/dotfiles/generated/` (the Brewfile, and the env, zsh, git
-and ssh fragments), and creates one-line stubs for entry points installers
-write to. It records what it installed in `~/.local/state/dotfiles/applied.json`,
+and ssh fragments), creates one-line stubs for entry points installers
+write to, and installs and loads the features' LaunchAgents on macOS. It records what it installed in `~/.local/state/dotfiles/applied.json`,
 so disabling a feature removes exactly what it added. It never overwrites a
 file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
@@ -561,7 +546,9 @@ current Go before the migration reaches it; see
 
 4. **Machine-specific SSH hosts** — create `~/.ssh/config.local`
 
-5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
+5. **LaunchAgents**: `dotfiles doctor` lists the ones still waiting for a setup
+   step (`otel-agent enroll`, `agent-monitor install`, OpenCode's local files);
+   apply loads each once its step has run
 
 6. **Agent shells**: `~/.dotfiles/bin/dotfiles-agents install` (see [Agent shells](#agent-shells))
 

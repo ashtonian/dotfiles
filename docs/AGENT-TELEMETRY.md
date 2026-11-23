@@ -42,9 +42,11 @@ binary and the config together:
 
 1. Every sync runs `otel-agent converge` right after `dotfiles apply`. It
    installs the pinned release if it is missing, removes other releases, and
-   restarts the collector when the release, the config, `bin/otel-agent` or the
-   LaunchAgent template differ from what the running collector started from
-   (`serve` records a fingerprint of them in `~/.local/state/otel-agent/serving`).
+   restarts the collector (`launchctl kickstart -k`) when the release, the
+   config or `bin/otel-agent` differ from what the running collector started
+   from (`serve` records a fingerprint of them in
+   `~/.local/state/otel-agent/serving`). A changed LaunchAgent template needs
+   no fingerprint: `dotfiles apply` reloads the job itself.
    A Mac that never enrolled is skipped; one enrolled before host names fails
    with `no host name configured` until it is enrolled again (see
    [Build / Run / Test](#build--run--test)).
@@ -167,8 +169,11 @@ network, and check delivery:
 ~/.dotfiles/bin/otel-agent ping && sleep 10 && ~/.dotfiles/bin/otel-agent status
 ```
 
-When enrollment ran over ssh and `status` shows `service: not loaded`, run
-`~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only` at the Mac.
+Enrolling satisfies the `agents.otel-agent` feature's LaunchAgent, so `configure`
+runs `dotfiles apply`, which installs and loads it (a collector already loaded is
+restarted on the new token instead). When enrollment ran over ssh and `status`
+shows `service: not loaded`, launchd refused a load from outside the GUI login:
+the next sync loads it, or run `dotfiles apply` at the Mac.
 
 Tests and config validation:
 
@@ -213,7 +218,9 @@ and reloads the collector on the new release.
   `Exporting failed. Will retry the request after interval.` at info.
 - **Sync:** `~/.dotfiles/logs/sync.log` logs `the telemetry collector did not
   converge` when converge fails; run `~/.dotfiles/bin/otel-agent converge` to
-  see why.
+  see why. `com.ashtonian.otel-agent is not loaded` there means apply did not
+  load it: the `agents.otel-agent` feature is off here, or apply's own output
+  above it names a launchctl problem (`dotfiles doctor`).
 - **Dashboard:** Grafana → Applications → Coding Agents.
 
 **Failure modes:**
@@ -229,8 +236,8 @@ and reloads the collector on the new release.
   `OtelGatewayDown` alert); the queue drains by itself and compaction gives the
   space back. To discard the backlog instead:
   `launchctl bootout gui/$(id -u)/com.ashtonian.otel-agent`, delete
-  `~/.local/state/otel-agent/queue/exporter_*`, then
-  `~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only`.
+  `~/.local/state/otel-agent/queue/exporter_*`, then `dotfiles apply`, which
+  loads it again.
   Enqueue failures while the queue is below capacity mean the disk is full.
 - *Log shows `no route to host` or `EHOSTUNREACH`.* macOS Local Network Privacy
   blocks this release's binary, which happens once per release on each Mac.
@@ -307,8 +314,9 @@ and reloads the collector on the new release.
 | --- | --- |
 | [bin/otel-agent](../bin/otel-agent) | enroll / configure / install / converge / check / serve / status / ping |
 | [features/agents.otel-agent/home/.config/otel-agent/config.yaml](../features/agents.otel-agent/home/.config/otel-agent/config.yaml) | Collector pipelines, redaction and the disk queue |
-| [launchagents/com.ashtonian.otel-agent.plist](../launchagents/com.ashtonian.otel-agent.plist) | LaunchAgent, kept alive while the Mac is enrolled |
-| [bin/dotfiles-install-launchagents.sh](../bin/dotfiles-install-launchagents.sh) | `--otel-agent-only` installs it once `otel-agent check` passes |
+| [features/agents.otel-agent/launchagents/com.ashtonian.otel-agent.plist](../features/agents.otel-agent/launchagents/com.ashtonian.otel-agent.plist) | LaunchAgent, kept alive while the Mac is enrolled |
+| [features/agents.otel-agent/feature.toml](../features/agents.otel-agent/feature.toml) | `dotfiles apply` installs the LaunchAgent once the enrollment files exist, and removes it when they go |
+| [lib_sh/launch-agent.sh](../lib_sh/launch-agent.sh) | `configure` and `install` restart a loaded collector, or run apply to install it |
 | [sync.sh](../sync.sh) | `sync_otel_agent` runs `otel-agent converge` after every apply |
 | [features/agents.opencode/home/.config/opencode/opencode.jsonc](../features/agents.opencode/home/.config/opencode/opencode.jsonc) | OpenCode's OTel plugin |
 | [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `OtelAgent` tests, and the sync step in `Sync` |
