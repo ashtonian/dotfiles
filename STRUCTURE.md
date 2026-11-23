@@ -193,6 +193,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/tool.muxy/home/.local/bin/muxy](features/tool.muxy/home/.local/bin/muxy) | Run the `muxy` inside the installed Muxy app (`DOTFILES_MUXY_APP`, else `~/Applications`, else `/Applications`); what Muxy on another Mac starts over SSH |
 | [features/tool.muxy/home/.local/bin/muxy-reconcile](features/tool.muxy/home/.local/bin/muxy-reconcile) | Bring Muxy's `[[servers]]` in step with `~/.config/muxy/servers.d/*.toml`, leaving out this Mac; logs the change and writes nothing while `muxy.reconcile` is `report` (`--mode` for one run) |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
+| [bin/disable-aerials](bin/disable-aerials) | Rewrite the wallpaper store to a still desktop picture and the Floating Message screen saver, then restart WallpaperAgent; `--dry-run` reports only. `config.sh` runs it |
 
 ## Automation and data boundaries
 

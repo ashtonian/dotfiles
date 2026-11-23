@@ -497,6 +497,10 @@ ok
 bot "Configuring the Screen."
 #######################################################################################################################################
 
+running "Replace the aerial video wallpaper and screen saver with stills (the aerial's video decoder leaks memory)."
+"${0:A:h}/bin/disable-aerials"
+ok
+
 # running "Require password immediately after sleep or screen saver begins."
 # defaults write com.apple.screensaver askForPassword -int 1
 # defaults write com.apple.screensaver askForPasswordDelay -int 0

@@ -562,6 +562,62 @@ HOMEBREW_NO_AUTO_UPDATE=1 brew bundle check --no-upgrade \
   --file="$HOME/.config/dotfiles/generated/Brewfile"
 ```
 
+## Aerial wallpaper memory leak
+
+Since macOS 14 the default wallpaper is an aerial video, and the screen saver
+and lock screen play the same aerial. While it plays,
+`WallpaperAerialsExtension` sits at 100%+ CPU and the `VTDecoderXPCService` it
+drives grows by gigabytes until the Mac swaps. It plays whenever the screen
+saver starts, which on a Mac kept awake (Caffeine, `caffeinate`) can mean hours,
+and whenever the lock screen shows, which includes every Screen Sharing
+connection. Reproduced on macOS 27.2.1.
+
+`config.sh` runs `bin/disable-aerials`, which switches the desktop and lock
+screen to a still picture and the screen saver to Floating Message. It leaves
+the screen saver on: on a Mac whose display never sleeps, the screen saver is
+what locks the screen. The script rewrites every entry in
+`~/Library/Application Support/com.apple.wallpaper/Store/Index.plist` (all
+spaces and displays, the system default, any per-display or per-space entry),
+then restarts WallpaperAgent and stops the aerial extension, which ends its
+decoder. A run that finds every entry already set changes nothing. It refuses
+an entry layout it does not know and leaves the store untouched.
+
+| Flag | Type | Default | Effect |
+| ---- | ---- | ------- | ------ |
+| `--picture` | File path | `/System/Library/Desktop Pictures/Solid Colors/Space Gray.png` | Desktop and lock screen picture; must be a still image |
+| `--saver` | `.saver` bundle path | `/System/Library/Screen Savers/FloatingMessage.saver` | Screen saver |
+| `--store` | File path | the logged-in user's store | Store to rewrite; WallpaperAgent is restarted only for the default |
+| `--dry-run` | Boolean | `false` | Report the entries that would change, write nothing |
+
+Each write first copies the store to
+`$XDG_STATE_HOME/dotfiles/wallpaper/Index-<UTC time>.plist`.
+
+Confirm the leak before blaming it, and check that the fix held:
+
+```sh
+top -l 2 -s 15 -o mem -n 8 -stats pid,command,mem,cpu   # leak: VTDecoderXPCService at GiB and growing
+pgrep -lf 'VTDecoderXPCService|WallpaperAerialsExtension'
+plutil -p ~/Library/Application\ Support/com.apple.wallpaper/Store/Index.plist | grep -E '"(Type|Provider)"'
+```
+
+After the fix every `Type` is `individual` and every `Provider` is
+`com.apple.wallpaper.choice.image` or `com.apple.wallpaper.choice.screen-saver`.
+WallpaperAgent may start `WallpaperAerialsExtension` again; idle at 0% CPU with
+no `VTDecoderXPCService` beside it, it is not playing anything. To free a
+running leak without the script, kill both processes: the decoder alone is
+restarted by the extension and leaks again within a minute. `kernel_task`
+showing a large MEM is compressor accounting, not the leak.
+
+| Symptom | Check and recovery |
+| --------- | -------------------- |
+| `WallpaperAgent reverted …` | The agent rejected the store, usually because a macOS update changed its layout. Restore the newest backup (below) and pick a still wallpaper and screen saver in System Settings. Then compare the store with `plutil -p` and update the script to match. |
+| `unknown entry type …` | The store has a layout the script does not know; nothing was written. Set the wallpaper in System Settings, then teach the script the new `Type`. |
+| Leak is back after a macOS update | Updates can reset the wallpaper. Run `~/.dotfiles/bin/disable-aerials`. |
+| Undo | `cp ~/.local/state/dotfiles/wallpaper/Index-<time>.plist ~/Library/Application\ Support/com.apple.wallpaper/Store/Index.plist && killall WallpaperAgent` |
+
+Don't start the screen saver to test the change: it locks the screen of
+whoever is at the Mac.
+
 ## Feature engine troubleshooting
 
 Run `dotfiles doctor`; it changes nothing and lists each problem with its path.

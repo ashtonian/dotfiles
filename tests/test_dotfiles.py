@@ -1,5 +1,6 @@
 import json
 import os
+import plistlib
 import re
 from pathlib import Path
 import shlex
@@ -2777,6 +2778,111 @@ class AgentMcp(Fixture):
         out = self.run_mcp('kubernetes').stdout
         for flag in ('--read-only', '--disable-destructive', '--disable-multi-cluster'):
             self.assertIn(flag, out)
+
+
+class DisableAerials(Fixture):
+    """bin/disable-aerials against a store laid out as macOS 27 writes it before
+    anyone picks a wallpaper: every entry linked to the default aerial."""
+
+    SCRIPT = ROOT / 'bin/disable-aerials'
+
+    def setUp(self):
+        super().setUp()
+        self.env['XDG_STATE_HOME'] = str(self.path / 'state')
+        self.store = self.path / 'Store/Index.plist'
+        self.picture = self.path / 'Still.png'
+        self.picture.write_bytes(b'png')
+        self.saver = self.path / 'Message.saver'
+        (self.saver / 'Contents').mkdir(parents=True)
+        (self.saver / 'Contents/Info.plist').write_bytes(plistlib.dumps({}))
+
+    @staticmethod
+    def linked():
+        return {'Linked': {'Content': {'Choices': [{'Configuration': b'', 'Files': [], 'Provider': 'default'}],
+                                       'EncodedOptionValues': '$null', 'Shuffle': '$null'}},
+                'Type': 'linked'}
+
+    def write_store(self, store):
+        self.store.parent.mkdir(parents=True, exist_ok=True)
+        self.store.write_bytes(plistlib.dumps(store, fmt=plistlib.FMT_BINARY))
+
+    def run_script(self, *args, saver=None):
+        return subprocess.run([str(self.SCRIPT), '--store', str(self.store), '--picture', str(self.picture),
+                               '--saver', str(saver or self.saver), *args],
+                              env=self.env, capture_output=True, text=True, timeout=20)
+
+    def choice(self, entry, slot):
+        choice = entry[slot]['Content']['Choices'][0]
+        return choice['Provider'], plistlib.loads(choice['Configuration'])
+
+    def backups(self):
+        directory = self.path / 'state/dotfiles/wallpaper'
+        return sorted(directory.iterdir()) if directory.exists() else []
+
+    def assert_still(self, entry):
+        self.assertEqual(entry['Type'], 'individual')
+        self.assertNotIn('Linked', entry)
+        self.assertEqual(self.choice(entry, 'Desktop'),
+                         ('com.apple.wallpaper.choice.image',
+                          {'type': 'imageFile', 'url': {'relative': self.picture.resolve().as_uri()}}))
+        self.assertEqual(self.choice(entry, 'Idle'),
+                         ('com.apple.wallpaper.choice.screen-saver',
+                          {'module': {'relative': self.saver.resolve().as_uri() + '/'}}))
+
+    def test_every_linked_entry_gets_the_still_picture_and_saver(self):
+        self.write_store({'AllSpacesAndDisplays': self.linked(), 'SystemDefault': self.linked(),
+                          'Displays': {'37D8832A-2D66-02CA-B9F7-8F30A301B230': self.linked()}, 'Spaces': {}})
+        before = self.store.read_bytes()
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        store = plistlib.loads(self.store.read_bytes())
+        for entry in (store['AllSpacesAndDisplays'], store['SystemDefault'],
+                      store['Displays']['37D8832A-2D66-02CA-B9F7-8F30A301B230']):
+            self.assert_still(entry)
+        self.assertEqual(store['Spaces'], {})
+        [backup] = self.backups()
+        self.assertEqual(backup.read_bytes(), before)
+
+    def test_a_second_run_changes_nothing(self):
+        self.write_store({'AllSpacesAndDisplays': self.linked(), 'SystemDefault': self.linked()})
+        self.assertEqual(self.run_script().returncode, 0)
+        after_first = self.store.read_bytes()
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('already uses', p.stdout)
+        self.assertEqual(self.store.read_bytes(), after_first)
+        self.assertEqual(len(self.backups()), 1)
+
+    def test_dry_run_writes_nothing(self):
+        self.write_store({'AllSpacesAndDisplays': self.linked()})
+        before = self.store.read_bytes()
+        p = self.run_script('--dry-run')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('/AllSpacesAndDisplays', p.stdout)
+        self.assertEqual(self.store.read_bytes(), before)
+        self.assertEqual(self.backups(), [])
+
+    def test_a_missing_store_is_created_with_stills(self):
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        store = plistlib.loads(self.store.read_bytes())
+        self.assert_still(store['AllSpacesAndDisplays'])
+        self.assert_still(store['SystemDefault'])
+
+    def test_an_unknown_entry_layout_is_refused_untouched(self):
+        self.write_store({'AllSpacesAndDisplays': self.linked(), 'SystemDefault': {'Type': 'per-app', 'Desktop': {}}})
+        before = self.store.read_bytes()
+        p = self.run_script()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn("/SystemDefault: unknown entry type 'per-app'", p.stderr)
+        self.assertEqual(self.store.read_bytes(), before)
+        self.assertEqual(self.backups(), [])
+
+    def test_a_saver_that_is_not_a_bundle_is_refused(self):
+        self.write_store({'AllSpacesAndDisplays': self.linked()})
+        p = self.run_script(saver=self.picture)
+        self.assertEqual(p.returncode, 2)
+        self.assertIn('not a screen saver bundle', p.stderr)
 
 
 class SpotlightExclusions(Fixture):
