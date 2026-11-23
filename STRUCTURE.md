@@ -94,7 +94,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
-| `tool.muxy` | desktop | darwin | Brewfile: 2 cask (Muxy, FiraCode Nerd Font); 7 Muxy settings ([muxy.toml](features/tool.muxy/muxy.toml)): Dracula light theme, FiraCode Nerd Font in the terminal and composer, terminal font size 13, copy on select, agent sessions shown, tips hidden |
+| `tool.muxy` | desktop | darwin | Brewfile: 2 cask (Muxy, FiraCode Nerd Font); 8 Muxy settings ([muxy.toml](features/tool.muxy/muxy.toml)): Dracula dark and light themes, FiraCode Nerd Font in the terminal and composer, terminal font size 14, copy on select, agent sessions shown, tips hidden |
 
 Edit linked files in place. A feature's prefs file (`[provides.prefs]`) lists
 the app settings it owns, one `key = value` line each; apply sets each one

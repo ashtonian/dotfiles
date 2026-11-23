@@ -10,5 +10,7 @@
 "composer.font_family" = "FiraCode Nerd Font"
 # The Mono variant keeps Nerd Font icons one cell wide, as terminal programs expect.
 "terminal.font_families" = ["FiraCode Nerd Font Mono"]
-"terminal.font_size" = 13.0
+"terminal.font_size" = 14.0
+# Settings > Terminal > Selection > Copy on select. clipboard.copy_on_select is
+# only where Muxy imports a 1.x setting; the terminal does not read it.
 "terminal.options.copy_on_select" = true
