@@ -636,6 +636,62 @@ esac''')
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('-C %s install --yes' % home, audit.read_text())
 
+    def claude_code_fixture(self, name, enabled=True, installed=False, installer=None):
+        """A home for sync_claude_code: an engine reporting agents.claude as
+        ENABLED, a curl that serves INSTALLER (by default one that installs a
+        stand-in claude), and the stand-in already there when INSTALLED."""
+        home = self.path / name
+        home.mkdir()
+        if installed:
+            (home / '.local/bin').mkdir(parents=True)
+            (home / '.local/bin/claude').write_text('#!/bin/sh\n')
+            (home / '.local/bin/claude').chmod(0o755)
+        audit = self.path / f'{name}-curl'
+        status = {'features': [{'id': 'agents.claude', 'enabled': enabled, 'source': 'profile:dev'},
+                               {'id': 'agents.codex', 'enabled': True, 'source': 'profile:dev'}]}
+        self.cli('dotfiles', f"printf '%s\\n' '{json.dumps(status)}'")
+        self.cli('curl', 'out=; url=\n'
+                 'while [ $# -gt 0 ]; do case "$1" in -o) out=$2; shift ;; -*) ;; *) url=$1 ;; esac; shift; done\n'
+                 'printf "%s\\n" "$url" >> "$DOTFILES_TEST_AUDIT"\n'
+                 'printf "%s\\n" "$DOTFILES_TEST_INSTALLER" > "$out"')
+        installer = installer or ('mkdir -p "$HOME/.local/bin" && printf "#!/bin/sh\\n" > "$HOME/.local/bin/claude"'
+                                  ' && chmod +x "$HOME/.local/bin/claude"')
+        self.env.update(HOME=str(home), DOTFILES_BIN=str(self.bin / 'dotfiles'), DOTFILES_TEST_AUDIT=str(audit),
+                        DOTFILES_TEST_INSTALLER=installer)
+        return home, lambda: audit.read_text().splitlines() if audit.exists() else []
+
+    def test_claude_code_is_installed_natively_only_where_wanted_and_missing(self):
+        url = 'https://claude.ai/install.sh'
+        cases = [
+            ('missing', dict(), 0, [url], True),
+            ('installed', dict(installed=True), 0, [], True),
+            ('not-wanted', dict(enabled=False), 0, [], False),
+            ('installer-fails', dict(installer='exit 3'), 1, [url], False),
+        ]
+        for name, kwargs, code, fetched, claude_after in cases:
+            with self.subTest(name):
+                home, curl_calls = self.claude_code_fixture(name, **kwargs)
+                p = self.bash('sync_claude_code')
+                self.assertEqual(p.returncode, code, p.stdout + p.stderr)
+                self.assertEqual(curl_calls(), fetched)
+                self.assertEqual((home / '.local/bin/claude').exists(), claude_after)
+                if code:
+                    self.assertIn('the Claude Code installer failed (exit 3)', p.stdout)
+        self.assertEqual(list(self.path.glob('claude-install.*')), [], 'the downloaded installer is removed')
+
+    def test_a_stalled_claude_code_installer_is_stopped_at_its_deadline(self):
+        child = self.path / 'child.pid'
+        self.claude_code_fixture('stalled', installer=f'sleep 300 & echo $! > {child}; wait')
+        self.env['CLAUDE_CODE_INSTALL_TIMEOUT'] = '2'
+        p = self.bash('sync_claude_code')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('did not finish within 2s and was stopped', p.stdout)
+        pid = int(child.read_text())
+        self.addCleanup(lambda: subprocess.run(['kill', str(pid)], capture_output=True))
+        time.sleep(0.5)
+        self.assertNotEqual(subprocess.run(['kill', '-0', str(pid)], capture_output=True).returncode, 0,
+                            'what the installer started is stopped with it')
+
     def test_sync_converges_the_telemetry_collector_and_reports_failure(self):
         audit = self.path / 'otel-audit'
         self.env['DOTFILES_TEST_AUDIT'] = str(audit)

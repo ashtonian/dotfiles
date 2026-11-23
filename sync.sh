@@ -29,6 +29,11 @@ SYNC_CONNECTIVITY_TIMEOUT="${SYNC_CONNECTIVITY_TIMEOUT:-15}"
 MACHINE_FILE="$HOME/.config/dotfiles/machine.toml"
 DOTFILES_BIN="${DOTFILES_BIN:-$HOME/.local/bin/dotfiles}"
 GENERATED_DIR="$HOME/.config/dotfiles/generated"
+# Claude Code comes from Anthropic's native installer, never Homebrew: the cask
+# trails the releases, and the native install in ~/.local/bin updates itself.
+CLAUDE_CODE_INSTALLER_URL="${CLAUDE_CODE_INSTALLER_URL:-https://claude.ai/install.sh}"
+# The installer's own downloads have no timeout; this bounds the whole install.
+CLAUDE_CODE_INSTALL_TIMEOUT="${CLAUDE_CODE_INSTALL_TIMEOUT:-900}"
 
 log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FILE"; }
 run_logged() { "$@" 2>&1 | tee -a "$LOG_FILE"; }
@@ -137,6 +142,65 @@ sync_mise_tools() {
     log "INFO: Installing the tools mise's configuration names"
     if ! run_logged mise -C "$HOME" install --yes; then
         log "ERROR: mise could not install every tool; run: mise -C ~ install"
+        return 1
+    fi
+}
+
+# run_with_deadline SECONDS COMMAND...: run COMMAND in its own process group
+# and, if it is still running after SECONDS, stop the group (so whatever it
+# started stops too) and return 124.
+run_with_deadline() (
+    local deadline=$((SECONDS + $1)) pid
+    shift
+    # Job control gives the command its own group; the job notices it prints
+    # go to the subshell's stderr, which is /dev/null, not the command's.
+    exec 3>&2 2>/dev/null
+    set -m
+    "$@" </dev/null 2>&3 3>&- &
+    pid=$!
+    while kill -0 "$pid" 2>/dev/null; do
+        if ((SECONDS >= deadline)); then
+            kill -TERM -- "-$pid" 2>/dev/null
+            wait "$pid" 2>/dev/null
+            return 124
+        fi
+        sleep 1
+    done
+    wait "$pid"
+)
+
+# sync_claude_code: install Claude Code where agents.claude is enabled and
+# ~/.local/bin/claude is missing. The installer checks the binary against the
+# release manifest's SHA-256. Claude Code updates itself from then on, so sync
+# never upgrades it.
+sync_claude_code() {
+    local claude="$HOME/.local/bin/claude" enabled installer status=0
+    [[ -x "$claude" ]] && return 0
+    if ! command -v jq >/dev/null; then
+        log "ERROR: jq is not installed, so sync cannot tell whether this machine wants Claude Code"
+        return 1
+    fi
+    if ! enabled=$("$DOTFILES_BIN" status --json | jq -r '.features[] | select(.id == "agents.claude") | .enabled'); then
+        log "ERROR: $DOTFILES_BIN status did not list this machine's features; Claude Code not checked"
+        return 1
+    fi
+    [[ "$enabled" == true ]] || return 0
+    installer=$(mktemp "${TMPDIR:-/tmp}/claude-install.XXXXXX") || return 1
+    if ! curl -fsSL --connect-timeout 10 --max-time 120 -o "$installer" "$CLAUDE_CODE_INSTALLER_URL"; then
+        log "ERROR: downloading the Claude Code installer from $CLAUDE_CODE_INSTALLER_URL failed; the next sync retries"
+        rm -f "$installer"
+        return 1
+    fi
+    log "INFO: Installing Claude Code with $CLAUDE_CODE_INSTALLER_URL"
+    # With ~/.local/bin on PATH the installer has no shell edit to suggest.
+    run_logged run_with_deadline "$CLAUDE_CODE_INSTALL_TIMEOUT" env PATH="$HOME/.local/bin:$PATH" bash "$installer" || status=$?
+    rm -f "$installer"
+    if [[ $status -eq 124 ]]; then
+        log "ERROR: the Claude Code installer did not finish within ${CLAUDE_CODE_INSTALL_TIMEOUT}s and was stopped; the next sync retries"
+        return 1
+    fi
+    if [[ $status -ne 0 || ! -x "$claude" ]]; then
+        log "ERROR: the Claude Code installer failed (exit $status); run: curl -fsSL $CLAUDE_CODE_INSTALLER_URL | bash"
         return 1
     fi
 }
@@ -460,13 +524,15 @@ run_mode() {
             # leaves links to their old paths until it runs, and apply reads
             # the overlays too. The telemetry collector converges on the files
             # apply linked. The Brewfile apply generates is installed next,
-            # then mise's tools (mise is one of the packages).
+            # then mise's tools (mise is one of the packages), then Claude Code
+            # where it is missing (jq, which reads the features, is a package).
             sync_dotfiles || status=1
             sync_overlays || status=1
             apply_features || status=1
             sync_otel_agent || status=1
             sync_brewfile || status=1
             sync_mise_tools || status=1
+            sync_claude_code || status=1
             sync_auxiliary_repos || status=1
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
@@ -478,7 +544,8 @@ run_mode() {
         otel-agent) sync_otel_agent || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
         mise) sync_mise_tools || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|overlays|repos|build|apply|otel-agent|brewfile|mise|all|check}\n' "$0"; return 1 ;;
+        claude-code) check_connectivity || return 0; sync_claude_code || status=$? ;;
+        *) printf 'Usage: %s {sync|dotfiles|overlays|repos|build|apply|otel-agent|brewfile|mise|claude-code|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }
