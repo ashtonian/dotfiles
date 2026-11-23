@@ -82,7 +82,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `dotfiles.update` | base | darwin | LaunchAgent `com.dotfiles.update` |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
-| `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene` |
+| `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene`; setting `disk_hygiene.cache_drive` |
 | `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
@@ -193,7 +193,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry to the cluster gateway through a disk queue; `converge` (run by sync), `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Keep `go env GOCACHE` and each `GO_EXTRA_BUILD_CACHES` cache under `GO_CACHE_TRIM_MAX_GIB` (400): entries unused for `GO_CACHE_TRIM_HOURS` (24), then least recently used; `--dry-run` reports only |
-| [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
+| [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), keep the `DISK_HYGIENE_RELOCATE` caches on `DISK_HYGIENE_CACHE_DRIVE`, prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
 | [bin/check-private-names](bin/check-private-names) | Fail when a tracked line names something an overlay keeps private (its `denylist.txt`); sync runs the same check before publishing |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |

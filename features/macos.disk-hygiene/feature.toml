@@ -1,5 +1,5 @@
 id = "macos.disk-hygiene"
-description = "Daily: deletes stale agent scratch and caches, prunes pnpm stores, caps the LaunchAgents' logs (bin/disk-hygiene)"
+description = "Daily: deletes stale agent scratch and caches, keeps developer-tool caches on a cache drive, prunes pnpm stores, caps the LaunchAgents' logs (bin/disk-hygiene)"
 category = "macos"
 platforms = ["darwin"]
 
@@ -11,3 +11,8 @@ type = "string"
 default = ""
 env = "DISK_HYGIENE_KEYED"
 doc = "Space-separated cache names under ~/.cache holding one directory per branch, agent or tool version; disk-hygiene prunes them a key at a time. Repository-specific, so an overlay profile sets it"
+
+[settings."disk_hygiene.cache_drive"]
+type = "path"
+env = "DISK_HYGIENE_CACHE_DRIVE"
+doc = "A mounted drive (such as /Volumes/E2TB) that holds the developer-tool caches in DISK_HYGIENE_RELOCATE instead of the internal disk: disk-hygiene moves each to <drive>/cache/xdg/<name> and links it from its usual place. A host fact, so a host profile or the machine manifest sets it; unset leaves the caches where their tools put them"

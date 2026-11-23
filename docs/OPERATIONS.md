@@ -43,6 +43,8 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the template |
 | `DISK_HYGIENE_KEYED` | Space-separated names | setting `disk_hygiene.keyed`, empty unless a profile sets it | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. They are repository names, so an overlay's profile sets them; the environment wins over the setting. Empty: none |
 | `DISK_HYGIENE_KEEP` | Space-separated names | empty | Cache directories `bin/disk-hygiene` never deletes, for a cache that is expensive to rebuild and used less often than the window |
+| `DISK_HYGIENE_CACHE_DRIVE` | Directory path (a drive under `/Volumes`) | setting `disk_hygiene.cache_drive`: unset; the `studio` profile sets `/Volumes/E2TB`, other machines set it in their manifest | `bin/disk-hygiene` moves each cache in `DISK_HYGIENE_RELOCATE` to `<drive>/cache/xdg/<name>` and leaves a link in its usual place, while this drive is mounted. Unset: caches stay where their tools put them; the environment wins over the setting |
+| `DISK_HYGIENE_RELOCATE` | Space-separated `<path under HOME>[=<name>]` | `Library/Caches/{go-build,gopls,goimports,golangci-lint,staticcheck,grype,mise}`, `.cache/{uv,puppeteer,zig,codebase-memory-mcp}`, `.npm/_cacache=npm`, `.terraform.d/plugin-cache=terraform-plugin-cache` | The caches `DISK_HYGIENE_CACHE_DRIVE` takes. `<name>` defaults to the path's last part; caches with the same name share one directory, as they should when one tool caches under both `~/Library/Caches` and `XDG_CACHE_HOME`. Only caches that rebuild on their own belong here |
 | `DISK_HYGIENE_LOG_MAX_BYTES` | Whole bytes, at least 1 | `1048576` | Each LaunchAgent `dotfiles apply` installed has its stdout and stderr log cut to its newest half once larger than this |
 | `DISK_HYGIENE_TMP` | Directory path | `/private/tmp` | Where sessions started without `CLAUDE_CODE_TMPDIR` keep their scratch |
 | `DISK_HYGIENE_VOLUMES` | Directory path | `/Volumes` | Its directories are the drives whose `tmp`, `cache/xdg` and `.pnpm-store` `bin/disk-hygiene` prunes |
@@ -280,7 +282,20 @@ and repository scripts leave behind, so each run deletes:
   another. A keyed cache (`DISK_HYGIENE_KEYED`: one directory per branch, agent
   or tool version) loses only its unused keys. Symlinks and the names in
   `DISK_HYGIENE_KEEP` stay.
-- goimports index files and pnpm metadata files unused for the same window.
+- goimports index files and pnpm metadata files unused for the same window,
+  followed through a link to wherever the cache lives.
+- with `DISK_HYGIENE_CACHE_DRIVE` naming a mounted drive, each cache in
+  `DISK_HYGIENE_RELOCATE` found as a real directory: it is renamed aside, a
+  link to `<drive>/cache/xdg/<name>` takes its place, and the internal copy is
+  deleted rather than copied (a cache rebuilds; a copy of one a tool is writing
+  can be torn). Go tools ignore `XDG_CACHE_HOME` on macOS, so the link is how
+  their caches leave the internal disk. Living under `cache/xdg`, the moved
+  caches are pruned like the drive sessions' caches; when that pruning removes
+  one whole, the run recreates its directory so the link never dangles. Links
+  it did not make stay as they are, and a cache its tool never created is not
+  linked. While the drive is not mounted the run says so and moves nothing; the
+  links then dangle and the tools fail to open their caches until the drive is
+  back (see Troubleshooting).
 - packages no project links any more, through `pnpm store prune` on
   `~/Library/pnpm/store` and each drive's `.pnpm-store`, unless a pnpm is
   running. It uses the pnpm on PATH or the newest one corepack has cached, and
@@ -310,6 +325,13 @@ add its directory name to `DISK_HYGIENE_KEEP` in the template
 (`features/macos.disk-hygiene/launchagents/`); the next apply reloads the job.
 macOS asks once for bash to read
 removable volumes; until that is allowed, the drives' entries are skipped.
+
+A tool that fails to create or open its cache under `/Volumes/<drive>/cache/xdg`
+(gopls, golangci-lint, uv and the rest of `DISK_HYGIENE_RELOCATE`) means the
+cache drive is not mounted: `mount | grep /Volumes/<drive>`. Mount it, or, to run
+without it, delete that tool's link (`rm ~/Library/Caches/<tool>`) and the tool
+starts a cache on the internal disk, which the next run with the drive mounted
+moves again. A log line `cache drive ... is not mounted` says the same.
 
 A `claudemore` or `claudemax` session started in a directory on a drive under
 `/Volumes` (`~/workgroups` resolves to E2TB) keeps its scratch in `<drive>/tmp`
