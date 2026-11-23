@@ -2,8 +2,7 @@
 """muxy-reconcile - list the other Macs in Muxy as remote servers
 
 usage:
-  muxy-reconcile            bring Muxy's [[servers]] in step with the server lists
-  muxy-reconcile --dry-run  show what a run would change and check it with Muxy; write nothing
+  muxy-reconcile [--mode report|apply] [--exclude-servers '<list>/<ssh> ...']
 
 Each context's overlay links one list into MUXY_RECONCILE_SERVERS_DIR
 (~/.config/muxy/servers.d/<context>.toml):
@@ -16,12 +15,22 @@ Each context's overlay links one list into MUXY_RECONCILE_SERVERS_DIR
     # ssh_command = "orb ssh vm"  optional: Muxy connects through this command;
     #                             ssh then only identifies the machine
 
-A Mac leaves declared servers out with the dotfiles setting
-muxy.exclude_servers: space-separated <list>/<ssh> names, such as
-personal/laptop (the list's file name without .toml, and the server's ssh
-destination). A name that matches no declared server stops the run before it
-writes anything. Excluding a server and declaring it again in a local list
-changes its name or group on this Mac only.
+Two dotfiles settings steer a run. Each is read as dotfiles apply generated it
+(with lib_sh/machine-setting.sh: launchd does not load the generated env.sh),
+never from a variable inherited from a shell that may predate the last apply;
+a flag overrides it for one run.
+
+muxy.reconcile (--mode): report, the default, computes the change, checks it
+with Muxy, and logs each decision and the diff of settings.toml it would make;
+it writes nothing: not settings.toml, not the state file, and no reload. apply
+makes the change.
+
+muxy.exclude_servers (--exclude-servers): declared servers this Mac leaves out,
+space-separated <list>/<ssh> names, such as personal/laptop (the list's file
+name without .toml, and the server's ssh destination). A name that matches no
+declared server stops the run before it writes anything. Excluding a server
+and declaring it again in a local list changes its name or group on this Mac
+only.
 
 A run looks every destination up with `ssh -G` (user, port, HostName, the
 known_hosts files), `ssh-keygen -F` (the host keys those files hold for it) and
@@ -32,11 +41,14 @@ wrote for that destination before, else one with the same destination or
 command, else one reaching the same user and port on the same machine, which
 shares an address or a known host key with it (a Mac with two interfaces has
 two addresses and one host key). A matched entry keeps its id, which Muxy's
-open projects and tabs are tied to. Entries it never wrote are left as they
-are; one it wrote whose server is no longer declared is removed. It rewrites
-only the [[servers]] tables of settings.toml, after Muxy's own parser accepted
-the result, while holding Muxy's settings lock, and only if nobody saved the
-file during the run; then `muxy config reload` has a running app apply it.
+open projects and tabs are tied to, and every key a list does not set
+(identity_file, password_login, ...). Entries it never wrote are left as they
+are. One it wrote whose server is no longer declared, or is excluded, is
+removed, unless it was added by hand and adopted, or Muxy paired it: such an
+entry is released, left as it is and no longer managed. It rewrites only the
+[[servers]] tables of settings.toml, after Muxy's own parser accepted the
+result, while holding Muxy's settings lock, and only if nobody saved the file
+during the run; then `muxy config reload` has a running app apply it.
 
 Environment: MUXY_DIR (Muxy's profile; default ~/Library/Application
 Support/Muxy 2), MUXY_RECONCILE_SERVERS_DIR (default
@@ -48,17 +60,16 @@ MUXY_RECONCILE_SSH (default /usr/bin/ssh), MUXY_RECONCILE_SELF_ADDRESSES
 (space-separated; default this Mac's interface addresses from ifconfig),
 MUXY_RECONCILE_HOST_KEYS (this Mac's sshd public keys, space-separated files or
 patterns; default /etc/ssh/ssh_host_*_key.pub),
-MUXY_RECONCILE_TIMEOUT (seconds per command, default 30),
-MUXY_RECONCILE_EXCLUDE (the muxy.exclude_servers setting; when it is not set,
-the value dotfiles apply generated, read with lib_sh/machine-setting.sh, since
-launchd does not load ~/.config/dotfiles/generated/env.sh).
+MUXY_RECONCILE_TIMEOUT (seconds per command, default 30).
 DOTFILES_MUXY_APP selects the Muxy app for the muxy wrapper beside this
 script; the script runs that wrapper from the repository, never
 ~/.local/bin/muxy.
 
-Exit status: 0 in step, 1 Muxy refused the result or a command failed,
-2 usage or a bad server list or state file, 3 Muxy or another run was saving
-at the same time (nothing written; the next run retries), 69 Muxy is not installed.
+Exit status: 0 in step, changed, or a change reported, 1 Muxy refused the
+result or a command failed, 2 usage, a bad server list, setting or state file,
+or a list directory missing while the state file manages entries, 3 Muxy or
+another run was saving at the same time (nothing written; the next run
+retries), 69 Muxy is not installed.
 See docs/MUXY.md.
 """
 import sys
@@ -72,12 +83,14 @@ import concurrent.futures
 import contextlib
 import dataclasses
 import datetime
+import difflib
 import errno
 import fcntl
 import glob
 import hashlib
 import ipaddress
 import json
+import math
 import os
 import pwd
 import re
@@ -104,6 +117,12 @@ DEFAULT_HOST_KEYS = '/etc/ssh/ssh_host_*_key.pub'
 DEFAULT_TIMEOUT_SECONDS = 30
 EXCLUDE_ENV = 'MUXY_RECONCILE_EXCLUDE'
 EXCLUDE_SETTING = 'muxy.exclude_servers'
+MODE_ENV = 'MUXY_RECONCILE_MODE'
+MODE_SETTING = 'muxy.reconcile'
+MODES = ('report', 'apply')
+DEFAULT_MODE = 'report'
+# The dotfiles settings a run reads, by the variable apply exports each as.
+SETTINGS = {MODE_ENV: MODE_SETTING, EXCLUDE_ENV: EXCLUDE_SETTING}
 # The checkout this script is linked from:
 # <repository>/features/tool.muxy/home/.local/bin/muxy-reconcile.
 REPOSITORY = Path(__file__).resolve().parents[5]
@@ -113,9 +132,9 @@ SSH_PORT = 22
 STATE_VERSION = 1
 
 # The keys a declared server sets in its entry. Every other key of an entry
-# this command manages (password_login, identity_file) is dropped: the ssh
-# configuration decides how to log in.
+# (password_login, identity_file, paired) is the owner's or Muxy's, and kept.
 MANAGED_KEYS = ('group', 'name', 'ssh', 'ssh_command')
+STATE_RECORD_KEYS = {'ssh', 'adopted'}
 FRAGMENT_KEYS = {'group', 'server'}
 SERVER_KEYS = {'name', 'ssh', 'ssh_command'}
 # A destination goes to `ssh -G` as one argument; anything an option parser or
@@ -289,15 +308,38 @@ def toml_string(value):
     return ''.join(out)
 
 
+def toml_key(key):
+    return key if re.fullmatch(r'[A-Za-z0-9_-]+', key) else toml_string(key)
+
+
+def toml_value(value):
+    """value, as tomllib read it, written back as TOML."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isnan(value):
+            return 'nan'
+        if math.isinf(value):
+            return 'inf' if value > 0 else '-inf'
+        return repr(value)
+    if isinstance(value, str):
+        return toml_string(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return '[' + ', '.join(toml_value(v) for v in value) + ']'
+    if isinstance(value, dict):
+        return '{' + ', '.join(f'{toml_key(k)} = {toml_value(v)}' for k, v in value.items()) + '}'
+    raise TypeError(f'{type(value).__name__} is not a TOML value')
+
+
 def render_entry(entry):
-    """One [[servers]] table, keys sorted as Muxy writes them."""
-    lines = ['[[servers]]']
-    for key in sorted(entry):
-        value = entry[key]
-        if isinstance(value, bool):
-            lines.append(f'{key} = {"true" if value else "false"}')
-        else:
-            lines.append(f'{key} = {toml_string(value)}')
+    """One [[servers]] table, keys sorted as Muxy writes them. A table-valued
+    key goes inline; Muxy's own sub-table, paired, marks an entry this command
+    never rewrites."""
+    lines = ['[[servers]]'] + [f'{toml_key(k)} = {toml_value(entry[k])}' for k in sorted(entry)]
     return '\n'.join(lines) + '\n\n'
 
 
@@ -309,6 +351,7 @@ class Settings:
     data: dict
     spans: list
     headers: list
+    empty_servers: tuple | None = None  # (start, end) of a root `servers = []` line
 
     @property
     def digest(self):
@@ -341,11 +384,17 @@ class Settings:
             return ''.join(pieces)
         if not block:
             return self.text
+        text, shift = self.text, 0
+        if self.empty_servers is not None:
+            # The tables replace it; it is in the root table, before every header.
+            start, end = self.empty_servers
+            text, shift = text[:start] + text[end:], end - start
         # Where Muxy itself would write them: tables are saved in key order.
         for header in self.headers:
             if header.path[0] > 'servers':
-                return self.text[:header.start] + block + self.text[header.start:]
-        head = self.text
+                at = header.start - shift
+                return text[:at] + block + text[at:]
+        head = text
         if head and not head.endswith('\n'):
             head += '\n'
         if head and not head.endswith('\n\n'):
@@ -370,11 +419,27 @@ def read_settings(path):
     if isinstance(servers, list) and not all(isinstance(s, dict) and isinstance(s.get('id'), str) for s in servers):
         raise Failure(f'{path} has a server without an id; Muxy cannot open it either. Fix the file, '
                       'or restore it from Settings > Backup & Restore')
-    if not isinstance(servers, list) or len(servers) != len(spans):
+    empty_servers = None
+    if 'servers' in data and not spans and servers == []:
+        empty_servers = empty_servers_line(text, headers)
+    if not isinstance(servers, list) or len(servers) != len(spans) or (
+            'servers' in data and not spans and empty_servers is None):
         raise Failure(f'{path} lists its servers in a form muxy-reconcile does not edit (not one '
                       '[[servers]] table each); edit and save any server in Muxy so it rewrites the file, '
                       'then run again')
-    return Settings(path, raw, text, data, spans, headers)
+    return Settings(path, raw, text, data, spans, headers, empty_servers)
+
+
+EMPTY_SERVERS = re.compile(r'''^[ \t]*(?:servers|"servers"|'servers')[ \t]*=[ \t]*\[[ \t]*\][ \t]*(?:#[^\n]*)?(?:\n|\Z)''',
+                           re.MULTILINE)
+
+
+def empty_servers_line(text, headers):
+    """(start, end) of the root table's `servers = []`, the form an empty list
+    of servers is saved in, or None."""
+    root = text[:headers[0].start] if headers else text
+    lines = list(EMPTY_SERVERS.finditer(root))
+    return (lines[0].start(), lines[0].end()) if len(lines) == 1 else None
 
 
 # ---------------------------------------------------------------- declared servers
@@ -411,31 +476,39 @@ def parse_exclusions(raw):
     return frozenset(excluded)
 
 
-def machine_setting(name, timeout):
-    """A dotfiles setting's value on this Mac, read with the repository's
-    lib_sh/machine-setting.sh, as its other LaunchAgent scripts read theirs:
-    launchd does not load the env.sh that dotfiles apply generates. Empty when
-    apply has not written it."""
+def generated_settings(timeout):
+    """The values dotfiles apply generated for this command's settings, read
+    with the repository's lib_sh/machine-setting.sh as its other LaunchAgent
+    scripts read theirs: launchd does not load the generated env.sh. Empty
+    when apply has not generated one. The variables are left out of the
+    helper's environment: env.sh keeps a value already set there, and one
+    inherited from a shell that loaded an older env.sh must not win."""
     helper = REPOSITORY / 'lib_sh/machine-setting.sh'
+    env = {k: v for k, v in os.environ.items() if k not in SETTINGS}
+    script = 'source "$0" || exit; for name; do machine_setting "$name"; printf "\\0"; done'
     try:
-        p = subprocess.run(['/bin/bash', '-c', 'source "$0" && machine_setting "$1"', str(helper), name],
-                           capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+        p = subprocess.run(['/bin/bash', '-c', script, str(helper), *SETTINGS], env=env, capture_output=True,
+                           text=True, timeout=timeout, stdin=subprocess.DEVNULL)
     except subprocess.TimeoutExpired as e:
-        raise Failure(f'reading the dotfiles setting {name}: no answer within {timeout}s') from e
-    if p.returncode != 0:
-        raise Failure(f'reading the dotfiles setting {name} with {helper}: bash exited {p.returncode}: '
+        raise Failure(f'reading the dotfiles settings with {helper}: no answer within {timeout}s') from e
+    values = p.stdout.split('\0')
+    if p.returncode != 0 or len(values) != len(SETTINGS) + 1:
+        raise Failure(f'reading the dotfiles settings with {helper}: bash exited {p.returncode}: '
                       f'{p.stderr.strip()}')
-    return p.stdout
+    return dict(zip(SETTINGS, values))
 
 
-def read_exclusions(timeout):
-    """The servers muxy.exclude_servers leaves out: the environment's value
-    when it is set (the LaunchAgent's EnvironmentVariables, a test), else the
-    one dotfiles apply generated."""
-    raw = os.environ.get(EXCLUDE_ENV)
-    if raw is None:
-        raw = machine_setting(EXCLUDE_ENV, timeout)
-    return parse_exclusions(raw)
+def read_options(mode, exclude, timeout):
+    """The run's mode and the servers it leaves out: each flag given, else the
+    setting dotfiles apply generated."""
+    generated = generated_settings(timeout) if mode is None or exclude is None else {}
+    if mode is None:
+        mode = generated[MODE_ENV] or DEFAULT_MODE
+        if mode not in MODES:
+            raise ConfigError(f'{MODE_SETTING} ({MODE_ENV}) is {mode!r}; want one of {", ".join(MODES)}')
+    if exclude is None:
+        exclude = generated[EXCLUDE_ENV]
+    return mode, parse_exclusions(exclude)
 
 
 def read_server_lists(directory, excluded=frozenset()):
@@ -672,8 +745,8 @@ class Plan:
     counts: dict
 
     def summary(self):
-        order = ('added', 'adopted', 'updated', 'removed', 'unchanged', 'not managed', 'this Mac', 'excluded',
-                 'unresolved', 'no host key')
+        order = ('added', 'adopted', 'updated', 'removed', 'released', 'unchanged', 'not managed', 'this Mac',
+                 'excluded', 'unresolved', 'no host key')
         return ', '.join(f'{self.counts[k]} {k}' for k in order if self.counts.get(k))
 
 
@@ -693,6 +766,15 @@ def plan(settings, declared, endpoints, self_endpoint, previous, excluded=(), ne
 
     for d in excluded:
         note('excluded', f'{d.name} ({Path(d.source).stem}/{d.ssh}): {EXCLUDE_SETTING} leaves it out on this Mac')
+
+    def kept_because(entry):
+        """Why an entry this command manages is released, not removed, once
+        no longer declared: removing it would lose what is not the list's."""
+        if 'paired' in entry:
+            return 'Muxy paired it'
+        if previous[entry['id']].get('adopted'):
+            return 'it was added by hand'
+        return None
 
     def is_self(d):
         e = endpoints[d.ssh]
@@ -722,19 +804,18 @@ def plan(settings, declared, endpoints, self_endpoint, previous, excluded=(), ne
     claim(lambda d, x: 'paired' not in x and isinstance(x.get('ssh'), str)
           and endpoints[d.ssh].reaches(endpoints[x['ssh']]))
 
-    result = {}          # existing index -> entry to write (None: remove)
+    result = {}          # existing index -> entry to write
     added = []
     managed = {}
+    this_mac = set()     # existing indexes of entries that are this Mac
     for di, d in enumerate(declared):
         xi = assigned.get(di)
         if is_self(d):
             note('this Mac', f'{d.name} ({d.ssh}) is this Mac; not listed')
-            if xi is not None and existing[xi]['id'] in managed_before:
-                result[xi] = None
-                note('removed', f'{existing[xi]["name"]} ({existing[xi]["id"]}): it is this Mac')
-            elif xi is not None:
-                # The owner listed this Mac by hand: theirs to keep.
+            if xi is not None:
+                # Treated as undeclared from here on.
                 taken.discard(xi)
+                this_mac.add(xi)
             continue
         if not endpoints[d.ssh].keys and d.ssh_command is None:
             # Through ssh_command, the command logs in, not ssh with known_hosts.
@@ -752,33 +833,41 @@ def plan(settings, declared, endpoints, self_endpoint, previous, excluded=(), ne
             note('added', f'{d.name} ({d.ssh}) as {entry["id"]}')
             continue
         current = existing[xi]
-        managed[current['id']] = {'ssh': d.ssh}
+        adopting = current['id'] not in managed_before
+        record = {'ssh': d.ssh}
+        if adopting or previous[current['id']].get('adopted'):
+            record['adopted'] = True
+        managed[current['id']] = record
         if 'paired' in current:
             note('unchanged', f'{current["name"]} ({current["id"]}) was paired in Muxy; left as it is')
             continue
-        wanted = d.entry(current['id'])
-        if wanted == current:
-            note('unchanged', f'{d.name} ({current["id"]})')
-        elif current['id'] in managed_before:
+        # The list sets its keys; the rest are the owner's or Muxy's.
+        wanted = {k: v for k, v in current.items() if k not in MANAGED_KEYS} | d.entry(current['id'])
+        if wanted != current:
             result[xi] = wanted
+        if adopting:
+            note('adopted', f'{current.get("name")} ({current["id"]}, {current.get("ssh") or current.get("ssh_command")}) '
+                            f'as {d.name} ({d.ssh}); kept when no longer declared')
+        elif wanted != current:
             note('updated', f'{d.name} ({current["id"]})')
         else:
-            result[xi] = wanted
-            note('adopted', f'{current.get("name")} ({current["id"]}, {current.get("ssh") or current.get("ssh_command")}) '
-                            f'as {d.name} ({d.ssh})')
+            note('unchanged', f'{d.name} ({current["id"]})')
 
     parts, servers = [], []
     for xi, current in enumerate(existing):
         if xi in result:
-            entry = result[xi]
-            if entry is not None:
-                parts.append(render_entry(entry))
-                servers.append(entry)
+            parts.append(render_entry(result[xi]))
+            servers.append(result[xi])
             continue
         if xi not in taken and current['id'] in managed_before:
-            note('removed', f'{current["name"]} ({current["id"]}): no longer declared')
-            continue
-        if xi not in taken:
+            why = 'it is this Mac' if xi in this_mac else 'no longer declared'
+            kept = kept_because(current)
+            if kept is None:
+                note('removed', f'{current.get("name")} ({current["id"]}): {why}')
+                continue
+            note('released', f'{current.get("name")} ({current["id"]}): {why}, but {kept}, '
+                             'so it stays as it is and is no longer managed')
+        elif xi not in taken:
             note('not managed', f'{current.get("name")} ({current["id"]})')
         parts.append(settings.span_text(xi))
         servers.append(current)
@@ -906,6 +995,11 @@ def write_settings(settings, candidate):
         replace_file(settings.path, candidate.encode('utf-8'), settings.path.stat().st_mode & 0o7777)
 
 
+def valid_record(record):
+    return (isinstance(record, dict) and set(record) <= STATE_RECORD_KEYS and isinstance(record.get('ssh'), str)
+            and record.get('adopted', True) is True)
+
+
 class State:
     """The ids this command manages, per Muxy profile, as JSON:
     {"version": 1, "profiles": {"<settings.toml>": {"<id>": {"ssh": "<destination>"}}}}.
@@ -923,6 +1017,11 @@ class State:
                               'again by destination and address)') from e
         if not isinstance(data, dict) or data.get('version') != STATE_VERSION or not isinstance(data.get('profiles'), dict):
             raise ConfigError(f'{path}: not a muxy-reconcile state file (version {STATE_VERSION}); delete it to start over')
+        for profile, records in data['profiles'].items():
+            if not isinstance(records, dict) or not all(map(valid_record, records.values())):
+                raise ConfigError(f'{path}: the entries it records for {profile} are not muxy-reconcile records; '
+                                  'delete it to start over (entries are then matched again by destination and '
+                                  'address, and kept when no longer declared)')
         self.data = data
 
     def managed(self, settings_path):
@@ -977,7 +1076,7 @@ def env_int(name, default, minimum):
     return value
 
 
-def reconcile(dry_run, log):
+def reconcile(mode, exclude, log):
     timeout = env_int('MUXY_RECONCILE_TIMEOUT', DEFAULT_TIMEOUT_SECONDS, 1)
     profile = env_path('MUXY_DIR', DEFAULT_PROFILE).absolute()
     config_home = env_path('XDG_CONFIG_HOME', '~/.config')
@@ -990,15 +1089,22 @@ def reconcile(dry_run, log):
     settings_path = profile / 'settings.toml'
 
     # Read first: a bad value is reported even before Muxy has a profile.
-    exclusions = read_exclusions(timeout)
+    mode, exclusions = read_options(mode, exclude, timeout)
+    report = mode == 'report'
 
     with locked(state_path.with_name('lock'), RUN_LOCK_WAIT_SECONDS, 'another muxy-reconcile'):
         if not settings_path.exists():
             return f'{settings_path} does not exist yet (open Muxy once); nothing to do'
         settings = read_settings(settings_path)
-        declared, excluded = read_server_lists(lists, exclusions)
         state = State(state_path)
         previous = state.managed(settings_path)
+        if previous and not lists.is_dir():
+            # As when a list cannot be read: it would look like every server removed.
+            raise ConfigError(f'{lists} is missing, but {state_path} manages {len(previous)} entries of '
+                              f'{settings_path}; nothing written. Run dotfiles apply to link the lists again, '
+                              'or mount the volume they are on. To stop managing those entries instead, delete '
+                              f'{state_path}: they are then left as they are')
+        declared, excluded = read_server_lists(lists, exclusions)
 
         override = os.environ.get('MUXY_RECONCILE_SELF_ADDRESSES')
         own = (frozenset(a for a in map(normalize_address, override.split()) if a)
@@ -1012,11 +1118,14 @@ def reconcile(dry_run, log):
         result = plan(settings, declared, endpoints, self_endpoint, previous, excluded)
         for action in result.actions:
             log.write(action)
-            if dry_run:
+            if report:
                 print(action)
+        nothing_written = f'nothing written, as {MODE_SETTING} is report'
         state_changed = result.managed != previous
         if result.servers == settings.servers:
-            if state_changed and not dry_run:
+            if state_changed and report:
+                return f'report: would record: {result.summary()} ({settings_path} is in step); {nothing_written}'
+            if state_changed:
                 state.save(settings_path, result.managed)
             return f'in step: {result.summary() or "no servers declared"}'
 
@@ -1032,6 +1141,14 @@ def reconcile(dry_run, log):
             raise Failure(f'the rewritten settings.toml does not parse ({e}); nothing written') from e
         if reparsed != expected:
             raise Failure('the rewritten settings.toml would change more than its [[servers]]; nothing written')
+        if report:
+            # Before Muxy's verdict, so a change it refuses is seen too.
+            for line in difflib.unified_diff(settings.text.splitlines(keepends=True),
+                                             candidate.splitlines(keepends=True),
+                                             str(settings_path), f'{settings_path} (would be)', n=0):
+                line = line.rstrip('\n')
+                log.write(f'diff: {line}')
+                print(line)
         # Muxy must accept the file as it is before its verdict on the new one counts.
         try:
             muxy.check(settings.text, profile)
@@ -1043,9 +1160,8 @@ def reconcile(dry_run, log):
             raise Failure(f'Muxy refuses the new servers ({e}); nothing written') from e
         if owned_view(listed) != owned_view(result.servers):
             raise Failure(f'Muxy reads the new servers as {owned_view(listed)}, not as written; nothing written')
-        if dry_run:
-            print(''.join(result.parts), end='')
-            return f'would change: {result.summary()} (Muxy accepts it)'
+        if report:
+            return f'report: would change: {result.summary()} (Muxy accepts it); {nothing_written}'
 
         write_settings(settings, candidate)
         log.write(f'wrote {settings_path} ({settings.digest[:12]} -> '
@@ -1062,7 +1178,11 @@ def reconcile(dry_run, log):
 
 def main(argv=None):
     parser = argparse.ArgumentParser(prog='muxy-reconcile', description=__doc__.split('\n', 1)[0])
-    parser.add_argument('--dry-run', action='store_true', help='show what would change; write nothing')
+    parser.add_argument('--mode', choices=MODES,
+                        help=f'report what would change and write nothing, or apply it; this run only '
+                             f'(default: the {MODE_SETTING} setting, else {DEFAULT_MODE})')
+    parser.add_argument('--exclude-servers', metavar="'<list>/<ssh> ...'",
+                        help=f'the declared servers to leave out; this run only (default: the {EXCLUDE_SETTING} setting)')
     args = parser.parse_args(argv)
     try:
         log = Log(env_path('MUXY_RECONCILE_LOG', DEFAULT_LOG),
@@ -1070,11 +1190,11 @@ def main(argv=None):
     except ConfigError as e:
         print(f'muxy-reconcile: {e}', file=sys.stderr)
         return EXIT_CONFIG
-    log.write('run' + (' (dry run)' if args.dry_run else ''))
+    log.write('run')
     failures = ((ConfigError, EXIT_CONFIG), (RetryError, EXIT_RETRY), (Unavailable, EXIT_UNAVAILABLE),
                 (Failure, EXIT_FAILED), (OSError, EXIT_FAILED))
     try:
-        summary = reconcile(args.dry_run, log)
+        summary = reconcile(args.mode, args.exclude_servers, log)
     except tuple(kind for kind, _ in failures) as e:
         status = next(code for kind, code in failures if isinstance(e, kind))
         log.write(f'error: {e}')

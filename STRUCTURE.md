@@ -92,7 +92,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
-| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); setting `muxy.exclude_servers`; Brewfile: 1 brew |
+| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); settings `muxy.reconcile` (`report` until a Mac sets `apply`) and `muxy.exclude_servers`; Brewfile: 1 brew |
 
 Edit linked files in place. Add, remove or move files, then run
 `dotfiles apply`; a file in the way is reported, never overwritten. See
@@ -188,7 +188,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |
 | [features/tool.muxy/home/.local/bin/muxy](features/tool.muxy/home/.local/bin/muxy) | Run the `muxy` inside the installed Muxy app (`DOTFILES_MUXY_APP`, else `~/Applications`, else `/Applications`); what Muxy on another Mac starts over SSH |
-| [features/tool.muxy/home/.local/bin/muxy-reconcile](features/tool.muxy/home/.local/bin/muxy-reconcile) | Bring Muxy's `[[servers]]` in step with `~/.config/muxy/servers.d/*.toml`, leaving out this Mac; `--dry-run` reports only |
+| [features/tool.muxy/home/.local/bin/muxy-reconcile](features/tool.muxy/home/.local/bin/muxy-reconcile) | Bring Muxy's `[[servers]]` in step with `~/.config/muxy/servers.d/*.toml`, leaving out this Mac; logs the change and writes nothing while `muxy.reconcile` is `report` (`--mode` for one run) |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
 
 ## Automation and data boundaries
