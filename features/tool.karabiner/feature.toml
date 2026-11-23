@@ -1,0 +1,10 @@
+id = "tool.karabiner"
+description = "Karabiner-Elements and its settings (a managed copy: Karabiner rewrites karabiner.json): the G502 X PLUS's G5 button opens Mission Control"
+category = "tools"
+platforms = ["darwin"]
+
+[provides]
+cask = ["karabiner-elements"]
+# Karabiner saves karabiner.json by replacing it, which turns a link into a plain file; as a copy,
+# a change made in Karabiner's settings shows as drift for `dotfiles adopt`.
+copy = [".config/karabiner/karabiner.json"]

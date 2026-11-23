@@ -26,14 +26,14 @@ func TestGitHubCredentialsComeFromGh(t *testing.T) {
 	}
 	repo, err := filepath.Abs(filepath.Join("..", ".."))
 	require.NoError(t, err)
-	features, err := manifest.LoadFeatures(repo)
+	features, err := manifest.LoadFeatures(manifest.Root{Dir: repo})
 	require.NoError(t, err)
-	profiles, err := manifest.LoadProfiles(repo)
+	profiles, err := manifest.LoadProfiles(manifest.Root{Dir: repo})
 	require.NoError(t, err)
 	result, err := resolve.Resolve(features, profiles, &manifest.Machine{Profiles: []string{"base"}}, "darwin")
 	require.NoError(t, err)
 	root := t.TempDir()
-	p, err := Build(features, result.Runnable(features), result.Values(),
+	p, err := Build(features, result.Runnable(features), result.Values(), result.PrefLayers,
 		Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"})
 	require.NoError(t, err)
 	gitconfig := filepath.Join(root, "gitconfig")

@@ -6,5 +6,9 @@ enable = [
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
+  "agents.claude.theme",
   "agents.agent-mcp",
+  # The Codex app-server, and the agent dashboard once agent-monitor install ran.
+  "agents.codex",
+  "agents.agent-monitor",
 ]

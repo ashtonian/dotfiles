@@ -26,8 +26,9 @@ Pick the [profiles](#profiles-and-machines) this machine runs; without
 `desktop` is a broad personal app collection, including paid apps. The
 installer requests sudo, offers passwordless sudo, installs Go, builds the
 `dotfiles` engine, writes `~/.config/dotfiles/machine.toml`, applies the
-enabled features, installs their packages, and loads LaunchAgents. The sync
-agent runs immediately at load. Apply problems and package failures are
+enabled features, installs their packages, then applies again to load the
+features' LaunchAgents, so the sync job (which runs at load) starts after the
+packages are in. Apply problems and package failures are
 warnings, so inspect the output before relying on the completion message.
 
 The final prompt offers `config.sh`, which applies broad system/app preferences,
@@ -47,10 +48,12 @@ recognize `/usr/local` Homebrew installations.
 | Git, GnuPG, usable signing key | Repository sync and signed commits |
 | Homebrew, Go (version in `go.mod`), Python 3 | Packages, building the `dotfiles` engine, and AWS profile helpers |
 | Gitleaks | Scanning dotfiles before automatic publication |
+| jq (`/usr/bin/jq` on macOS 15 and later, or the `brew.base` formula) | Sync and the weekly update telling which casks need root, and the update's retries |
 | GitHub CLI (gh), authenticated for each destination | Checking GitHub commit verification after a push |
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
+| Muxy 2.5 or later in `/Applications` or `~/Applications`, or at `DOTFILES_MUXY_APP` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
 Claude Code, gitstead, and gateway credentials need separate setup when those
@@ -65,13 +68,13 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Sync every 4 hours, Friday updates, Go build cache trim every hour, eligible Codex/OpenCode/agent dashboard services |
+| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, the hourly Muxy server list, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
 
 ## Architecture
 
 ```text
 ~/.dotfiles/                    # This repo - synced via git
-├── features/<id>/              # One capability each: feature.toml, home/ (files linked into ~)
+├── features/<id>/              # One capability each: feature.toml, home/ (files linked into ~), launchagents/
 │   ├── shell.env/, shell.zsh/  # Shared environment; zsh modules and entry files
 │   ├── git/, ssh/              # Shared git and ssh settings
 │   ├── tool.*/, agents.*/      # Tool and coding-agent configs
@@ -80,7 +83,6 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 ├── cmd/dotfiles/, internal/    # The feature engine (Go)
 ├── lib_sh/                     # Shell libraries
 ├── bin/                        # Scripts
-├── launchagents/               # Automation plists
 ├── install.sh                  # Bootstrap script
 ├── config.sh                   # macOS preferences
 └── sync.sh                     # Sync automation
@@ -125,7 +127,8 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | `~/.dotfiles` | git, tracked files only | Every 4 hours |
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
 | This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
-| Missing packages | brew bundle install `--no-upgrade` | Every sync |
+| The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
+| Missing packages | brew bundle install `--no-upgrade` | Every sync; under the LaunchAgent, casks that install as root and App Store apps wait for a terminal, named in a `WARN` line |
 
 Sync publishes edits to files the repository already tracks. A new file is
 never published until you commit it yourself. A repository with a Git index
@@ -139,7 +142,9 @@ uses the engine, sync checks that this machine can install it: the machine has
 `~/.config/dotfiles/machine.toml` (otherwise it logs the profiles upstream
 offers), and the upstream's own engine builds with this machine's Go and plans
 that manifest (`dotfiles check`). If any of that fails, sync neither merges nor
-pushes, and the checkout stays as it is.
+pushes, and the checkout stays as it is. Sync then brings this machine's
+overlays up to date (see [Overlays](#overlays)) before `dotfiles apply` reads
+them.
 
 ### Manual Sync Commands
 
@@ -149,11 +154,13 @@ pushes, and the checkout stays as it is.
 
 # Individual operations
 ~/.dotfiles/sync.sh dotfiles  # Sync only dotfiles repo
+~/.dotfiles/sync.sh overlays  # Sync only the overlays machine.toml lists
 ~/.dotfiles/sync.sh repos     # Sync only ~/.sync/ repos
 ~/.dotfiles/sync.sh brewfile  # Install the enabled features' missing packages
 ~/.dotfiles/sync.sh mise      # Install the tools mise's shared defaults name (the pinned Go, Node LTS)
 ~/.dotfiles/sync.sh build     # Rebuild ~/.local/bin/dotfiles if its sources changed
 ~/.dotfiles/sync.sh apply     # Build if needed, then dotfiles apply
+~/.dotfiles/sync.sh otel-agent  # Install the pinned telemetry collector; restart it if it changed
 ~/.dotfiles/sync.sh all       # Same as sync
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
@@ -164,6 +171,7 @@ pushes, and the checkout stays as it is.
 | `SYNC_DIR` | path | `~/.sync` | Directory whose Git repositories sync also publishes |
 | `SYNC_QUIET_MINUTES` | minutes | `30` | A tracked edit newer than this makes sync skip the repository for this run |
 | `DOTFILES_BIN` | path | `~/.local/bin/dotfiles` | The engine binary sync builds and runs |
+| `DOTFILES_OVERLAY_DIR` | path | `~/.dotfiles-overlays` | Directory holding one overlay checkout per context, each named for its overlay; the engine reads it, and sync syncs the ones `machine.toml` lists |
 
 Full sync commits and pushes eligible changes. A busy lock or unavailable network
 is logged and skipped successfully; other operation failures return nonzero.
@@ -172,37 +180,24 @@ Check `logs/sync.log` for the outcome. Runtime overrides are listed in the
 
 ### LaunchAgents
 
+Each LaunchAgent is a template in the feature that declares it
+(`features/<id>/launchagents/`), and `dotfiles apply`, which every sync runs,
+installs, loads, reloads and removes them as the profiles say. An agent whose
+program or setup is missing waits for it: the Codex service for the codex cask,
+OpenCode for its local setup, the dashboard for `agent-monitor install`, the
+telemetry collector for `otel-agent enroll`. The full list, the one-time macOS
+prompts, and what apply does when a template changes are in
+[OPERATIONS.md](docs/OPERATIONS.md#launchagents).
+
 ```sh
-# Install
-~/.dotfiles/bin/dotfiles-install-launchagents.sh
-
-# Status
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --status
-
-# Manual trigger
-launchctl start com.dotfiles.sync
-
-# Codex app-server only (privacy setup: docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --codex-only
-
-# OpenCode server only (local setup first, see features/agents.opencode/README.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
-
-# Agent dashboard only (after bin/agent-monitor install, see docs/AGENT-MONITOR.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
-
-# Agent telemetry collector only (after bin/otel-agent install + configure, see docs/AGENT-TELEMETRY.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --otel-agent-only
-
-# Go build cache trim only (entries unused for 24 h, every hour; see docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --go-cache-trim-only
-
-# gpg-agent supervisor only (signing from SSH sessions; see docs/OPERATIONS.md)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --gpg-agent-only
-
-# Uninstall
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --uninstall
+dotfiles doctor                                    # pending changes, and agents still waiting
+launchctl print "gui/$(id -u)/com.dotfiles.sync"   # one agent's state and last exit
+launchctl kickstart "gui/$(id -u)/com.dotfiles.sync"   # run a scheduled job now
 ```
+
+To turn an agent off on one Mac, disable its feature in
+`~/.config/dotfiles/machine.toml` (`[features] disable = ["dotfiles.update"]`)
+and run `dotfiles apply`.
 
 ## Feature engine
 
@@ -215,25 +210,42 @@ after every merge.
 
 ```sh
 dotfiles init --profiles base,dev,desktop   # write this machine's manifest (once)
-dotfiles status            # every feature, enabled or not, and which layer decided
+dotfiles init --overlays personal --profiles base,dev,desktop,personal --force   # the same, in an overlay's context
+dotfiles status            # each checkout's commit, then every feature, enabled or not, and which layer decided
 dotfiles apply --dry-run   # what apply would change
 dotfiles apply             # converge this machine
 dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if any
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
+dotfiles overlays          # the checkout directory of each overlay machine.toml lists
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
+dotfiles adopt muxy:appearance.dark_theme   # the same for an app setting changed in the app
+dotfiles forget muxy:appearance.dark_theme  # drop the earlier value of a setting whose app is gone for good
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
-writes managed copies for files a tool rewrites (gh, htop and Taskwarrior
+writes managed copies for files a tool rewrites (gh, htop and Karabiner
 settings, and everything under `~/Library` on macOS), renders the generated
 outputs in `~/.config/dotfiles/generated/` (the Brewfile, and the env, zsh, git
-and ssh fragments), and creates one-line stubs for entry points installers
-write to. It records what it installed in `~/.local/state/dotfiles/applied.json`,
+and ssh fragments), creates one-line stubs for entry points installers
+write to, and installs and loads the features' LaunchAgents on macOS. It records what it installed in `~/.local/state/dotfiles/applied.json`,
 so disabling a feature removes exactly what it added. It never overwrites a
 file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
 edits into its tracked file, which sync then publishes like any tracked edit. A
 second run with nothing changed does nothing.
+
+App settings that share a file with one machine's own state, such as Muxy's
+theme and Claude Code's `theme` in `~/.claude/settings.json`, are owned key by
+key: a feature's prefs file lists them, and `apply` sets each one through the
+app (`muxy config set` inside `Muxy.app`; an in-place edit of
+`settings.json`), leaving every other key to the machine. A setting changed in
+the app after apply set it is reported, never overwritten, and
+`dotfiles adopt <store>:<key>` keeps it; a `[prefs]` table in a profile or
+`machine.toml` gives one machine its own value (see
+[Profiles and machines](#profiles-and-machines)); disabling the feature puts
+back the value it replaced. See
+[App settings](docs/MACHINE-FEATURES.md#app-settings). `--app-timeout`
+(default `15s`) bounds each call to an app's settings tool.
 Without `machine.toml` it refuses to run, since no profile would apply and it
 would remove everything the profiles install.
 
@@ -249,36 +261,88 @@ removed.
 
 | Profile | Enables |
 | ------- | ------- |
-| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages |
-| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
+| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, passkey prompts turned off (`browser.passkeys-off`), the Karabiner mouse mapping (`tool.karabiner`), Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14), its command line tool and the other Macs as its remote servers |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
 
-| Machine | Profiles |
-| ------- | -------- |
-| studio | `base, dev, desktop, studio` |
-| Mac mini | `base, dev, desktop, server` |
-| Work machine | `base, dev, work` |
+| Machine | Profiles | Overlays |
+| ------- | -------- | -------- |
+| studio | `base, dev, desktop, studio` | `personal` and the clients worked from it |
+| Mac mini | `base, dev, desktop, server` | `personal` and the clients worked from it |
+| A client's machine | `base, dev, work` | that client's only |
 
-Override one feature or setting for one machine in `machine.toml`:
+Override one feature, setting or app setting for one machine in `machine.toml`:
 
 ```toml
 profiles = ["base", "dev", "desktop", "server"]
 
 [features]
-disable = ["tool.taskwarrior"]
+disable = ["tool.colorls"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]
+"muxy:terminal.font_size" = 13.0   # instead of tool.muxy's shared 14.0
 ```
+
+| Table | Keys | Overrides | Checked |
+| --- | --- | --- | --- |
+| `[features]` | `enable`, `disable`: feature ids | the feature's `default`, then each profile in order | an unknown id is an error |
+| `[settings]` | setting names, such as `"paths.playwright_browsers"` | the declaring feature's default, then each profile's `[settings]` in order | an unknown name or a value of the wrong type is an error |
+| `[prefs]` | app settings, `<store>:<key>` as `dotfiles adopt` names them, such as `"muxy:terminal.font_size"` | the owning feature's prefs file, then each profile's `[prefs]` in order | a key no enabled feature owns, or a value the store cannot take, is a plan error |
+
+A profile's `[prefs]` table works the same way for every machine that lists
+the profile. Changing or removing an override takes effect on the next apply
+(removing one returns the setting to the shared value); disabling the feature
+still puts back the value from before dotfiles. `dotfiles check`, `doctor` and
+`status` show each app setting's value and where it comes from; see
+[Per-machine overrides](docs/MACHINE-FEATURES.md#per-machine-overrides).
+
+### Overlays
+
+This repository is public, so it names no client, private repository or
+internal host. Those facts live in overlays: one private repository per
+context (personal work, and each client), cloned at
+`~/.dotfiles-overlays/<context>` (`DOTFILES_OVERLAY_DIR`). An overlay has this
+repository's layout (`features/`, `profiles/`), and the engine loads the ones
+`machine.toml` lists after this repository's:
+
+```toml
+overlays = ["personal"]
+profiles = ["base", "dev", "desktop", "studio", "personal"]
+```
+
+- Every feature ID and profile name in an overlay is the overlay's name or
+  starts with it and a dot (`personal.claude`, `personal.studio`), and this
+  repository's never do. So an ID says which context it comes from, and no
+  overlay can replace a feature here or another overlay's.
+- An overlay feature with `default = true` is on wherever its overlay is
+  listed. An overlay profile can set the settings this repository's features
+  declare, which is how a private value (a cache list, a path) reaches a
+  public feature.
+- A machine lists only the contexts it works in. A client's machine lists that
+  client's overlay and nothing else, so it never holds personal facts or
+  another client's.
+- A listed overlay that is not cloned stops `apply` (exit 2) instead of
+  removing what its features installed. Sync pulls and publishes each listed
+  overlay, to its own remote, before `apply` reads it.
+- Taking an overlay off the list removes what its features installed on the
+  next `apply`.
+- An overlay's `denylist.txt` lists the names it keeps private, one per line
+  (`#` comments). Before sync publishes this repository it fails if a tracked
+  line names one, as a whole word in any case, and so does
+  `bin/check-private-names` (run it before pushing a branch). The lists stay
+  in the overlays, so public CI never sees them.
 
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
-| 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
-| 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict) |
+| 1 | Problems left for you (a file in the way, an edited copy, an app setting changed in the app, an app that is not installed, a missing setting), or for `doctor`, pending changes |
+| 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict), or a listed overlay is not cloned |
 | 64 | Usage |
 | 70 | An I/O failure |
 
@@ -379,7 +443,7 @@ Interactive launchers from `~/.config/zsh/zshrc.zsh` (feature `shell.zsh`):
 | --------- | ------- | -------- | ---------- |
 | `gptmore [args...]` | GPT-6.1 Sol | `xhigh` | Connects to the local remote-control server in the current directory (`-C "$PWD"`; without it the session runs in the server's `~`) and skips Codex approvals and sandboxing |
 | `gptmax [args...]` | GPT-6 Astra | `max` | Same, with Astra |
-| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks |
+| `claudemore [args...]` | `opus[1m]` | `xhigh` | Names the session, enables Remote Control, and skips Claude permission checks. Started on a drive under `/Volumes`, the session keeps its scratch and its commands' caches on that drive (`CLAUDE_CODE_TMPDIR`, `DOTFILES_CACHE_HOME`; docs/OPERATIONS.md) |
 | `claudemax [args...]` | `fable[1m]` | `xhigh` | Same behavior with the Fable alias |
 
 The model and effort defaults are listed above. The launchers forward additional
@@ -453,8 +517,9 @@ checks it. Setup, configuration, operations and security:
 Repositories list the MCP servers they need in committed `.mcp.json` (Claude
 Code) and `.codex/config.toml` (Codex) files; every entry runs
 `agent-mcp <server>`, which pins each server's binary and flags in one place.
-Servers load only where they are used: Serena in the Go repositories, the code
-graph in karsto, Kubernetes, Terraform and Grafana in home-ops. See
+Servers load only where they are used: Serena in the Go repositories, a code
+graph in the application repositories, Kubernetes, Terraform and Grafana in the
+infrastructure repositories. See
 [docs/AGENT-MCP.md](docs/AGENT-MCP.md).
 
 ### Agent telemetry
@@ -477,6 +542,82 @@ AI-assisted development workflows from `lib_sh/claude.sh`:
 | `cdoc` | Generate `CLAUDE.md` |
 | `creview` | Review branch changes |
 | `csecurity` | Security audit |
+
+## Spotlight exclusions
+
+Feature `macos.spotlight` keeps Spotlight out of folders that hold no
+documents: app caches and databases under `~/Library/Application Support`,
+`~/Library/Logs`, the pnpm store, Go toolchains, `/usr/local` and the Command
+Line Tools. `apply` does not run it; after installing the feature, and after
+editing the list, run:
+
+```sh
+spotlight-exclusions apply    # add the folders in ~/.config/spotlight/exclusions
+spotlight-exclusions check    # exit 1 if a folder on the list is not excluded
+```
+
+The list, the commands and troubleshooting:
+[docs/SPOTLIGHT.md](docs/SPOTLIGHT.md).
+
+## Passkeys off
+
+Feature `browser.passkeys-off` (desktop profile) stops websites, browsers and 1Password from
+offering, creating or auto-filling passkeys; passwords and security keys keep working. It
+installs the Passkeys Off extension for Brave and Chrome and the `passkeys-off` command. Once
+per Mac:
+
+```sh
+passkeys-off apply    # Firefox prefs in every profile's user.js; restart Firefox
+passkeys-off check    # exit 1 until each browser profile has the extension loaded
+```
+
+Loading the extension, the 1Password and Passwords app settings, and troubleshooting:
+[docs/PASSKEYS.md](docs/PASSKEYS.md).
+
+## Mouse buttons
+
+Feature `tool.karabiner` (desktop profile) installs Karabiner-Elements with a managed
+`~/.config/karabiner/karabiner.json`: the G502 X PLUS's G5 button opens Mission Control,
+which G HUB used to do, and every other key and button behaves as it does without
+Karabiner. Once per Mac, install it from a terminal (its `.pkg` needs a password), then
+approve the driver and Input Monitoring that Karabiner asks for:
+
+```sh
+brew install --cask karabiner-elements
+```
+
+Checking the button with Karabiner-EventViewer, and troubleshooting:
+[docs/KARABINER.md](docs/KARABINER.md).
+
+## Muxy remote servers
+
+Feature `tool.muxy` (desktop profile) makes each Mac's Muxy list the other Macs of
+every context it works in as remote servers. Each context's overlay names its Macs:
+`Host` aliases in an `ssh_config` fragment, and a list linked to
+`~/.config/muxy/servers.d/<context>.toml`. `muxy-reconcile`, run by the LaunchAgent
+`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, when apply
+rewrites its generated files, and hourly,
+rewrites only the `[[servers]]` tables of Muxy's `settings.toml`: it leaves out the Mac
+it runs on, keeps the ids of entries that already reach the same Mac (Muxy ties tabs to
+them), keeps entries added by hand, and writes only what Muxy's own parser accepts. Until
+a Mac's `machine.toml` sets `muxy.reconcile` to `apply`, it only logs what it would change
+(the Mac mini moves first; [Rollout](docs/MUXY.md#rollout)).
+`~/.local/bin/muxy` runs the app's own `muxy`, which is also what Muxy on the other Macs
+starts over SSH. While Muxy's own server copy `~/.local/bin/.muxy` exists, apply leaves
+`~/.local/bin/muxy` alone (a running server may execute from it); the copy is retired by
+hand at a planned server restart only. Neither apply nor `muxy-reconcile` stops, restarts
+or upgrades a Muxy server. One Mac leaves out, adds or renames servers, or changes how one
+is reached, in files only it has (`muxy.exclude_servers` in `machine.toml`, a local list,
+`~/.ssh/config.local`). Once per Mac:
+
+```sh
+dotfiles doctor            # "waiting ~/.local/bin/muxy": Muxy's own server copy is here; leave it
+ssh <alias> true           # once per listed Mac: accept its host key
+muxy-reconcile --mode report   # what it would change, checked by Muxy; writes nothing
+```
+
+The algorithm, configuration, exit statuses and troubleshooting:
+[docs/MUXY.md](docs/MUXY.md).
 
 ## Multi-Machine Setup
 
@@ -510,7 +651,9 @@ current Go before the migration reaches it; see
 
 4. **Machine-specific SSH hosts** — create `~/.ssh/config.local`
 
-5. **Install LaunchAgents**: `~/.dotfiles/bin/dotfiles-install-launchagents.sh`
+5. **LaunchAgents**: `dotfiles doctor` lists the ones still waiting for a setup
+   step (`otel-agent enroll`, `agent-monitor install`, OpenCode's local files);
+   apply loads each once its step has run
 
 6. **Agent shells**: `~/.dotfiles/bin/dotfiles-agents install` (see [Agent shells](#agent-shells))
 
@@ -526,7 +669,7 @@ repository.
 - **Features**: Sync runs `dotfiles apply` right after the merge. Files are linked one at a time, so no directory in `$HOME` is a link into the repository and a tool writing next to its config never writes into the repository.
 - **Git sync**: Repositories with an unfinished merge, rebase, cherry-pick or bisect are skipped. Sync requires a configured Git identity and signing key, creates signed commits and merges, and verifies signatures locally. Source conflicts abort the merge; backup repositories retain their local-wins merge policy. Detached HEADs and branches without a matching `origin` tracking branch are skipped.
 - **Publishing**: Gitleaks scans staged dotfiles and outgoing commits with redacted output; auxiliary repos are not scanned. Missing tools, scan failures, signing failures and merge failures stop publication. GitHub verification is checked after the push and does not undo publication on failure; bad_email requires correcting the signing identity.
-- **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
+- **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync and during the weekly update, so packages never upgrade while a sync runs `brew bundle` or `dotfiles apply` (`lib_sh/sync-lock.sh`). A sync that finds the lock held skips its run; the update waits up to `UPDATE_LOCK_WAIT` seconds (30 minutes) and runs its own sync inside its lock. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
 - **Failures**: Sync returns a nonzero status when an operation fails and records the failure in `logs/sync.log`.
 - **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` and `Brewfile.local` are never tracked.
 

@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# check-private-names [CHECKOUT]: fail when a tracked file in the public
+# dotfiles checkout (default $DOTFILES_DIR, else ~/.dotfiles) names something
+# an overlay keeps private (its denylist.txt). Run it before pushing a branch;
+# sync runs the same check before it publishes.
+set -euo pipefail
+# shellcheck source=lib_sh/private-names.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/private-names.sh"
+
+checkout=${1:-${DOTFILES_DIR:-$HOME/.dotfiles}}
+engine=${DOTFILES_BIN:-$HOME/.local/bin/dotfiles}
+status=0
+private_names_found "$checkout" "$engine" || status=$?
+case $status in
+    0) echo "check-private-names: the lines above name what an overlay keeps private; reword them, or move them to that overlay" >&2; exit 1 ;;
+    1) exit 0 ;;
+    *) echo "check-private-names: cannot list this machine's overlays with $engine" >&2; exit 2 ;;
+esac

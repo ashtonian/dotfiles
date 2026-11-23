@@ -1568,7 +1568,6 @@ fi
 # * defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
 # * Last login: Sun Jan 24 18:55:04 on ttys000
 # * init.sh uses comments to deliniate between laptop / desktop setups
-# * config f.lux, including rm annon stats
 # * ask user for project folder target
 # * ask user for dotfiles
 
@@ -1592,8 +1591,6 @@ fi
 # alias less="less -R"
 # 	alias ls="ls -F --color=auto --group-directories-first"
 # alias diff
-
-# alias yoink="open -a Yoink"
 
 # timezsh() {
 #   shell=${1-$SHELL}

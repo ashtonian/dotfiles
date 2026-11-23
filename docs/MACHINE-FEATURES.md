@@ -77,7 +77,8 @@ in the repository, and the emptied directories there are removed.
 | --- | --- | --- | --- |
 | Feature | `features/<id>/feature.toml` plus payload files | yes | The unit of toggling: what to install, link, schedule and check |
 | Profile | `profiles/<name>.toml` | yes | A named set of feature decisions and setting values (`base`, `dev`, `desktop`, `server`, `work`, `studio`) |
-| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's profiles, feature overrides and setting overrides |
+| Overlay | `~/.dotfiles-overlays/<context>`, a private repository per context | in its own repository | One context's features and profiles (personal work, or one client), loaded after the repository's when `machine.toml` lists it; its IDs all start with its name |
+| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's overlays, profiles, feature overrides and setting overrides |
 | Setting | declared by a feature, valued by profiles and the machine manifest | values may be either | Typed configuration a feature consumes, such as `paths.playwright_browsers` |
 | Secret | The OS secret store (see [Platforms](#platforms)), seeded from 1Password | never | Referenced by name in a feature; the value never appears in a manifest, the environment or a log |
 | Generated output | `~/.config/dotfiles/generated/` (`%LOCALAPPDATA%\\dotfiles\\generated\\` on Windows) | no | Files `apply` renders from the enabled features: Brewfile, WinGet configuration, shell fragments, git and ssh includes |
@@ -96,13 +97,16 @@ A feature is enabled when the last decision in this order says so:
 error that names both. `conflicts` makes two features mutually exclusive.
 Settings resolve the same way: feature default, then profiles in order, then
 the machine manifest. A missing required setting fails `apply` for that feature
-only and shows on the status page.
+only and shows on the status page. App settings a feature owns resolve in the
+same order too: the feature's prefs file, then each profile's `[prefs]` table,
+then the machine manifest's (see [App settings](#app-settings)).
 
 ### Machine manifest
 
 ```toml
 # ~/.config/dotfiles/machine.toml
-profiles = ["base", "dev", "desktop", "server"]
+overlays = ["personal"]
+profiles = ["base", "dev", "desktop", "server", "personal"]
 
 [features]
 enable  = ["tool.toggl-focus", "browser.firefox.bypass-paywalls"]
@@ -110,10 +114,15 @@ disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]                                # app settings, keyed as `dotfiles adopt` names them
+"muxy:terminal.font_size" = 13.0       # this machine's smaller screen
 ```
 
 `dotfiles init --profiles base,dev,...` writes this file (`install.sh` runs it
-from `--profiles`). `apply` and `doctor` refuse to run without it: with no
+from `--profiles`); `--overlays` adds the contexts the machine works in, each
+of which must be cloned first. Overlays are described in the README's
+[Overlays](../README.md#overlays) section. `apply` and `doctor` refuse to run without it: with no
 profiles, nothing would be enabled, and `apply` would remove everything the
 profiles install. `dotfiles feature enable|disable <id>` edits this file and
 runs `apply` for that feature.
@@ -162,11 +171,22 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.brew_link]          # a formula's Brewfile `link:` option
 # zoxide = false
 
+[provides.link_unless_exists] # a `link` entry left alone while any of these absolute or ~/ paths exists
+# ".local/bin/zoxide" = ["~/.local/bin/.zoxide-installer"]
+
+[provides.prefs]              # app settings owned key by key: store = prefs file (see App settings)
+# muxy = "muxy.toml"
+
+[[provides.launch_agent]]     # a launchd job (macOS); one table per agent
+plist       = "launchagents/com.example.zoxide-gc.plist"  # template named <Label>.plist; $HOME is replaced
+when_exists = ["/opt/homebrew/bin/zoxide"]  # absolute or ~/ paths; installed only once all exist
+
 [settings.cd_override]
 type    = "bool"
 default = true
 doc     = "Replace cd with zoxide's cd in real interactive sessions only"
 env     = ""                  # export the value under this name in the generated env.sh (not for secrets); an inherited value wins
+values  = []                  # string settings only: the values allowed; any other is a resolve error, which `dotfiles check` reports
 
 [hooks]
 apply    = ""                 # idempotent converge script, settings passed as env
@@ -188,15 +208,181 @@ script: packages are installed, links point at the repo, managed copies match
 their manifest hash, a scheduled job is registered and its last exit was 0, a
 fragment is in the generated output.
 
+### LaunchAgents
+
+A `launch_agent` entry is a launchd job for the user's GUI session. Its template
+lives in the feature (by convention under `launchagents/`) and is named for its
+`Label`; the engine refuses a template whose `Label` is another name, and two
+features declaring one label. apply replaces `$HOME`, installs the result as
+`~/Library/LaunchAgents/<Label>.plist`, creates its log directories under
+`$HOME`, and loads it. A template whose keys or values changed is written and
+the job reloaded (a comment-only change is just written), except while that
+would cut a run short: the job the apply runs in
+(`XPC_SERVICE_NAME`) and a scheduled job in the middle of a run reload at a
+later apply. A service (`KeepAlive`) reloads at once, which restarts it.
+`when_exists` holds an agent back until its program or setup file exists, and
+removes it again when one goes away; `dotfiles doctor` lists what waits. An
+installed plist edited by hand is reported and left loaded. LaunchAgents are
+installed on macOS only; on other platforms the rest of the feature applies.
+[OPERATIONS.md](OPERATIONS.md#launchagents) lists the repository's agents.
+
+### Held links
+
+`link_unless_exists` names, for an entry of `link`, paths whose presence means
+another installer owns that place, and a running program may depend on what is
+there. While any of them exists, apply neither replaces the entry's link nor
+creates it where nothing is: `dotfiles doctor` lists it as waiting (`left alone
+while <path> exists`), not as a problem, and a link apply made earlier stays,
+with its record. Once none exists, apply links the entry as usual. A file
+another tool put there is never replaced in any case (it is reported as in the
+way); the hold also keeps the place empty and quiet while the owner is there.
+Files under `Library/` cannot be held, since they are installed as managed
+copies on macOS. `tool.muxy` holds `~/.local/bin/muxy` while Muxy's own server
+copy, `~/.local/bin/.muxy`, exists ([MUXY.md](MUXY.md#why-the-wrapper)).
+
+`schedules` (rollout step 6) will render one job definition for launchd,
+systemd and Task Scheduler; `launch_agent` is the macOS-only form that runs the
+current jobs until then.
+
 ### Teardown
 
 Disabling a feature reverses each `provides` type: remove its links and
-managed copies, unregister its scheduled jobs (`launchctl bootout`,
+managed copies, put back the app settings it set, unload and remove its LaunchAgents, unregister its scheduled jobs (`launchctl bootout`,
 `systemctl --user disable --now`, `Unregister-ScheduledTask`), drop its
 fragments from the generated outputs, and run its `teardown` hook. Packages
 are not uninstalled automatically, because another tool or the user may rely
 on them. The status page lists installed packages no enabled feature wants,
 and `dotfiles prune --packages` removes them on request.
+
+### App settings
+
+Some apps keep settings every machine should share in the same file as state
+that belongs to one machine, and rewrite that file themselves. Muxy's
+`settings.toml` holds the theme and shortcuts beside the recent projects and
+the remote servers it pairs with; Claude Code's `~/.claude/settings.json` holds
+the theme beside each machine's own hooks, permissions and MCP servers. A link
+breaks on the app's first save, a managed copy reports drift on every change
+the app makes, and either one would carry one machine's state to the others.
+Mackup's whole-file copies (see [Mackup](#mackup)) have the same problem.
+
+A feature names the settings it owns instead, in a prefs file per app:
+
+```toml
+# features/tool.muxy/feature.toml
+[provides.prefs]
+muxy = "muxy.toml"
+
+# features/tool.muxy/muxy.toml: one top-level `key = value` per line
+"appearance.dark_theme" = "Dracula"
+"terminal.font_families" = ["FiraCode Nerd Font Mono"]
+"terminal.font_size" = 14.0
+```
+
+`apply` sets each key through the app's own interface, a store, and leaves
+every other key alone:
+
+| Store | Talks to | Keys |
+| --- | --- | --- |
+| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`DOTFILES_MUXY_APP` when set, else `~/Applications`, then `/Applications`). `set` and `unset` save a value only if the app can start with it, then ask a running desktop app to read its settings again (`settings.reload` on the profile's `app.sock`); they never start the app and never contact `muxy-server`, where terminals run. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
+| `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from. A `settings.json` that links elsewhere is written through the link | top-level keys only; a value may be an object, which replaces that whole key. A key inside an object, such as `permissions.defaultMode`, is refused: the object holds the machine's own rules |
+
+Every key is written on its own line. An unquoted dotted key such as
+`permissions.defaultMode = "acceptEdits"` is a plan error, because TOML reads
+it as a whole `permissions` table; quote a key that holds a dot.
+
+An app setting always has some value, so there is no "nothing there yet" that
+tells apply's own work from the owner's, as there is for a link or copy. The
+first apply on a machine records the value the key has in the state file,
+saves the state, and only then sets the key, so a run that stops partway
+still knows what to put back. It then reads the key back and records what the
+app stored, which can differ a little from what was set: Muxy keeps a float
+as 32 bits, so `1.3` reads back as `1.2999999523162842`. From then on:
+
+- a key that still has the value apply set follows the plan: a new value in
+  the prefs file, a profile or `machine.toml` is set (`update-pref`);
+- a key changed in the app since is a problem (`changed here since dotfiles
+  set it`) and is left alone; `dotfiles adopt <store>:<key>` writes the app's
+  value where the planned value comes from (below);
+- disabling the feature, or removing the line, puts back the recorded earlier
+  value (or unsets the key), unless the key changed in the app since;
+- a store that cannot be reached is a problem for its keys only; the rest of
+  apply converges, and the next run tries again. A set that fails keeps the
+  record of the earlier value, since the app may have taken the new one
+  before the failure was reported;
+- during teardown, an app that is not available (`app not available`: not
+  installed, or its bundle replaced mid-update) cannot take its old value
+  back. The record, the only copy of that value, is kept, and `dotfiles
+  doctor` lists the setting as waiting; it is no failure, so sync does not
+  fail on every run. A later apply puts the value back once the app is
+  there. If the app is gone for good, `dotfiles forget <store>:<key>` drops
+  the record and prints the earlier value, to set by hand should the app
+  return. It refuses a setting an enabled feature still owns, and the
+  records are bounded: one per setting a feature once owned.
+
+#### Per-machine overrides
+
+A shared value can be changed for one machine, or for every machine with a
+profile, by naming the setting in a `[prefs]` table, keyed `<store>:<key>` as
+`dotfiles adopt` and the reports name it:
+
+```toml
+# ~/.config/dotfiles/machine.toml
+[prefs]
+"muxy:terminal.font_size" = 13.0
+
+# profiles/laptop.toml
+[prefs]
+"muxy:appearance.dark_theme" = "Nord"
+```
+
+The order is the one settings follow: the feature's prefs file, then each
+profile in `machine.toml` order, then `machine.toml`; the last one that names
+the key wins. Each override is checked like a prefs file line (a known store,
+a leaf for Muxy, a top-level key for Claude Code, a value with a JSON form).
+A setting no feature owns at all, a typo or a key removed from its prefs
+file, is a plan error in any layer. A setting whose feature is off on this
+machine is left out: `machine.toml` naming one is reported by `dotfiles
+check` (`note: ... is off here, so it is ignored`) and `dotfiles doctor`
+(`ignored`), and fails nothing; a profile naming one is left out silently,
+since profiles are shared by machines that turn features on and off.
+
+An override changes the planned value, not the record of what was there
+before dotfiles, so:
+
+- adding or changing one sets the new value on the next apply
+  (`update-pref`), as a repository change would;
+- removing one sets the shared value again on the next apply;
+- teardown still puts back the value the key had before dotfiles first set it;
+- `dotfiles adopt <store>:<key>` rewrites the line where the value comes from:
+  the override's line in `machine.toml` or the profile (which must be written
+  on its own line in a `[prefs]` table), or the feature's prefs file. A
+  trailing `# comment` on that line stays.
+
+`dotfiles check`, `dotfiles doctor` and `dotfiles status` show each setting's
+value and where it comes from:
+
+```text
+$ dotfiles check
+app setting: muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)
+app setting: muxy:appearance.dark_theme = "Dracula", from tool.muxy
+$ dotfiles doctor
+app-setting muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)
+$ dotfiles status
+APP SETTING              VALUE  SET BY
+muxy:terminal.font_size  13.0   machine (tool.muxy shares 14.0)
+```
+
+`dotfiles status --json` lists them under `prefs`, each with `id`, `value`,
+`set_by`, `feature` and `shared`.
+
+A feature in an overlay owns settings the same way: `dotfiles adopt` writes
+the value into the overlay's prefs file, and a machine that drops the overlay
+from `machine.toml` gets back the values its settings replaced. One key has
+one owner across the repository and every listed overlay; a second is a plan
+error, as for two features linking one file.
+
+`dotfiles check` parses every prefs file, overlays' included, so a malformed
+one never merges; it reads no app.
 
 ## Generated outputs
 
@@ -305,7 +491,7 @@ Sections:
 The target catalog, grouped by category; each row is one toggle. Rollout step
 5b built the coarser features the later steps split into these: `shell.env`,
 `shell.zsh`, `git`, `git.keychain`, `ssh`, `tool.gh`, `tool.atuin`, `tool.htop`,
-`tool.colorls`, `tool.mise`, `tool.neofetch`, `tool.taskwarrior`,
+`tool.colorls`, `tool.mise`,
 `agents.claude`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
 `backup.mackup.config`, and the packages `brew.base`, `brew.macos`,
 `brew.apps`, `brew.desktop`, `brew.activity-trackers`, `brew.mas`,
@@ -323,7 +509,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
-| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.aws-profile`, `tool.gpg-signing` |
+| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner`, `tool.muxy` |
 | security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
 
 ## Mackup
@@ -437,9 +623,9 @@ engine wraps every call:
 
 ### Store: per machine, with a shared common set
 
-Decision D27 (recommended): one private repository per context, so a work
-machine never holds personal data and a personal machine never holds work
-data. Each profile names its context's store (`mackup.store`). Inside it:
+Decision D27: one private repository per context (the context's overlay), so
+a client's machine never holds personal data and a personal machine holds a
+client's only when it is worked from there. Each profile names its context's store (`mackup.store`). Inside it:
 
 ```text
 mackup-personal/
@@ -942,12 +1128,14 @@ and its status. Decided entries record who decided.
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
 | D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zlogin.zsh` hands a marked `zsh -lc` command to Homebrew bash (`zshenv.zsh` a plain `zsh -c` one); `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 | D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
+| D27 | One private repository per context (personal work, and each client), cloned as an overlay at `~/.dotfiles-overlays/<context>`. It holds the context's features and profiles. A machine lists only its own contexts in `machine.toml`, so a client's machine never holds personal data or another client's, and a personal machine holds a client's only when it is worked from there | owner, 2026-11-23 |
+| D32 | Settings in a file that mixes shared values with one machine's state, and that the app rewrites (Muxy, Claude Code's `settings.json`), are owned key by key through prefs files and set through the app's own interface (see [App settings](#app-settings)); whole-file links and copies stay for files that are entirely shared | owner |
 
 ### Open
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,
-`.zshrc.omz-backup`, the neofetch package and `lib_sh/requirers.sh` duplicate
+`.zshrc.omz-backup` and `lib_sh/requirers.sh` duplicate
 or contradict current sources.
 Recommendation: delete; the generated feature catalog replaces them.
 Status: open.
@@ -1023,14 +1211,6 @@ API path requires an SSO session. The change lands in the home cluster
 repository, not here.
 Status: needed before PR 9.
 
-**D27. Mackup store per context?**
-Work and personal machines must not exchange app settings.
-Options: one private repository per context (personal, work), with `common/`
-and one directory per machine inside it; or one shared repository with
-`personal/...` and `work/...`. Trade-off: a shared repository gives every machine read access
-to the other context's data.
-Recommendation: one repository per context. Status: open.
-
 **D28. Windows app settings?**
 Mackup does not run on Windows.
 Options: declarative features only (settings files the repo owns, such as
@@ -1086,12 +1266,16 @@ Each step is a pull request with its tests and docs.
      home, along with the untracked files still left in the old tree that
      `$HOME` links to); move host-only values into host profiles. The
      machine-local `~/.gitconfig.local`, `~/.ssh/config.local`, `~/.zshrc.local`
-     and `Brewfile.local` stay as they are. `config.sh` and the
-     LaunchAgents move with step 6, which brings the hooks and schedules they
-     need.
+     and `Brewfile.local` stay as they are. `config.sh` moves with step 6,
+     which brings the hooks it needs. The LaunchAgents moved into their
+     features ahead of it (`launch_agent`): only `install.sh` installed them,
+     so a Mac set up another way, or since a new agent landed, ran without
+     them.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
-   results, notifications, `doctor --automation` and the status page.
+   results, notifications, `doctor --automation` and the status page. Sync's
+   `otel-agent converge` step becomes the `agents.otel-agent` feature's
+   `apply` hook.
 7. **Windows.** The symlink test and managed-copy fallback, Task Scheduler,
    WinGet configuration, Credential Manager, the PowerShell profile stub, the
    Claude Code and Codex configs, `install.ps1`, and the Windows CI job.
