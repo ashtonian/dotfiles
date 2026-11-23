@@ -27,8 +27,8 @@ type Muxy struct {
 }
 
 // MuxyCommands lists where an installed Muxy keeps its tool: inside app when
-// it is set (DOTFILES_MUXY_APP, which tool.muxy's wrapper also reads), else a
-// per-user install first, <home>/Applications, then /Applications.
+// it is set (DOTFILES_MUXY_APP), else a per-user install first,
+// <home>/Applications, then /Applications.
 func MuxyCommands(home, app string) []string {
 	if app != "" {
 		return []string{filepath.Join(app, toolInApp)}
