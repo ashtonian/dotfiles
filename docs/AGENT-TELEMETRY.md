@@ -98,15 +98,15 @@ otelcol-contrib 0.165.0.
 
 ## External Dependencies
 
-- **Cluster gateway**: `k8s/monitoring/otel-gateway` in the public home-ops
-  repository (OTLP/HTTP behind the LAN ingress, one bearer token per source
+- **Cluster gateway**: `k8s/monitoring/otel-gateway` in the infrastructure
+  repository, which is private (OTLP/HTTP behind the LAN ingress, one bearer token per source
   host, Mimir and Loki exporters), plus the **Coding Agents** Grafana dashboard
   (`k8s/monitoring/dashboards/coding-agents.yaml`).
 - **Per-host tokens**: Secrets `otel-gateway-token-studio`, `-mbp` and `-mini`
   in namespace `monitoring`, key `token`. `enroll` also reads the internal
   domain from `argocd/render-domains`, key `domain.internal`.
 - **Backends' age limits**: both accept a backlog up to 7 days old: Loki's
-  `reject_old_samples_max_age` is 168 h (home-ops `k8s/monitoring/loki`), and
+  `reject_old_samples_max_age` is 168 h (the cluster's Loki config), and
   Mimir's `out_of_order_time_window` is 168 h behind the tenant's newest sample
   (`k8s/monitoring/mimir`). Anything older is refused there, by Loki as too old
   and by Mimir as out of bounds. The queues hold about 8 to 9 days at studio's

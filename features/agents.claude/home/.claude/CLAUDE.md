@@ -151,26 +151,14 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 ## Shared development host — one gate lock
 
-- Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
+- Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version the lock's installer put there. `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
   - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. Checks run in the focused pool beside heavy work, at full speed, and never wait for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
   - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (the focused pool, half the host's CPUs; `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
   - Heavy work: `gate-lock run <label> -- ...` holds the default share (a third of the heavy lane, which is the host's performance cores; `GOMAXPROCS` is set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`. The lane admits against what holders measurably use, not what they declared: a new run counts at its grant until its first sample (10 s), then at its busiest 10-second interval of the last 30 s, so heavy runs share the host while their use fits; grants together are capped at twice the lane. One module's build or suite, or a few packages' race tests, take the default share or declare what they use. Declare the cores the work actually uses: an inflated grant only delays your own admission.
   - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. `all` is the largest grant, not exclusivity: it is granted the whole lane (`GOMAXPROCS` and go's `-p` left at the lane's) but admitted once the holders measurably leave a default share free; after its first sample it counts by use, so later runs join it as far as its use leaves room, and a waiting `all` is passed by runs that fit for at most 300 s before the lane drains for it. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks, suites whose timing needs a quiet host, and anything that must run alone: `run-exclusive`.
   - The watchdog ends a run whose process tree makes no CPU progress for 30 minutes (exit 122), and a heavy run past 4 h or a focused run past 2 h (exit 124). A run that legitimately waits that long (a remote job, a long download) sets `GATE_LOCK_IDLE_OK=1` or `GATE_LOCK_HANG_AFTER=<seconds>`. While a run drives docker, orb, ssh or another outside-work client, it counts at its grant and is never idled.
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
-- Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
-
-## Evergreen repos — few branches, few builds (gox, estavelle, jobcrm, karsto)
-
-- These four are in evergreen development. Keep the number of task branches, pull requests and CI runs low: every branch push and PR runs the full matrix on shared runners and costs every agent queue time. That is the cost to minimise, not branch size. This overrides any "one branch / one PR per unit" wording in those repositories' own agent docs.
-- Batch your lane's queued units into **one task branch and one PR** per work session or lane batch, even when they are unrelated and the diff is large. Keep each unit its own commit, with its RFC/ledger updates in that commit, so history and review stay legible.
-- Push when a coherent batch is ready to validate, not after every commit: a later push cancels the run in progress. Fold a follow-up fix into the open branch rather than opening another.
-- Open a separate branch only when the work must land on its own: it blocks another lane or the trunk, it must be revertible alone, it needs a distinct reviewer or acceptance gate, or it waits on a dependency the rest of the batch does not.
-- Everything else in the repository's agreement holds: cut from the current trunk, sync by merge, never rebase, merge on green and promptly. Batching is not a reason to let a branch drift.
-
-## Repositories you change only with permission
-
-- **`platform2121/vernemq-docker`** (the VerneMQ broker image): never change it without the user's explicit permission for that change. That covers branches, commits, pushes, pull requests, issues, comments, releases and tags. Reading it, cloning it into scratch and building an image from it locally for a test are fine. When work turns up something VerneMQ needs, write the finding where you were asked to work and tell the user; don't act on it in that repository.
+- Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in the lock's own repository and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; the lock's README covers operations.
 
 ## Searching in Claude Code's Bash tool
 

@@ -15,7 +15,8 @@
 #   <tmp>/claude-<uid>/<project>/<session>  a session's scratch, unused for DISK_HYGIENE_SCRATCH_DAYS (7)
 #   <cache>/<tool>                          a tool's whole cache, unused for DISK_HYGIENE_CACHE_DAYS (14),
 #                                           unless DISK_HYGIENE_KEEP names it
-#   <cache>/<name>/<key>                    one key of a DISK_HYGIENE_KEYED cache (jobcrm estavelle)
+#   <cache>/<name>/<key>                    one key of a DISK_HYGIENE_KEYED cache (setting
+#                                           disk_hygiene.keyed; none unless a profile names them)
 #   ~/Library/Caches/{goimports,pnpm}       each file unused for DISK_HYGIENE_CACHE_DAYS
 #   ~/Library/pnpm/store, <drive>/.pnpm-store   `pnpm store prune`
 #   each LaunchAgent dotfiles apply installed (its state file under
@@ -33,9 +34,12 @@
 # directory per branch or tool version, goes a key at a time.
 set -euo pipefail
 
+# shellcheck source=lib_sh/machine-setting.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
+
 scratch_days=${DISK_HYGIENE_SCRATCH_DAYS:-7}
 cache_days=${DISK_HYGIENE_CACHE_DAYS:-14}
-keyed=${DISK_HYGIENE_KEYED-jobcrm estavelle}
+keyed=${DISK_HYGIENE_KEYED-$(machine_setting DISK_HYGIENE_KEYED)}
 keep=${DISK_HYGIENE_KEEP-}
 tmp_root=${DISK_HYGIENE_TMP:-/private/tmp}
 volumes=${DISK_HYGIENE_VOLUMES:-/Volumes}

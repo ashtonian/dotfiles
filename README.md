@@ -300,6 +300,11 @@ profiles = ["base", "dev", "desktop", "studio", "personal"]
   overlay, to its own remote, before `apply` reads it.
 - Taking an overlay off the list removes what its features installed on the
   next `apply`.
+- An overlay's `denylist.txt` lists the names it keeps private, one per line
+  (`#` comments). Before sync publishes this repository it fails if a tracked
+  line names one, as a whole word in any case, and so does
+  `bin/check-private-names` (run it before pushing a branch). The lists stay
+  in the overlays, so public CI never sees them.
 
 | Exit status | Meaning |
 | ----------- | ------- |
@@ -480,8 +485,9 @@ checks it. Setup, configuration, operations and security:
 Repositories list the MCP servers they need in committed `.mcp.json` (Claude
 Code) and `.codex/config.toml` (Codex) files; every entry runs
 `agent-mcp <server>`, which pins each server's binary and flags in one place.
-Servers load only where they are used: Serena in the Go repositories, the code
-graph in karsto, Kubernetes, Terraform and Grafana in home-ops. See
+Servers load only where they are used: Serena in the Go repositories, a code
+graph in the application repositories, Kubernetes, Terraform and Grafana in the
+infrastructure repositories. See
 [docs/AGENT-MCP.md](docs/AGENT-MCP.md).
 
 ### Agent telemetry

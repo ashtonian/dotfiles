@@ -13,7 +13,7 @@ API keys.
 runs it as the `com.ashtonian.agent-monitor` LaunchAgent on `127.0.0.1:4820`.
 After `lan enable`, the LAN reaches it at `https://agents.<internal domain>`.
 That URL goes through the cluster's internal ingress (Authentik) and the
-home-ops-private app `k8s/dev/agent-monitor`, then a token-checked gate on this
+private infrastructure repository's `k8s/dev/agent-monitor` app, then a token-checked gate on this
 Mac (`com.ashtonian.agent-monitor-gate`, port 4821). The dashboard itself never
 listens on the LAN.
 
@@ -46,7 +46,7 @@ of them, so the service runs on the defaults.
 | `AGENT_MONITOR_DATA_DIR` | Directory path | unset (`<home>/store`); studio: `/Volumes/E2TB/agent-monitor` | Where `install` points the data link when `--data-dir` is not given. Setting `paths.agent_monitor_data` (feature `shell.env`), exported by the generated `env.sh` |
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
 | `AGENT_MONITOR_GATE_HOST` | Address | `0.0.0.0` | LAN gate bind address; set it to one interface's address to keep the gate off the others |
-| `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in home-ops-private `k8s/dev/agent-monitor` |
+| `AGENT_MONITOR_GATE_PORT` | Port | `4821` | LAN gate port. Must match `AGENT_MONITOR_GATE` in the private infrastructure repository's `k8s/dev/agent-monitor` |
 | `MISE_DATA_DIR` | Directory path | `~/.local/share/mise` | Where mise installs the pinned Node.js release (`installs/node/<version>`) |
 | `CODEX_HOME` | Directory path | `~/.codex` | Codex home for hooks and history |
 
