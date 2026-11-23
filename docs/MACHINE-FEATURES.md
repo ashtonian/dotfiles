@@ -108,7 +108,7 @@ profiles = ["base", "dev", "desktop", "server", "personal"]
 
 [features]
 enable  = ["tool.toggl-focus", "browser.firefox.bypass-paywalls"]
-disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
+disable = ["shell.omz.web-search", "backup.mackup.macosx"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
@@ -344,7 +344,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Category | Features |
 | --- | --- |
 | shell | `shell.core`, `shell.prompt.dracula`, `shell.plugins.autosuggest`, `shell.plugins.syntax-highlighting`, `shell.plugins.autopair`, `shell.plugins.fzf`, `shell.plugins.you-should-use`, `shell.zoxide`, `shell.atuin`, `shell.direnv`, `shell.mise`, `shell.modern-aliases`, `shell.safety-aliases`, `shell.greeting`, `shell.claude-launchers`, `shell.gitstead` |
-| shell.omz | `shell.omz.git`, `shell.omz.git-auto-fetch`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.node`, `shell.omz.npm`, `shell.omz.ruby`, `shell.omz.rake`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.vscode`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.iterm2`, `shell.omz.gpg-agent` |
+| shell.omz | `shell.omz.git`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.gpg-agent` |
 | agents | `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
