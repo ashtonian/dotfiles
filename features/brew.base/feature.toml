@@ -9,7 +9,6 @@ tap = [
   "ashtonian/tap",
   "browsh-org/browsh",
   "hashicorp/tap",
-  "microsoft/git",
   "moul/moul",
   "siderolabs/tap",
 ]

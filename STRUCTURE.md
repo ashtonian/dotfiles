@@ -60,7 +60,7 @@ where the feature is off.
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
 | `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
-| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
+| `brew.base` | base | darwin, linux | Brewfile: 6 tap, 99 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 19 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
