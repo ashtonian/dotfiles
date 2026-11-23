@@ -50,7 +50,8 @@ gopls only in Go code.
 
 ## External Dependencies
 
-- `~/.claude/mcp` with its pinned installs; the runbook there lists every version and the upgrade steps.
+- `~/.claude/mcp` with its pinned installs; the runbook there lists every version and the upgrade steps. The credential helpers in it, `github-headers.sh` and `context7-headers.sh` (`headersHelper` scripts named in `~/.claude.json`) and `grafana.sh`, are links into this feature; the installs stay untracked.
+- `gh` logged in: `github-headers.sh` sends `gh auth token` as the GitHub server's bearer token, with Homebrew's prefixes on PATH, since the desktop app starts Claude Code without them.
 - `uv` (Serena), Go and gopls (`~/go/bin`), and mise's default Node, through its shims (Playwright, dbhub, the LSP servers).
 - The keychain items `claude-mcp-grafana` (`url`, `token`) and, optionally, `claude-mcp-context7` (`api-key`).
 - `~/.local/bin` on `PATH`: `~/.config/shell/env.sh` puts it there for shells, and the Codex and OpenCode LaunchAgents set it in their `PATH`.
@@ -154,4 +155,7 @@ To add a server to a repository, add its name to that repository's
 | --- | --- |
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](../features/agents.agent-mcp/home/.local/bin/agent-mcp) | Launcher: server name → pinned binary and flags |
 | [features/agents.agent-mcp/home/.config/agent-mcp/serena-claude-code.yml](../features/agents.agent-mcp/home/.config/agent-mcp/serena-claude-code.yml) | Serena context for Claude Code |
+| [features/agents.agent-mcp/home/.claude/mcp/github-headers.sh](../features/agents.agent-mcp/home/.claude/mcp/github-headers.sh) | `headersHelper`: the GitHub server's `Authorization` header from `gh auth token` |
+| [features/agents.agent-mcp/home/.claude/mcp/context7-headers.sh](../features/agents.agent-mcp/home/.claude/mcp/context7-headers.sh) | `headersHelper`: Context7's API key from keychain service `claude-mcp-context7`, or no header |
+| [features/agents.agent-mcp/home/.claude/mcp/grafana.sh](../features/agents.agent-mcp/home/.claude/mcp/grafana.sh) | Starts `bin/mcp-grafana` beside it with the URL and token from keychain service `claude-mcp-grafana` |
 | [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `AgentMcp` tests |

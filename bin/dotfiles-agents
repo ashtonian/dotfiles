@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #===============================================================================
-# dotfiles-agents - system configs that make Claude Code and Codex use bash
+# dotfiles-agents - system configs that make Claude Code and Codex use bash,
+#                   keep Claude Code's attribution out of commits and PRs, and
+#                   run repo-guard in every Codex session
 #===============================================================================
 #
 # USAGE:
@@ -9,11 +11,21 @@
 #   dotfiles-agents uninstall   remove both files
 #
 # Claude Code: a managed-settings drop-in sets CLAUDE_CODE_SHELL to a current
-# bash. Managed settings outrank user settings and merge `env` per variable,
-# and Claude Code never writes the file itself.
+# bash and hides all attribution (`"attribution": false`, Claude Code 2.1.281
+# or later): no Co-Authored-By trailer, PR line or session link. Managed
+# settings outrank user and project settings, a CLAUDE.md rule cannot override
+# their attribution, `env` merges per variable, and Claude Code never writes
+# the file itself.
 # Codex: it always runs the passwd login shell, with no setting to change it.
 # Its system config layer turns shell snapshots off and marks every command
-# shell with AGENT_SHELL; ~/.zshenv then hands the command to bash.
+# shell with AGENT_SHELL; ~/.zshenv then hands the command to bash. Hooks in
+# this layer are managed: they run without a trust prompt and a user config
+# cannot turn them off. It registers repo-guard (~/.local/bin/repo-guard,
+# feature agents.repo-guard) for the shell tool; a home without the feature
+# passes. Codex treats a crashed hook as a non-blocking failure, so the
+# command turns any exit other than 0 or 2 into a block. Commit and PR
+# attribution has no local setting in Codex 0.171: the account's
+# commit_attribution_enabled decides it (README: Agent shells).
 #
 # EXIT STATUS: 0 ok; 1 check found a missing or changed file; 64 usage;
 # 69 no bash 4 or later, or an unsupported OS; 73 a file this script did not
@@ -46,8 +58,14 @@ agent_bash() {
 }
 
 render_claude() {
-    printf '{\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
+    printf '{\n  "attribution": false,\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
 }
+
+# The Codex hook command, run by the session's shell. Without the feature the
+# call passes; with it, an exit other than 0 (allow or deny) or 2 (block)
+# blocks, which Codex would otherwise let through.
+# shellcheck disable=SC2016 # the hook's shell expands it, not this script
+codex_guard='g="$HOME/.local/bin/repo-guard"; [ -e "$g" ] || [ -L "$g" ] || exit 0; /bin/bash "$g"; s=$?; case $s in 0|2) exit $s ;; esac; echo "repo-guard: exited $s; blocking the command" >&2; exit 2'
 
 render_codex() {
     cat <<EOF
@@ -62,6 +80,15 @@ shell_snapshot = false
 [shell_environment_policy]
 # ~/.zshenv runs a command shell that carries this marker as bash.
 set = { AGENT_SHELL = "codex" }
+
+# repo-guard for the shell tool, which hooks see as Bash.
+[[hooks.PreToolUse]]
+matcher = "Bash"
+
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = '$codex_guard'
+timeout = 10
 EOF
 }
 

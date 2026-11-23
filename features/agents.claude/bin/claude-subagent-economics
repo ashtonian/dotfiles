@@ -1,0 +1,162 @@
+#!/usr/bin/env python3
+"""Price recent subagent runs from Claude Code transcripts, and the break-even
+size of the main session re-reading what a cheaper subagent cited.
+
+Usage: claude-subagent-economics [--days N] [--projects DIR]
+
+Reads <projects>/<project>/<session>/subagents/agent-*.meta.json and the run
+transcripts beside them, for runs of the agent types listed in OFFLOADABLE
+changed in the last N days. Prices are Opus 5.5 API rates; Sonnet and Haiku
+are priced as fixed ratios of them. Exit status: 0 ok, 1 no runs found,
+64 usage.
+"""
+import argparse
+import json
+import statistics
+import sys
+import time
+from pathlib import Path
+
+# Opus 5.5 API rates, $/MTok. Cache write is taken as 1.25x input (it is not
+# in the published table); cache read and output are the published rates.
+OPUS = {"in": 4.0, "cw": 5.0, "cr": 0.20, "out": 20.0}
+SONNET_RATIO = 0.5    # Sonnet 5.5 is half of Opus 5.5 on every token class
+HAIKU_RATIO = 0.025   # Haiku 5.5, prompts under 100K tokens
+VERIFY_OUTPUT_TOKENS = 300  # the parent's Read calls that open the cited ranges
+OFFLOADABLE = {"Explore", "general-purpose", "scout", "reader"}
+
+
+def assistant_usage(path: Path):
+    """Last usage per message id (streamed messages repeat their usage)."""
+    by_id, last_text, ids_in_order = {}, "", []
+    with path.open(errors="replace") as f:
+        for line in f:
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            msg = ev.get("message")
+            if ev.get("type") != "assistant" or not isinstance(msg, dict):
+                continue
+            mid = msg.get("id")
+            if mid and msg.get("usage"):
+                if mid not in by_id:
+                    ids_in_order.append(mid)
+                by_id[mid] = msg["usage"]
+            texts = [c.get("text", "") for c in msg.get("content") or [] if isinstance(c, dict) and c.get("type") == "text"]
+            if texts:
+                last_text = "\n".join(texts)
+    return by_id, ids_in_order, last_text
+
+
+def remaining_parent_requests(parent: Path, tool_use_id: str) -> int:
+    """The parent's API requests after the subagent returned, up to its next
+    compaction: how often a re-read of the cited lines is paid for again."""
+    seen_call, after = False, set()
+    with parent.open(errors="replace") as f:
+        for line in f:
+            if not seen_call:
+                if tool_use_id in line:
+                    seen_call = True
+                continue
+            try:
+                ev = json.loads(line)
+            except ValueError:
+                continue
+            if ev.get("type") == "system" and ev.get("subtype") == "compact_boundary":
+                break
+            msg = ev.get("message")
+            if ev.get("type") == "assistant" and isinstance(msg, dict) and msg.get("id"):
+                after.add(msg["id"])
+    return len(after)
+
+
+def price_runs(projects: Path, cutoff: float):
+    rows = []
+    for meta_path in projects.glob("*/*/subagents/agent-*.meta.json"):
+        if meta_path.stat().st_mtime < cutoff:
+            continue
+        try:
+            meta = json.loads(meta_path.read_text())
+        except ValueError:
+            continue
+        if meta.get("agentType") not in OFFLOADABLE:
+            continue
+        run = meta_path.with_name(meta_path.name.replace(".meta.json", ".jsonl"))
+        if not run.exists():
+            continue
+        usage, ids, report = assistant_usage(run)
+        if not usage:
+            continue
+        tok = {"in": 0, "cw": 0, "cr": 0, "out": 0}
+        for u in usage.values():
+            tok["in"] += u.get("input_tokens", 0)
+            tok["cw"] += u.get("cache_creation_input_tokens", 0)
+            tok["cr"] += u.get("cache_read_input_tokens", 0)
+            tok["out"] += u.get("output_tokens", 0)
+        opus_cost = sum(tok[k] * OPUS[k] for k in tok) / 1e6
+        parent = meta_path.parent.parent.with_suffix(".jsonl")
+        remaining = remaining_parent_requests(parent, meta.get("toolUseId", "")) if parent.exists() else 0
+        # $ per re-read token: written once to the parent's cache, then read
+        # again on each later parent request.
+        per_token = (OPUS["cw"] + OPUS["cr"] * remaining) / 1e6
+        fixed = VERIFY_OUTPUT_TOKENS * OPUS["out"] / 1e6
+        saving_sonnet = opus_cost * (1 - SONNET_RATIO)
+        rows.append({
+            "type": meta["agentType"],
+            "requests": len(ids),
+            "ctx_read_k": (tok["in"] + tok["cw"] + tok["cr"]) / 1000,
+            "out_k": tok["out"] / 1000,
+            "report_tok": len(report) // 4,
+            "opus_cost": opus_cost,
+            "remaining": remaining,
+            "breakeven_tok": max(0.0, (saving_sonnet - fixed) / per_token),
+            "verify3k_frac": (3000 * per_token + fixed) / saving_sonnet if saving_sonnet else float("inf"),
+        })
+    return rows
+
+
+def quantile(values, p):
+    values = sorted(values)
+    return values[min(len(values) - 1, int(p * len(values)))]
+
+
+def main(argv):
+    parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    parser.add_argument("--days", type=int, default=30, help="runs changed in the last N days (default 30)")
+    parser.add_argument("--projects", type=Path, default=Path.home() / ".claude/projects",
+                        help="Claude Code's projects directory (default ~/.claude/projects)")
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as e:
+        return 0 if e.code == 0 else 64
+    if args.days < 1:
+        print("claude-subagent-economics: --days must be at least 1", file=sys.stderr)
+        return 64
+
+    rows = price_runs(args.projects, time.time() - args.days * 86400)
+    if not rows:
+        print(f"claude-subagent-economics: no subagent runs in {args.projects} in the last {args.days} days", file=sys.stderr)
+        return 1
+
+    types = sorted({r["type"] for r in rows})
+    print(f"runs: {len(rows)}  by type: " + ", ".join(f"{t}={sum(r['type'] == t for r in rows)}" for t in types))
+    for key, label in [
+        ("requests", "subagent API requests"),
+        ("ctx_read_k", "subagent input tokens read (K, incl. cache)"),
+        ("out_k", "subagent output tokens (K)"),
+        ("report_tok", "report returned to parent (tokens)"),
+        ("opus_cost", "run priced at Opus 5.5 ($)"),
+        ("remaining", "parent requests until the next compaction"),
+        ("breakeven_tok", "break-even re-check size for Sonnet (tokens)"),
+        ("verify3k_frac", "a 3K-token re-check as a share of the Sonnet saving"),
+    ]:
+        vals = [r[key] for r in rows]
+        print(f"{label:55s} p25={quantile(vals, .25):9.2f}  median={statistics.median(vals):9.2f}  p75={quantile(vals, .75):9.2f}")
+    total_opus = sum(r["opus_cost"] for r in rows)
+    print(f"\ntotal at Opus: ${total_opus:.2f}; on Sonnet: ${total_opus * SONNET_RATIO:.2f}; on Haiku: ${total_opus * HAIKU_RATIO:.2f}")
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

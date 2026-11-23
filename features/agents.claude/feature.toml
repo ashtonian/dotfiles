@@ -1,6 +1,8 @@
 id = "agents.claude"
-description = "Claude Code instructions for every project"
+description = "Claude Code: the global instructions, the claudemore, claudemax, claudefleet and claudeclean launchers, the status line and claude-subagent-economics"
 category = "agents"
+# The launchers append its delegation policy; its subagents serve their sessions.
+requires = ["agents.delegation"]
 
 # Where the stow package used to link these files.
 retire = [
@@ -8,4 +10,10 @@ retire = [
 ]
 
 [provides]
-link = [".claude/CLAUDE.md"]
+link = [
+  ".claude/CLAUDE.md",
+  # settings.json's statusLine runs it.
+  ".claude/statusline-p10k.sh",
+]
+bin = ["bin/claude-subagent-economics"]
+zshrc = "zshrc.zsh" # claudemore, claudemax, claudefleet, claudeclean
