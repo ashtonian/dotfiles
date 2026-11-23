@@ -2173,6 +2173,57 @@ class SpotlightExclusions(Fixture):
         self.assertEqual(result.add, [str(new)])
         self.assertEqual(result.absent, [absent])
 
+    def configured(self, shared, local=None):
+        from unittest import mock
+        self.config(shared)
+        if local is not None:
+            (self.path / 'exclusions.local').write_text(local)
+        with mock.patch.dict(os.environ, SPOTLIGHT_EXCLUSIONS_FILE=str(self.path / 'exclusions')):
+            return self.tool.configured_folders()
+
+    def test_local_list_follows_the_shared_list_without_duplicates(self):
+        folders = self.configured('/usr/local\n/opt/shared\n', local='/opt/checkout\n/usr/local\n')
+        self.assertEqual(folders, ['/usr/local', '/opt/shared', '/opt/checkout'])
+
+    def test_missing_local_list_leaves_the_shared_list(self):
+        self.assertEqual(self.configured('/usr/local\n'), ['/usr/local'])
+
+    def fake_mdfind(self, results, status=0):
+        """An mdfind on PATH that logs its scope and prints RESULTS (one path per line)."""
+        log = self.path / 'mdfind.log'
+        listing = self.path / 'mdfind.out'
+        listing.write_text(''.join(f'{r}\n' for r in results))
+        script = self.bin / 'mdfind'
+        script.write_text(f'#!/bin/sh\necho "$2" >> "{log}"\ncat "{listing}"\nexit {status}\n')
+        script.chmod(0o755)
+        return log
+
+    def test_counts_come_from_one_query_on_the_parent(self):
+        from unittest import mock
+        work, code = self.path / 'work', self.path / 'code'
+        work.mkdir()
+        code.mkdir()
+        # mdfind prints canonical paths: /private/var, not the /var symlink.
+        real = Path(os.path.realpath(self.path))
+        log = self.fake_mdfind([real / 'work/a', real / 'work/b/c', real / 'code/d', real / 'workshop/e', real / 'f'])
+        with mock.patch.dict(os.environ, PATH=f'{self.bin}{os.pathsep}{os.environ["PATH"]}'):
+            counts = self.tool.indexed_items([str(work), str(code)], timeout=10)
+        self.assertEqual(counts, {str(work): '2', str(code): '1'})
+        self.assertEqual(log.read_text().split(), [os.path.realpath(self.path)])
+
+    def test_failed_count_reads_unknown(self):
+        from unittest import mock
+        work = self.path / 'work'
+        work.mkdir()
+        self.fake_mdfind([work / 'a'], status=1)
+        with mock.patch.dict(os.environ, PATH=f'{self.bin}{os.pathsep}{os.environ["PATH"]}'):
+            self.assertEqual(self.tool.indexed_items([str(work)], timeout=10), {str(work): '?'})
+
+    def test_local_list_errors_name_the_local_file(self):
+        (self.path / 'file').write_text('')
+        with self.assertRaisesRegex(self.tool.ConfigError, r'exclusions\.local: .*file is not a folder'):
+            self.configured('/usr/local\n', local=f'{self.path / "file"}\n')
+
 
 
 class DiskHygiene(Fixture):

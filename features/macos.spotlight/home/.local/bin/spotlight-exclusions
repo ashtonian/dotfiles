@@ -8,8 +8,9 @@ usage:
   spotlight-exclusions remove PATH...      take folders off the exclusion list
 
 The configured folders are read from SPOTLIGHT_EXCLUSIONS_FILE
-(default ~/.config/spotlight/exclusions); --counts gives each mdfind
-SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT seconds (default 60). Exit status: 0 ok,
+(default ~/.config/spotlight/exclusions), then from the same path with
+.local appended when that file exists; --counts gives the mdfind for each
+parent folder SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT seconds (default 60). Exit status: 0 ok,
 1 a folder is not excluded, 2 usage or config error, 3 mds refused a change.
 See docs/SPOTLIGHT.md.
 """
@@ -20,10 +21,14 @@ import ctypes
 import os
 import subprocess
 import sys
+import threading
 from dataclasses import dataclass, field
 from pathlib import Path
 
 DEFAULT_CONFIG = "~/.config/spotlight/exclusions"
+# The machine's own folders, never tracked: checkouts and workspaces only one
+# machine has. Read after the shared list, if present.
+LOCAL_SUFFIX = ".local"
 DEFAULT_COUNT_TIMEOUT_SECONDS = 60
 
 EXIT_DRIFT = 1
@@ -160,28 +165,80 @@ def count_timeout() -> int:
     return int(raw)
 
 
-def indexed_items(folder: str, timeout: int) -> str:
-    """How many items under folder the index still holds, or '?' if mdfind fails."""
-    # A content-type query is answered from the index only; a kMDItemFSName
-    # query falls back to a filesystem search and counts unindexed files too.
+# A content-type query is answered from the index only; a kMDItemFSName
+# query falls back to a filesystem search and counts unindexed files too.
+INDEX_QUERY = 'kMDItemContentTypeTree == "public.item"'
+
+
+def indexed_items(folders: list[str], timeout: int) -> dict[str, str]:
+    """How many items under each folder the index still holds, '?' where mdfind fails.
+
+    Counted from one query per parent folder: mds answers nothing for a query
+    scoped to an excluded folder, yet its items stay in the index, and in the
+    results of every wider search, until mds has purged them.
+    """
+    by_parent: dict[str, list[str]] = {}
+    for folder in folders:
+        real = os.path.realpath(folder)
+        by_parent.setdefault(os.path.dirname(real), []).append(folder)
+    counts: dict[str, str] = {}
+    for parent, children in by_parent.items():
+        tally = count_under(parent, [os.path.realpath(c) for c in children], timeout)
+        for child in children:
+            found = tally.get(os.path.realpath(child))
+            counts[child] = "?" if found is None else str(found)
+    return counts
+
+
+def count_under(parent: str, folders: list[str], timeout: int) -> dict[str, int]:
+    """Indexed items mdfind reports under each of folders, all inside parent; empty if it fails."""
+    tally = dict.fromkeys(folders, 0)
+    prefixes = [(folder + os.sep, folder) for folder in folders]
     try:
-        result = subprocess.run(
-            ["mdfind", "-onlyin", folder, "-count", 'kMDItemContentTypeTree == "public.item"'],
-            capture_output=True, text=True, timeout=timeout, check=True)
-        return str(int(result.stdout.strip()))
-    except (subprocess.SubprocessError, OSError, ValueError):
-        return "?"
+        proc = subprocess.Popen(["mdfind", "-onlyin", parent, INDEX_QUERY],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except OSError:
+        return {}
+    # Streamed: a parent such as $HOME can hold millions of indexed items.
+    timer = threading.Timer(timeout, proc.kill)
+    timer.start()
+    try:
+        for line in proc.stdout:
+            path = line.rstrip("\n")
+            for prefix, folder in prefixes:
+                if path.startswith(prefix) or path == folder:
+                    tally[folder] += 1
+                    break
+    finally:
+        timer.cancel()
+        proc.stdout.close()
+    return tally if proc.wait() == 0 else {}
+
+
+def config_files() -> tuple[Path, Path]:
+    """The shared list and this machine's own list beside it."""
+    shared = Path(os.path.expanduser(os.environ.get("SPOTLIGHT_EXCLUSIONS_FILE", DEFAULT_CONFIG)))
+    return shared, shared.with_name(shared.name + LOCAL_SUFFIX)
 
 
 def configured_folders() -> list[str]:
-    config = Path(os.path.expanduser(os.environ.get("SPOTLIGHT_EXCLUSIONS_FILE", DEFAULT_CONFIG)))
-    try:
-        folders = read_config(config)
-    except OSError as err:
-        raise ConfigError(f"reading {config}: {err.strerror}") from err
-    for folder in folders:
-        if os.path.exists(folder) and not os.path.isdir(folder):
-            raise ConfigError(f"{config}: {folder} is not a folder")
+    """The shared list's folders, then the local list's, without duplicates."""
+    shared, local = config_files()
+    folders: list[str] = []
+    for config in (shared, local):
+        try:
+            entries = read_config(config)
+        except FileNotFoundError as err:
+            if config == local:
+                continue
+            raise ConfigError(f"reading {config}: {err.strerror}") from err
+        except OSError as err:
+            raise ConfigError(f"reading {config}: {err.strerror}") from err
+        for folder in entries:
+            if os.path.exists(folder) and not os.path.isdir(folder):
+                raise ConfigError(f"{config}: {folder} is not a folder")
+            if folder not in folders:
+                folders.append(folder)
     return folders
 
 
@@ -210,12 +267,12 @@ def cmd_check(spotlight: Spotlight, counts: bool) -> int:
     rows = ([("excluded", f) for f in todo.excluded]
             + [("MISSING", f) for f in todo.add]
             + [("absent", f) for f in todo.absent])
+    indexed = indexed_items(todo.excluded + todo.add, timeout) if counts else {}
     if counts:
         print(f"{'state':<9} {'indexed':>8}  folder")
     for state, folder in rows:
         if counts:
-            count = "-" if state == "absent" else indexed_items(folder, timeout)
-            print(f"{state:<9} {count:>8}  {folder}")
+            print(f"{state:<9} {indexed.get(folder, '-'):>8}  {folder}")
         else:
             print(f"{state:<9} {folder}")
     return EXIT_DRIFT if todo.add else 0
