@@ -7,11 +7,13 @@
 - This bites hardest on claims that sound settled — "X is just a stub," "Y isn't built yet," "Z already handles this." Those are exactly the ones another agent quietly ships out from under you. Re-read before you say it, especially when a decision (what to build, bench, or recommend) rides on it.
 - A summary or prior-session note describes the past, not the present. Treat it as a lead to verify, not a fact to repeat. When you catch yourself about to assert state confidently, that's the trigger to go check.
 
-## Check long-running work every 10 minutes
+## Check long-running work every 10 minutes, for up to an hour
 
 - **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
 - Run it in the background, and set a 10-minute tick beside it (e.g. a background `sleep 600`, or a Monitor). On each tick, read its progress — log tail, lock holder/queue, container state, CI status — and give the user a one-line status. Act as soon as it goes wrong: a hang, an error in the log, no progress since the last tick.
 - A queued job counts too: check what is ahead of it and whether that holder is still making progress.
+- **Subagents and forks you are waiting on: never let 30 minutes pass without checking each one.** A hung agent never sends its completion notice, so waiting for it is how a session stalls. Check how recently its output file changed, following the symlink (`stat -L -f %m <file>` on macOS; without `-L` you read the link's own time), not its contents, or message it for a one-line status. If it has not moved since the last check, ask what it is blocked on; if it stays stuck, stop it and take the work back.
+- **Stop polling after an hour.** Each wait gets at most six ticks: an hour of checking the same CI run, deploy, queue or subagent. If it is still running then, tell the user its state, what it is waiting on and how to check it, and end the ticks. Resume only when the user asks or the work reports back. Every tick costs tokens, and an open-ended loop across many parallel waits can spend a week's budget in an afternoon.
 
 ## Analyze the profiles — never hand-wave a performance conclusion
 
@@ -65,6 +67,17 @@
 - **Explanation register = doctoral seminar (only when I ask).** When I explicitly ask you to explain, expand, or go deeper, switch to a rigorous academic tone: define terms precisely, build from first principles, give worked examples and concrete cases, derive or cite the underlying mechanism, note edge cases/counterexamples, and reference relevant theory, literature, or standards. Teach it as a professor would to doctoral students — depth and rigor, not hand-holding. This is the one place length is welcome; default brevity does not apply here.
 - **Concise by default, depth on demand.** Short when the answer is short; go long only when the problem is genuinely complex or I ask you to show work. Concise never means skipping the real fix or omitting a caveat that matters.
 
+## Upstream GitHub issues and comments
+
+When opening an issue or commenting on a project I don't own, write the way an engineer who hit the problem writes to the maintainers: plain, specific, short.
+
+- **First sentence says what's broken.** "`foo sync` drops the last record when the batch size divides the input evenly." No greeting, no "hope you're well", no praise for the project, no thanks-in-advance, no apology for the length.
+- **Then only what a maintainer needs to act:** the version and environment, a minimal reproduction (exact commands, config, input), expected vs actual output with the real error text, and what you already ruled out. When you've found the cause, point to the file and line and say why in one or two sentences. Suggest a fix only if you've verified it.
+- **Sound like a person, not a report generator.** Short paragraphs and a code block or two. No "Summary / Impact / Proposed Solution / Additional Context" scaffolding, bold sprinkled through the text, emoji, or bullet lists where a sentence works. If the repository has an issue template, fill in its fields and nothing else.
+- **No fluff.** Cut "I noticed that", "It seems like", "Just wanted to flag", "It would be great if", stacked hedges, and recaps of what you just said. Give a confidence level once when you're unsure. Don't pad an open question.
+- **Before filing:** search open and closed issues for a duplicate (comment on that one instead), keep to one problem per issue, and follow the repository's contributing guide.
+- **Nothing private:** reduce every repro to generic values (`example.com`, `192.0.2.x`, placeholder names); never include my hostnames, domains, IPs, account names or tokens. No AI attribution (see Git Authorship).
+
 ---
 
 # Global Coding Conventions
@@ -110,6 +123,27 @@
 - All config values must have sane defaults. A service should start reasonably with zero overrides.
 - No hardcoded environment-specific values (URLs, ports, credentials, pool sizes, timeouts). These must be config variables.
 
+## Shared state
+
+- **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
+- Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
+
+## Personal and client boundaries
+
+- My personal work and each client are separate contexts. A machine belongs to the contexts its uncommitted `~/.config/dotfiles/machine.toml` lists, and a client's own machine belongs to that client alone. Nothing crosses between contexts unless I ask.
+- Public repositories reach every machine and anyone on the internet. They name no client, organization, private repository, internal host or project: not in code, config, docs, examples, tests or commit messages, this file included.
+- A context's facts live in its private overlay: repo lists, gitstead config and manifest, workspace and agent counts, Muxy servers, and agent rules and MCP settings that name projects. A machine gets only its own contexts' overlays and credentials; a client's machine holds nothing that reaches my personal repositories or another client's.
+- Before changing anything that reaches several machines (a dotfiles feature, profile or default; an overlay; gitstead config or manifest; shell history or app settings that sync), trace where it lands, including data a machine syncs back. If it would leave its context, change the design.
+- A name found in a public repository moves to its overlay in the same change that removes it, so whatever relied on it keeps working.
+- When it's unclear which context something belongs to, ask before writing it anywhere shared.
+
+## Bounded growth, built for scale — hard rule
+
+- **Everything that persists records has a growth bound from its first commit.** That covers receipts, logs, ledgers, history and state files, lock records, caches, queues and CI artifacts. The bound is a retention period, a count or size cap, rotation or compaction, and the code that enforces it ships in the same change as the code that writes. "It's small for now" is not a bound. No one-file-per-event directory that nothing prunes, and no append-only file that nothing trims.
+- **Choose the data structure for the access pattern at full scale.** Hot-path lookups are O(1) or O(log n) by key: name the file by its key, keep an index, use a map or a database index. Never scan every record to find one. A scan whose cost grows with history is a bug even while n is small, and doubly so under a lock or on every call.
+- **Build for tier-1 production scale from the start.** Assume many concurrent agents in sustained use: thousands of events a day and months of history. Work out each operation's cost at that volume before writing it. State the bound (complexity, retention, maximum size) in the README or config table.
+- **The structural lever beats the hack.** Get the right key, index, layout or batching. Don't ship a workaround that holds only until the data grows. When existing code violates this, fix the structure, prune what has accumulated, and add the bound.
+
 ## Graceful Shutdown (services and long-running processes)
 
 - Handle `SIGTERM` and `SIGINT`. Stop accepting new work, drain in-flight work, close pools, flush logs/metrics, cancel goroutines via context.
@@ -117,21 +151,14 @@
 
 ## Shared development host — one gate lock
 
-- Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
-  - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. The focused pool (half the host) runs beside heavy work and never waits for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
-  - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (same pool, `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
-  - Heavy work: `gate-lock run <label> -- ...` holds the host's default share (a third of the host, with `GOMAXPROCS` set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`; heavy runs share the host while their cores fit. One module's build or suite, or a few packages' race tests, take the default share or declare what they use.
-  - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks: `run-exclusive`.
+- Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version the lock's installer put there. `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
+  - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. Checks run in the focused pool beside heavy work, at full speed, and never wait for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
+  - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (the focused pool, half the host's CPUs; `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
+  - Heavy work: `gate-lock run <label> -- ...` holds the default share (a third of the heavy lane, which is the host's performance cores; `GOMAXPROCS` is set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`. The lane admits against what holders measurably use, not what they declared: a new run counts at its grant until its first sample (10 s), then at its busiest 10-second interval of the last 30 s, so heavy runs share the host while their use fits; grants together are capped at twice the lane. One module's build or suite, or a few packages' race tests, take the default share or declare what they use. Declare the cores the work actually uses: an inflated grant only delays your own admission.
+  - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. `all` is the largest grant, not exclusivity: it is granted the whole lane (`GOMAXPROCS` and go's `-p` left at the lane's) but admitted once the holders measurably leave a default share free; after its first sample it counts by use, so later runs join it as far as its use leaves room, and a waiting `all` is passed by runs that fit for at most 300 s before the lane drains for it. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks, suites whose timing needs a quiet host, and anything that must run alone: `run-exclusive`. It queues like any waiter while holding no slot: runs that fit pass it for 300 s, then the heavy lane drains for it, then the focused pool, and it takes both lanes at once.
+  - The watchdog ends a run whose process tree makes no CPU progress for 30 minutes (exit 122), and a heavy run past 4 h or a focused run past 2 h (exit 124). A run that legitimately waits that long (a remote job, a long download) sets `GATE_LOCK_IDLE_OK=1` or `GATE_LOCK_HANG_AFTER=<seconds>`. While a run drives docker, orb, ssh or another outside-work client, it counts at its grant and is never idled.
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
-- Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
-
-## Evergreen repos — few branches, few builds (gox, estavelle, jobcrm, karsto)
-
-- These four are in evergreen development. Keep the number of task branches, pull requests and CI runs low: every branch push and PR runs the full matrix on shared runners and costs every agent queue time. That is the cost to minimise, not branch size. This overrides any "one branch / one PR per unit" wording in those repositories' own agent docs.
-- Batch your lane's queued units into **one task branch and one PR** per work session or lane batch, even when they are unrelated and the diff is large. Keep each unit its own commit, with its RFC/ledger updates in that commit, so history and review stay legible.
-- Push when a coherent batch is ready to validate, not after every commit: a later push cancels the run in progress. Fold a follow-up fix into the open branch rather than opening another.
-- Open a separate branch only when the work must land on its own: it blocks another lane or the trunk, it must be revertible alone, it needs a distinct reviewer or acceptance gate, or it waits on a dependency the rest of the batch does not.
-- Everything else in the repository's agreement holds: cut from the current trunk, sync by merge, never rebase, merge on green and promptly. Batching is not a reason to let a branch drift.
+- Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in the lock's own repository and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; the lock's README covers operations.
 
 ## Searching in Claude Code's Bash tool
 
@@ -179,20 +206,38 @@
 - Check with `errors.Is()` / `errors.As()` — never compare error strings.
 - Do not swallow errors. If you handle it (log, recover), do not also return it.
 - Errors must carry enough context to diagnose without reading source — include entity IDs, request IDs, operation names.
+- Error strings name the operation, not the outcome: `saving tenant 42: …`, `getting node: …`. Never "failed to …", "error …", "unable to …" — the fact that it is an error is already known.
+- Wrap with `%w` only where the wrap adds context the caller doesn't already have, and at most once per layer. Don't re-wrap an error with the same operation the callee already named.
 - Use typed errors with sub-fields or codes when they inform the caller better than a plain string.
 
 ### Logging
 
-- Use `log/slog` with structured JSON output. Do not use `logrus`, `log`, or `fmt.Println` for operational logging.
-- Log levels: `Info` for major operations (startup, shutdown, connections), `Debug` for flow details (cache hit/miss, retry), `Warn` for recoverable issues (timeout+retry, fallback), `Error` for failures needing attention.
-- Every log entry must include context to trace back to the request: request ID, entity ID, operation name.
-- Error logs: include the error via `slog.Any("error", err)` and the operation that failed.
+- **`log/slog` only, through `slog.NewJSONHandler`.** No `logrus`, stdlib `log`, or `fmt.Println` for operational logging.
+- **The level lives in a `slog.LevelVar`** so it can be changed at runtime without a restart. **The default is `Warn`:** a healthy service at the default level writes its startup entry and nothing else.
+- **One startup entry, always.** Every process logs `starting` at `Info` with its service, version, effective log level and non-secret config (secrets shown only as set/unset). Write it straight to the handler (`logger.Handler().Handle`) so the level gate can't drop it.
+- **Injected, never global.** `main` builds the logger and passes it through constructors. No package-global logger, no `init()`, and library code never calls the package-level `slog.Info`/`slog.Default()`. `main` may `slog.SetDefault` the same logger solely so third-party code that logs through the default lands in the same JSON stream.
+- **Messages are fixed strings.** Variable data goes in attributes, never formatted into the message: `logger.Info("saving tenant", slog.String("tenant_id", id))`, not `logger.Info(fmt.Sprintf("saving tenant %s", id))`. Errors go in as `slog.Any("error", err)` with the operation as the message.
+- **Levels.** Exactly five: the stdlib four plus `Trace`. Each lower level adds the detail the one above leaves out, so whoever lowers the level gets progressively more to debug with:
+
+  | Level | Value | Use |
+  |---|---|---|
+  | `Error` | 8 | A failure that needs someone's attention |
+  | `Warn` | 4 | Degraded but handled: timeout with retry, fallback, dropped or skipped work |
+  | `Info` | 0 | What the service is doing, operation by operation: connections, config and level changes, one entry per request or job, periodic throughput summaries |
+  | `Debug` | -4 | Enough to follow one unit of work through the code: the decisions taken and why, ids, cache hit/miss, retries, query timings, result counts |
+  | `Trace` | -12 | The rest: payloads and bodies (redacted, size-capped), per-iteration loops, health checks |
+
+  Render `TRACE` through the handler's `ReplaceAttr`; otherwise slog prints `DEBUG-8`.
+- **Request logging.** Shared HTTP middleware sets the request ID and writes one `Info` entry per request: method, route template, status, duration, request ID, user ID. When `Debug` is enabled the same entry adds sizes, client address and query parameter names; at `Trace` it adds redacted, size-capped request and response bodies. Health routes log at `Trace`. `/metrics` is not logged.
+- **Full context, from `ctx`.** Every entry carries every id of the unit of work it belongs to, without the call site adding them. Put the ids into the context once where the work is decoded (request, message), and again wherever a stage learns another (the rule, lambda or reaction it is acting on). A handler wrapper adds them to each record; call sites use the `…Context` methods. Asynchronous work carries a correlation ID minted at its entry point and kept on every derived message.
 - Never log secrets, tokens, passwords, or PII.
+- **Migrating from logrus.** These rules apply to new and changed code; untouched code isn't rewritten just to conform. When you change a logrus file, move the whole file to slog — never leave a file mixing the two.
 
 ### Testing
 
-- Prefer integration tests against real dependencies (Docker) over unit tests with mocks.
-- Unit tests only for pure logic with no external deps — validation, parsing, transforms.
+- **Integration tests are the default.** Test behavior against real dependencies (Docker) through the boundaries the code actually crosses: the database, queue, cache or HTTP API it talks to.
+- **Unit tests rarely**, only where one clearly beats an integration test: input validation, or pure logic with many edge cases (parsing, encoding). Never as a stand-in for an integration test, and never to move a coverage number.
+- **No fuzz tests.** They find something only over long `-fuzz` runs with a maintained corpus; a plain `go test` runs just their seed inputs, which a table-driven test states more plainly.
 - Do not mock unless genuinely necessary (e.g., simulating hard-to-reproduce errors). When you do, use hand-rolled mocks implementing interfaces — no mock generation frameworks.
 - Use table-driven tests with `t.Run(tt.name, ...)` when testing multiple inputs against the same logic.
 - Use `testify/assert` for assertions.

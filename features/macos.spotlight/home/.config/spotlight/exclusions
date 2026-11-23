@@ -1,0 +1,29 @@
+# Folders Spotlight must not index. `spotlight-exclusions apply` adds each one
+# that exists on this machine to the Search Privacy list; see docs/SPOTLIGHT.md.
+# One absolute or ~ path per line; a line starting with # is a comment.
+#
+# Folders only one machine has (its checkouts and workspaces) go in
+# ~/.config/spotlight/exclusions.local, which is never tracked.
+#
+# Spotlight already skips hidden folders (~/.cache, ~/.cargo, ~/.claude, ...)
+# and ~/Library/Caches, so only visible folders belong here.
+
+# App-private state: Electron caches (Notion, Linear, Discord, VS Code,
+# browsers), app databases, Node versions installed by fnm. None of it is a
+# document; Contacts, Mail and Messages reach Spotlight through CoreSpotlight,
+# not through these files.
+~/Library/Application Support
+~/Library/Logs
+
+# pnpm's content-addressable store: hundreds of thousands of package files.
+~/Library/pnpm
+
+# Go toolchains from golang.org/dl, and GOPATH.
+~/sdk
+~/go
+
+# TeX Live and other locally built installs.
+/usr/local
+
+# Command Line Tools SDKs and device support images.
+/Library/Developer

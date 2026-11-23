@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Every hour, keeps each Go build cache under GO_CACHE_TRIM_MAX_GIB: deletes
+  entries no build has used for GO_CACHE_TRIM_HOURS, then the least recently
+  used of the rest until the cache fits (bin/go-cache-trim). Go's own trim waits
+  five days and has no size cap, which agent builds outgrow in hours.
+  dotfiles apply installs it for the tool.go-cache-trim feature, with $HOME replaced.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.go-cache-trim</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/go-cache-trim</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>GO_CACHE_TRIM_HOURS</key>
+        <string>24</string>
+        <key>GO_CACHE_TRIM_MAX_GIB</key>
+        <string>400</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/go-cache-trim/trim.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/go-cache-trim/trim.err</string>
+</dict>
+</plist>

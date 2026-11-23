@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps Muxy's remote servers in step with the server lists in
+  ~/.config/muxy/servers.d (~/.local/bin/muxy-reconcile): at load, when a list
+  is added or removed there, when dotfiles apply rewrites its generated files
+  (the muxy.exclude_servers setting is in generated/env.sh, which launchd does
+  not load), and every hour, which also picks up an edit inside a linked list.
+  A run that finds nothing to change writes nothing. PATH starts with Homebrew
+  for python3 3.11 or later (tomllib).
+  dotfiles apply installs it for the tool.muxy feature, with $HOME replaced.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.muxy-reconcile</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.local/bin/muxy-reconcile</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>WatchPaths</key>
+    <array>
+        <string>$HOME/.config/muxy</string>
+        <string>$HOME/.config/muxy/servers.d</string>
+        <string>$HOME/.config/dotfiles/generated</string>
+    </array>
+    <key>StartInterval</key>
+    <integer>3600</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/muxy-reconcile/launchd.out</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/muxy-reconcile/launchd.err</string>
+</dict>
+</plist>

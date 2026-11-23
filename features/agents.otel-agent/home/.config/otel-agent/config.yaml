@@ -1,16 +1,37 @@
 # Local OpenTelemetry Collector for this Mac's coding agents (bin/otel-agent,
 # docs/AGENT-TELEMETRY.md). Claude Code, Codex and OpenCode export OTLP to
 # 127.0.0.1; this collector deletes identities and tool content, then forwards
-# metrics and log events to the cluster gateway with the bearer token.
+# metrics and log events to the cluster gateway with this host's bearer token.
 #
-# Nothing site-specific lives here: bin/otel-agent serve reads the gateway URL
-# and token from ~/.local/share/otel-agent and passes them as environment
-# variables. The redaction patterns must match the gateway's
-# (home-ops k8s/monitoring/otel-gateway/configmap.yaml), which repeats them in
-# case a client skips this collector.
+# Nothing site-specific lives here: bin/otel-agent serve reads the gateway URL,
+# token and host name from ~/.local/share/otel-agent and passes them, with the
+# queue directory, as environment variables. The redaction patterns must match
+# the cluster gateway's config (k8s/monitoring/otel-gateway), which
+# repeats them in case a client skips this collector.
 extensions:
   health_check:
     endpoint: 127.0.0.1:13134
+
+  # The export queues live on disk, so telemetry recorded offline or during a
+  # gateway outage survives restarts and is sent once the gateway answers. One
+  # bbolt file per exporter. A file holds about 1.3 times its queue's bytes;
+  # max_size is the backstop above the largest queue. Rebound compaction gives
+  # the space back once a backlog has drained; recreate starts a fresh file
+  # when one is corrupt (bin/otel-agent keeps only the newest .backup).
+  file_storage/queue:
+    directory: ${env:OTEL_AGENT_QUEUE}
+    create_directory: true
+    directory_permissions: "0700"
+    max_size: 3221225472 # 3 GiB per file
+    fsync: true
+    recreate: true
+    compaction:
+      directory: ${env:OTEL_AGENT_QUEUE}
+      on_start: true
+      on_rebound: true
+      rebound_needed_threshold_mib: 100
+      rebound_trigger_threshold_mib: 10
+      cleanup_on_start: true
 
 receivers:
   otlp:
@@ -43,8 +64,8 @@ processors:
       - pattern: '^(prompt|prompt_text|response|tool_input|tool_parameters|arguments|output|error|error[.]message|auth[.]error|body|body_ref|diff|hook_definitions|redacted_settings)$'
         action: delete
 
-  # Which machine the telemetry came from, since the gateway cannot tell sources
-  # apart by token once data is inside the pipeline.
+  # The source name enrolled with this host's token (studio, mbp, mini). The
+  # gateway indexes Loki streams and Mimir series by it.
   resource/host:
     attributes:
       - key: host.name
@@ -54,23 +75,39 @@ processors:
   batch:
     timeout: 5s
 
+# One exporter per signal, so each queue is sized for its own volume. Queues are
+# measured in serialized bytes and sized for a week off the LAN at studio's
+# rate: log events are about 860 bytes each (~80 MB/day), metric points about
+# 480 bytes (~270 MB/day). When a queue is full, new data is dropped and counted
+# in otelcol_exporter_enqueue_failed_*.
 exporters:
-  otlp_http/gateway:
+  otlp_http/logs: &gateway
     endpoint: ${env:OTEL_AGENT_GATEWAY}
     headers:
       Authorization: Bearer ${env:OTEL_AGENT_TOKEN}
     compression: gzip
-    # The queue is in memory (the core distribution has no file storage): it
-    # covers gateway outages and LAN stalls while this process runs.
+    # Retry until delivered: the bound is the queue, not time. Backing off to
+    # 5 minutes keeps a laptop that is off the LAN from retrying every 30 s.
     retry_on_failure:
       enabled: true
-      max_elapsed_time: 1h
+      initial_interval: 5s
+      max_interval: 5m
+      max_elapsed_time: 0
     sending_queue:
       enabled: true
-      queue_size: 2000
+      storage: file_storage/queue
+      sizer: bytes
+      queue_size: 805306368 # 768 MiB, about 9 days
+  otlp_http/metrics:
+    <<: *gateway
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      sizer: bytes
+      queue_size: 2147483648 # 2 GiB, about 8 days
 
 service:
-  extensions: [health_check]
+  extensions: [health_check, file_storage/queue]
   telemetry:
     logs:
       level: info
@@ -86,8 +123,8 @@ service:
     metrics:
       receivers: [otlp]
       processors: [memory_limiter, resource/redact, attributes/redact, resource/host, batch]
-      exporters: [otlp_http/gateway]
+      exporters: [otlp_http/metrics]
     logs:
       receivers: [otlp]
       processors: [memory_limiter, resource/redact, attributes/redact, resource/host, batch]
-      exporters: [otlp_http/gateway]
+      exporters: [otlp_http/logs]

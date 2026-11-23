@@ -1,0 +1,9 @@
+id = "agents.codex"
+description = "The local Codex app-server with remote control, which gptmore and gptmax connect to (bin/codex-daemon)"
+category = "agents"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.codex-remote-control.plist"
+# The codex cask (brew.dev-apps).
+when_exists = ["/opt/homebrew/bin/codex"]

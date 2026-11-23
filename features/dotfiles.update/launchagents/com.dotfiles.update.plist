@@ -1,0 +1,115 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+================================================================================
+com.dotfiles.update.plist - Weekly System Update LaunchAgent
+================================================================================
+
+DESCRIPTION:
+    Automatically updates Homebrew packages, the Go pin, Zinit plugins, and syncs dotfiles.
+    Runs every Friday at 9:00 AM.
+
+WHAT IT DOES (each stage runs whatever the others did; see docs/OPERATIONS.md):
+    1. Updates Homebrew, upgrades packages (item by item after a failed
+       batch), cleans up, and runs brew doctor, which is advisory. Steps that
+       need root wait for a terminal, named in a WARN line.
+    2. On the canary machine (setting mise.canary), moves the Go pin to its
+       minor's newest patch and commits it
+    3. Fast-forwards Zinit core and updates all plugins
+    4. Runs sync.sh sync (signed repository sync, dotfiles apply, missing
+       packages and mise tools)
+    The whole run holds the sync lock (logs/sync.flock), so no scheduled sync
+    runs while packages upgrade; it waits up to UPDATE_LOCK_WAIT seconds
+    (30 minutes) for a sync in progress.
+
+LOGS:
+    - stdout: /tmp/dotfiles-update.out
+    - stderr: /tmp/dotfiles-update.err
+    - Full log: ~/.dotfiles/logs/update.log
+
+INSTALLATION:
+    dotfiles apply, for the dotfiles.update feature. Edit this template, not
+    the installed copy: apply (every sync) reloads the job when the template
+    changes, once no run of it is in progress.
+
+MANUAL COMMANDS:
+    # Check its state:
+    launchctl print gui/$(id -u)/com.dotfiles.update
+
+    # Manually trigger update:
+    launchctl kickstart gui/$(id -u)/com.dotfiles.update
+
+    # View recent logs:
+    tail -100 ~/.dotfiles/logs/update.log
+
+    # Disable: add "dotfiles.update" to [features] disable in
+    # ~/.config/dotfiles/machine.toml, then run dotfiles apply.
+
+================================================================================
+-->
+<plist version="1.0">
+<dict>
+    <!-- Unique identifier for this job -->
+    <key>Label</key>
+    <string>com.dotfiles.update</string>
+
+    <!-- Run directly, not through a login shell: path_helper would move /usr/bin
+         ahead of the PATH below. The script's bash (Homebrew's) is then the
+         job's macOS privacy identity, which every step inherits: Go's caches
+         on an external volume need one Removable Volumes grant to it. Under
+         /bin/bash, an Apple binary, macOS asks for each tool instead (brew's
+         ruby, go), and those change with every Homebrew and Go update. -->
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/dotfiles-update.sh</string>
+        <string>--all</string>
+    </array>
+
+    <!-- Schedule: Every Friday at 9:00 AM -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <!-- Weekday: 0=Sunday, 1=Monday, ..., 5=Friday, 6=Saturday -->
+        <key>Weekday</key>
+        <integer>5</integer>
+        <!-- Hour: 9 AM (24-hour format) -->
+        <key>Hour</key>
+        <integer>9</integer>
+        <!-- Minute: 0 -->
+        <key>Minute</key>
+        <integer>0</integer>
+    </dict>
+
+    <!-- Log files -->
+    <!-- (StartInterval removed: it double-triggered alongside StartCalendarInterval
+         at an unaligned 7-day offset. launchd already runs a missed calendar job
+         on wake.) -->
+    <key>StandardOutPath</key>
+    <string>/tmp/dotfiles-update.out</string>
+
+    <key>StandardErrorPath</key>
+    <string>/tmp/dotfiles-update.err</string>
+
+    <!-- Environment variables -->
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/opt/homebrew/sbin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>HOME</key>
+        <string>$HOME</string>
+        <key>DOTFILES_DIR</key>
+        <string>$HOME/.dotfiles</string>
+    </dict>
+
+    <!-- Run at lower priority -->
+    <key>Nice</key>
+    <integer>10</integer>
+
+    <!-- Process type -->
+    <key>ProcessType</key>
+    <string>Background</string>
+
+    <!-- Don't run at load (wait for schedule) -->
+    <key>RunAtLoad</key>
+    <false/>
+</dict>
+</plist>

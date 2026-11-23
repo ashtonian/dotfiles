@@ -1,0 +1,4 @@
+# Claude Code settings this feature owns in ~/.claude/settings.json. Every
+# other key there stays this machine's own. `dotfiles adopt claude:<key>`
+# keeps a value changed here.
+theme = "custom:dracula"

@@ -1,0 +1,7 @@
+id = "dotfiles.sync"
+description = "Every 4 hours: signed sync of this repository and ~/.sync, dotfiles apply, missing packages (sync.sh)"
+category = "dotfiles"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.dotfiles.sync.plist"

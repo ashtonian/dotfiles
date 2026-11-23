@@ -6,6 +6,12 @@
 # DESCRIPTION:
 #   Updates Homebrew packages, the Go pin (on the canary machine) and Zinit
 #   plugins, then syncs dotfiles, which installs what mise's configuration names.
+#   Each stage runs whatever the others did and reports its own result; the run
+#   fails when any stage failed. Upgrades that need root are left for a
+#   terminal, with a warning, when the run cannot ask for a password.
+#   The whole run holds the sync lock (lib_sh/sync-lock.sh), so no sync runs
+#   while packages upgrade; it waits up to UPDATE_LOCK_WAIT seconds (default
+#   1800) for a sync in progress, and fails without updating anything after.
 #   Designed to run weekly via LaunchAgent or manually.
 #
 # USAGE:
@@ -28,13 +34,29 @@
 
 set -euo pipefail
 
+# shellcheck source=lib_sh/rotate-log.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/rotate-log.sh"
+# shellcheck source=lib_sh/brew-root.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/brew-root.sh"
+# shellcheck source=lib_sh/machine-setting.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
+# shellcheck source=lib_sh/sync-lock.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/sync-lock.sh"
+
 #===============================================================================
 # CONFIGURATION
 #===============================================================================
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 LOG_DIR="${DOTFILES_DIR}/logs"
 LOG_FILE="${LOG_DIR}/update.log"
+# Seconds to wait for a sync (or another update) in progress to release the
+# sync lock before failing. A sync rarely takes more than a few minutes.
+UPDATE_LOCK_WAIT="${UPDATE_LOCK_WAIT:-1800}"
 QUIET=false
+# Set by update_brew: the environment of every brew command after `brew
+# update`, and whether this run can ask for a password.
+BREW_ENV=()
+UNATTENDED=false
 
 # Ensure log directory exists
 mkdir -p "$LOG_DIR"
@@ -49,6 +71,8 @@ log() {
     if [[ "$QUIET" == false ]]; then printf '%s\n' "$*"; fi
 }
 
+log_warn() { log "WARN: $*"; }
+
 log_error() {
     local timestamp
     timestamp="$(date '+%Y-%m-%d %H:%M:%S')"
@@ -60,15 +84,64 @@ log_error() {
 # UPDATE FUNCTIONS
 #===============================================================================
 
+# run_command CMD...: run CMD with its output in the log (and on stdout unless
+# --quiet) and return its status. Callers log what a failure means.
 run_command() {
     if [[ "$QUIET" == true ]]; then
-        if "$@" >> "$LOG_FILE" 2>&1; then return 0; else
-            local status=$?
-            log_error "Command failed (exit $status); see $LOG_FILE"
-            return "$status"
-        fi
+        "$@" >> "$LOG_FILE" 2>&1
     else
         "$@" 2>&1 | tee -a "$LOG_FILE"
+    fi
+}
+
+# upgrade_outdated formula|cask: upgrade every outdated formula or cask in one
+# brew run. When that run fails, each one still outdated is retried alone, so
+# one that cannot build or install (a formula that needs a newer Xcode stops
+# the whole run) does not hold back the others. Unattended, an item that fails
+# for want of root (HOMEBREW_NO_SUDO, or a permission error) is left for a
+# terminal with a warning; any other failure fails the step.
+upgrade_outdated() {
+    local kind=$1
+    log "Running brew upgrade --$kind..."
+    if run_command env "${BREW_ENV[@]}" brew upgrade --"$kind"; then
+        return 0
+    fi
+    local outdated
+    if ! outdated=$(env "${BREW_ENV[@]}" brew outdated --"$kind" --json=v2 2>>"$LOG_FILE" |
+        jq -r '((.formulae // []) + (.casks // []))[] | select(.pinned != true) | .name'); then
+        log_error "brew upgrade --$kind failed, and listing what is still outdated failed too; see $LOG_FILE"
+        return 1
+    fi
+    if [[ -z "$outdated" ]]; then
+        log_error "brew upgrade --$kind failed, though nothing is left outdated; see its output in $LOG_FILE"
+        return 1
+    fi
+
+    local name status out root=() failed=()
+    out=$(mktemp "${TMPDIR:-/tmp}/dotfiles-update.XXXXXX") || return
+    while IFS= read -r name; do
+        log "Retrying brew upgrade --$kind $name alone..."
+        status=0
+        env "${BREW_ENV[@]}" brew upgrade --"$kind" "$name" </dev/null >"$out" 2>&1 || status=$?
+        cat "$out" >> "$LOG_FILE"
+        if [[ "$QUIET" == false ]]; then cat "$out"; fi
+        if [[ $status -eq 0 ]]; then
+            continue
+        fi
+        if [[ $UNATTENDED == true ]] && grep -qE 'HOMEBREW_NO_SUDO|Permission denied' "$out"; then
+            root+=("$name")
+        else
+            failed+=("$name")
+        fi
+    done <<<"$outdated"
+    rm -f "$out"
+
+    if [[ ${#root[@]} -gt 0 ]]; then
+        log_warn "Left ${root[*]} for a terminal: upgrading them needs root and this run cannot ask for a password; run: brew upgrade --$kind ${root[*]}"
+    fi
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log_error "brew upgrade --$kind failed for ${failed[*]}; see $LOG_FILE"
+        return 1
     fi
 }
 
@@ -80,31 +153,44 @@ update_brew() {
         return 1
     fi
 
-    log "Running brew update..."
-    run_command brew update || return
+    BREW_ENV=(HOMEBREW_NO_AUTO_UPDATE=1)
+    UNATTENDED=false
+    if ! brew_root_available; then
+        UNATTENDED=true
+        BREW_ENV+=(HOMEBREW_NO_SUDO=1)
+        log "No terminal to ask for a password in and no passwordless sudo: upgrades that need root wait for a terminal"
+    fi
 
-    log "Running brew upgrade..."
-    run_command brew upgrade || return
+    # Every step runs whatever the one before did: a failed fetch still leaves
+    # the last one's upgrades, and cleanup is what bounds Homebrew's download
+    # cache and old versions.
+    local status=0
+    log "Running brew update..."
+    if ! run_command brew update; then
+        log_error "brew update failed; upgrading against the formulae and casks fetched before"
+        status=1
+    fi
+    upgrade_outdated formula || status=1
+    upgrade_outdated cask || status=1
 
     log "Running brew cleanup..."
-    run_command brew cleanup --prune=7 || return
+    if ! run_command env "${BREW_ENV[@]}" brew cleanup --prune=7; then
+        log_error "brew cleanup failed; see $LOG_FILE"
+        status=1
+    fi
 
+    # brew doctor exits 1 for any warning, such as an Xcode older than the one
+    # Homebrew wants. Those need a person and never fail the update.
     log "Checking brew doctor..."
-    run_command brew doctor || return
+    if ! run_command env "${BREW_ENV[@]}" brew doctor; then
+        log_warn "brew doctor reported problems (above); they need a person and do not fail the update"
+    fi
 
+    if [[ $status -ne 0 ]]; then
+        log_error "Homebrew update finished with failures (above)"
+        return "$status"
+    fi
     log "Homebrew update complete"
-}
-
-# machine_setting VAR: a setting's value on this machine, as `dotfiles apply`
-# generated it, unless the environment already sets VAR. Read in a subshell, so
-# the other settings stay out of this run's environment.
-machine_setting() {
-    local generated="$HOME/.config/dotfiles/generated/env.sh"
-    (
-        # shellcheck source=/dev/null
-        if [[ -r "$generated" ]]; then . "$generated" >/dev/null 2>&1; fi
-        printf '%s' "${!1:-}"
-    )
 }
 
 # The Go release every machine builds with is pinned in the tracked mise
@@ -156,7 +242,10 @@ update_go_pin() {
     fi
 
     log "Installing Go $latest (pinned: $pin)..."
-    run_command mise install --yes "go@$latest" || return
+    if ! run_command mise install --yes "go@$latest"; then
+        log_error "mise could not install Go $latest; leaving the pin at $pin"
+        return 1
+    fi
     local version
     # local: under auto, a go.mod in the working directory could switch toolchains.
     version=$(GOTOOLCHAIN=local mise exec "go@$latest" -- go version) || { log_error "Go $latest does not run"; return 1; }
@@ -191,13 +280,17 @@ update_zinit() {
         return 1
     fi
 
-    # Update zinit itself
     log "Updating zinit core..."
-    run_command git -C "$zinit_home" pull --ff-only --quiet || return
+    if ! run_command git -C "$zinit_home" pull --ff-only --quiet; then
+        log_error "Updating zinit itself failed; see $LOG_FILE"
+        return 1
+    fi
 
-    # Update all plugins via zsh
     log "Updating zinit plugins..."
-    run_command zsh -ic 'zinit update --all --quiet' || return
+    if ! run_command zsh -ic 'zinit update --all --quiet'; then
+        log_error "zinit update --all failed; see $LOG_FILE"
+        return 1
+    fi
 
     log "Zinit update complete"
 }
@@ -214,7 +307,11 @@ sync_dotfiles() {
         log_error "Sync script is missing or not executable"
         return 1
     fi
-    run_command "$DOTFILES_DIR/sync.sh" sync || return
+    # sync.sh inherits this run's sync lock on descriptor 9 and runs inside it.
+    if ! run_command "$DOTFILES_DIR/sync.sh" sync; then
+        log_error "sync.sh sync failed; see $DOTFILES_DIR/logs/sync.log"
+        return 1
+    fi
 
     log "Dotfiles sync complete"
 }
@@ -224,14 +321,43 @@ update_all() {
     log "Starting full system update"
     log "======================================"
 
-    update_brew || return
-    update_go_pin || return
-    update_zinit || return
-    sync_dotfiles || return
+    # Each stage runs whatever the others did; the run fails if any did.
+    local failed=()
+    without_sync_lock update_brew || failed+=(brew)
+    without_sync_lock update_go_pin || failed+=(go)
+    without_sync_lock update_zinit || failed+=(zinit)
+    sync_dotfiles || failed+=(sync)
 
     log "======================================"
+    if [[ ${#failed[@]} -gt 0 ]]; then
+        log_error "Full update finished; failed stages: ${failed[*]}"
+        log "======================================"
+        return 1
+    fi
     log "Full update complete!"
     log "======================================"
+}
+
+# take_sync_lock: hold the sync lock for the rest of this run, waiting up to
+# UPDATE_LOCK_WAIT seconds for a sync or another update in progress.
+take_sync_lock() {
+    if [[ ! "$UPDATE_LOCK_WAIT" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "UPDATE_LOCK_WAIT must be a whole number of seconds, not '$UPDATE_LOCK_WAIT'"
+        return 1
+    fi
+    local status=0
+    sync_lock_take "$LOG_DIR" 0 || status=$?
+    if [[ $status -eq 75 && $UPDATE_LOCK_WAIT -gt 0 ]]; then
+        log "Another sync or update is running; waiting up to ${UPDATE_LOCK_WAIT}s for it to finish"
+        status=0
+        sync_lock_take "$LOG_DIR" "$UPDATE_LOCK_WAIT" || status=$?
+    fi
+    case $status in
+        0) return 0 ;;
+        75) log_error "Another sync or update still held $LOG_DIR/sync.flock after ${UPDATE_LOCK_WAIT}s; nothing was updated. lsof $LOG_DIR/sync.flock names the holder" ;;
+        *) log_error "Cannot take the sync lock $LOG_DIR/sync.flock (lockf exit $status); nothing was updated" ;;
+    esac
+    return 1
 }
 
 #===============================================================================
@@ -260,10 +386,14 @@ main() {
         esac
     done
 
+    take_sync_lock || return 1
+    rotate_log "$LOG_FILE"
+    # This shell holds the lock until the run ends. Stages run without its
+    # descriptor, except sync, which runs inside it.
     case "$action" in
-        brew)   update_brew ;;
-        go)     update_go_pin ;;
-        zinit)  update_zinit ;;
+        brew)   without_sync_lock update_brew ;;
+        go)     without_sync_lock update_go_pin ;;
+        zinit)  without_sync_lock update_zinit ;;
         sync)   sync_dotfiles ;;
         all)    update_all ;;
     esac
