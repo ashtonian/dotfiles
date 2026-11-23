@@ -78,7 +78,7 @@ type Launchd interface {
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref, adopt, agent, update-agent, load, reload, unload, remove-agent
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref (Forget), adopt, agent, update-agent, load, reload, unload, remove-agent
 	Path   string
 	Detail string
 }
@@ -89,11 +89,13 @@ type Problem struct {
 	Detail string
 }
 
-// Waiting is a LaunchAgent change apply leaves for a later run: an install
-// until a path it needs exists, or a reload or removal that would stop the
-// job in the middle of a run.
+// Waiting is a change apply leaves for a later run: a LaunchAgent's install
+// until a path it needs exists, its reload or removal while that would stop
+// the job in the middle of a run, or putting back an app setting while its
+// app is not available.
 type Waiting struct {
-	Label, Reason string
+	Subject string // the LaunchAgent's label, or the app setting's <store>:<key>
+	Reason  string
 }
 
 // Report lists what a run did and what it left alone.
@@ -241,6 +243,10 @@ func (r *runner) act(kind, path, detail string) {
 
 func (r *runner) problem(path, detail string) {
 	r.report.Problems = append(r.report.Problems, Problem{Path: path, Detail: detail})
+}
+
+func (r *runner) wait(subject, reason string) {
+	r.report.Waiting = append(r.report.Waiting, Waiting{Subject: subject, Reason: reason})
 }
 
 // inRepo reports whether the symlink at link, whose destination is dest,

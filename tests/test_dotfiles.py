@@ -1107,8 +1107,9 @@ class RealFeatures(Fixture):
         self.home.mkdir()
         self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_STATE_HOME=str(self.home / '.local/state'))
-        # The stand-in Muxy is found in the fresh home's ~/Applications.
-        self.env.pop('DOTFILES_MUXY_APP', None)
+        # Never the Muxy installed on this computer: install_muxy() points
+        # here at a stand-in.
+        self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-muxy.app')
         self.muxy_settings = self.path / 'muxy-settings.json'
 
     def install_muxy(self):
@@ -1136,6 +1137,7 @@ else:
     sys.exit('muxy: unknown command')
 ''')
         cli.chmod(0o755)
+        self.env['DOTFILES_MUXY_APP'] = str(self.home / 'Applications/Muxy.app')
 
     def dotfiles(self, *args):
         return subprocess.run([str(self.engine), *args, '--home', str(self.home), '--repo', str(ROOT)],
@@ -1218,17 +1220,54 @@ else:
         machine.write_text(manifest + '\n[prefs]\n"muxy:terminal.font_siz" = 13.0\n')
         p = self.dotfiles('check')
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
-        self.assertIn('[prefs] "muxy:terminal.font_siz": no feature enabled here owns this setting', p.stderr)
+        self.assertIn('[prefs] "muxy:terminal.font_siz": no feature owns this setting', p.stderr)
         status = self.dotfiles('status')
         self.assertEqual(status.returncode, 2, 'status reports the plan error')
         self.assertIn('tool.muxy', status.stdout, 'after showing what it can')
-        self.assertIn('no feature enabled here owns this setting', status.stderr)
+        self.assertIn('no feature owns this setting', status.stderr)
+
+        # An override for a feature turned off here changes nothing and fails nothing.
+        machine.write_text(manifest + '\n[features]\ndisable = ["tool.muxy"]\n\n[prefs]\n"muxy:terminal.font_size" = 13.0\n')
+        check = self.dotfiles('check')
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn(f'note: muxy:terminal.font_size: {machine} [prefs] sets it, but tool.muxy, which owns it, is off here, so it is ignored\n',
+                      check.stdout)
 
         machine.write_text(manifest + '\n[features]\ndisable = ["tool.muxy"]\n')
         p = self.dotfiles('apply')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(json.loads(self.muxy_settings.read_text()), {'appearance.dark_theme': 'Muxy', 'appearance.layout': 'project_focused'},
                          'teardown puts back what Muxy had before dotfiles')
+
+    def forget(self, *ids):
+        # Flags go before the settings named.
+        return subprocess.run([str(self.engine), 'forget', '--home', str(self.home), '--repo', str(ROOT), *ids],
+                              env=self.env, capture_output=True, text=True, timeout=60)
+
+    def test_an_uninstalled_muxy_keeps_its_earlier_values_until_forgotten(self):
+        self.install_muxy()
+        p = self.dotfiles('init', '--profiles', 'base,desktop')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.dotfiles('apply').returncode, 0)
+        p = self.forget('muxy:appearance.dark_theme')
+        self.assertEqual(p.returncode, 64, 'tool.muxy still owns it')
+
+        shutil.rmtree(self.home / 'Applications/Muxy.app')  # uninstalled
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '\n[features]\ndisable = ["tool.muxy"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, 'an app that is not there is no failure: ' + p.stdout + p.stderr)
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn('waiting     muxy:appearance.dark_theme: app not available', doctor.stdout)
+        self.assertIn('its value from before dotfiles, "Muxy", waits to be put back', doctor.stdout)
+
+        p = self.forget('muxy:appearance.dark_theme')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, 'forget-pref muxy:appearance.dark_theme -> before dotfiles set it, it was "Muxy"\n')
+        doctor = self.dotfiles('doctor')
+        self.assertNotIn('muxy:appearance.dark_theme', doctor.stdout)
+        self.assertIn('waiting     muxy:terminal.font_size', doctor.stdout, 'the others still wait')
 
     def test_a_desktop_machine_gets_a_working_shell_git_and_ssh(self):
         brewfile = self.converge('base,dev,desktop,server')

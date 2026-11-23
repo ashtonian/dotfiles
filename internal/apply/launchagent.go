@@ -155,10 +155,6 @@ func (r *runner) relaunch(a plan.LaunchAgent, unload bool) error {
 	return r.env.Launchd.Load(r.ctx, a.Target)
 }
 
-func (r *runner) wait(label, reason string) {
-	r.report.Waiting = append(r.report.Waiting, Waiting{Label: label, Reason: reason})
-}
-
 // teardownAgents unloads and removes the LaunchAgents this run does not keep:
 // ones an earlier run installed whose feature is now off or whose condition
 // no longer holds, and unrecorded ones the retired installer left at a label

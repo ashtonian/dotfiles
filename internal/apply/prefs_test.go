@@ -194,21 +194,56 @@ func TestPrefsAStoreThatFailsIsAProblemForItsSettingsOnly(t *testing.T) {
 	assert.NoError(t, err, "everything else still converges")
 }
 
-func TestPrefsTeardownForgetsTheSettingsOfAnAppThatIsGone(t *testing.T) {
+func TestPrefsTeardownWaitsForAnAppThatIsNotAvailable(t *testing.T) {
 	m, muxy := prefsMachine(t)
 	m.run(false)
+	recorded := m.state.Prefs
 
-	// Muxy uninstalled, then its feature turned off.
+	// Muxy's bundle missing (uninstalled, or swapped by its updater), then its feature turned off.
 	muxy.getErr = fmt.Errorf("%w: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy", prefs.ErrUnavailable)
 	m.disable = []string{"app"}
 	report := m.run(false)
-	assert.Empty(t, report.Problems, "uninstalling the app is no failure")
-	assert.Equal(t, map[string]string{
-		"muxy:appearance.dark_theme":  `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy; before dotfiles set it, it was "Muxy"`,
-		"muxy:terminal.font_families": `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy; before dotfiles set it, it was no value`,
-	}, details(report, "forget-pref"), "the earlier value is reported once, to set by hand")
+	assert.Empty(t, report.Problems, "no failure, so sync does not fail on every run")
+	assert.Empty(t, report.Actions)
+	assert.Equal(t, []Waiting{
+		{Subject: "muxy:appearance.dark_theme", Reason: `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy, so its value from before dotfiles, "Muxy", waits to be put back; if the app is gone for good, ` + "`dotfiles forget muxy:appearance.dark_theme`" + ` drops it`},
+		{Subject: "muxy:terminal.font_families", Reason: `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy, so its value from before dotfiles, no value, waits to be put back; if the app is gone for good, ` + "`dotfiles forget muxy:terminal.font_families`" + ` drops it`},
+	}, report.Waiting)
+	assert.Equal(t, recorded, m.state.Prefs, "the only copy of each earlier value is kept")
+
+	// The app is back: teardown finishes.
+	muxy.getErr = nil
+	torn := m.run(false)
+	assert.Empty(t, torn.Problems)
+	assert.Equal(t, "Muxy", muxy.values["appearance.dark_theme"])
 	assert.Empty(t, m.state.Prefs)
-	assert.Empty(t, m.run(false).Actions, "and never again")
+}
+
+func TestForgetDropsTheRecordsOfAnAppThatIsGone(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+
+	_, _, err := Forget(m.plan(), m.state, []string{"muxy:appearance.dark_theme"})
+	assert.ErrorIs(t, err, ErrNotForgettable, "an enabled feature still owns it")
+	assert.ErrorContains(t, err, "app, enabled here, owns it")
+
+	muxy.getErr = fmt.Errorf("%w: Muxy is not installed", prefs.ErrUnavailable)
+	m.disable = []string{"app"}
+	m.run(false)
+	report, next, err := Forget(m.plan(), m.state, []string{"muxy:appearance.dark_theme", "muxy:terminal.font_families"})
+	require.NoError(t, err)
+	assert.Equal(t, map[string]string{
+		"muxy:appearance.dark_theme":  `before dotfiles set it, it was "Muxy"`,
+		"muxy:terminal.font_families": "before dotfiles set it, it was no value",
+	}, details(report, "forget-pref"), "each earlier value, to set by hand should the app return")
+	m.state = next
+	assert.Empty(t, m.state.Prefs)
+	again := m.run(false)
+	assert.Empty(t, again.Waiting)
+	assert.Empty(t, again.Actions)
+
+	_, _, err = Forget(m.plan(), m.state, []string{"muxy:appearance.dark_theme"})
+	assert.ErrorIs(t, err, ErrNotForgettable, "nothing is recorded any more")
 }
 
 func TestPrefsAValueTheRunningAppDidNotTakeIsStillRecorded(t *testing.T) {
@@ -234,7 +269,53 @@ func TestPrefsARefusedValueIsAProblem(t *testing.T) {
 	assert.Empty(t, details(report, "pref"))
 	require.Len(t, report.Problems, 2)
 	assert.Contains(t, report.Problems[0].Detail, "setting it: muxy config set")
-	assert.Empty(t, m.state.Prefs, "nothing was set, so nothing is recorded")
+	rec := m.state.Prefs["muxy:appearance.dark_theme"]
+	assert.True(t, rec.Pending, "a failed set may still have changed it, so the earlier value is kept")
+	assert.JSONEq(t, `"Muxy"`, string(rec.Previous))
+
+	m.disable = []string{"app"}
+	torn := m.run(false)
+	assert.Empty(t, torn.Problems)
+	assert.Empty(t, torn.Actions, "it never changed, so there is nothing to put back")
+	assert.Empty(t, m.state.Prefs)
+}
+
+// savesThenFails takes the value and then reports a failure, as the Muxy
+// store does when `muxy config set` saved but timed out.
+type savesThenFails struct{ *memoryStore }
+
+func (s savesThenFails) Set(_ context.Context, key string, value any) error {
+	s.values[key] = value
+	return errors.New("muxy config set: no answer within 30s")
+}
+
+func TestPrefsASetThatFailedAfterChangingTheValueStillPutsBackTheEarlierOne(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.stores = map[string]PrefStore{"muxy": savesThenFails{muxy}}
+	first := m.run(false)
+	require.Len(t, first.Problems, 2)
+	require.Equal(t, "Dracula", muxy.values["appearance.dark_theme"], "the app took it")
+
+	m.stores = map[string]PrefStore{"muxy": muxy}
+	second := m.run(false)
+	assert.Empty(t, second.Problems, "the value apply was setting is no change made here")
+
+	m.disable = []string{"app"}
+	m.run(false)
+	assert.Equal(t, "Muxy", muxy.values["appearance.dark_theme"], "teardown puts back the owner's value")
+}
+
+func TestPrefsAVersion1RecordChangedHereNamesWhatApplySet(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+	rec := m.state.Prefs["muxy:appearance.dark_theme"]
+	rec.Want = nil // a version 1 record: value is what apply set
+	m.state.Prefs["muxy:appearance.dark_theme"] = rec
+	muxy.values["appearance.dark_theme"] = "Nord"
+
+	report := m.run(false)
+	require.Len(t, report.Problems, 1)
+	assert.Contains(t, report.Problems[0].Detail, `or set it back to "Dracula"`)
 }
 
 func TestAdoptRefusesASettingWithNoValueHere(t *testing.T) {

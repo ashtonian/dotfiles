@@ -117,6 +117,9 @@ type Plan struct {
 	LaunchAgents []LaunchAgent
 	// Prefs lists the app settings to own, in feature order.
 	Prefs []Pref
+	// IgnoredPrefs lists the machine manifest's [prefs] overrides of settings
+	// whose features are off here, which change nothing.
+	IgnoredPrefs []IgnoredPref
 	// OffAgents maps the labels of the LaunchAgents that features not
 	// enabled here declare to their install paths. apply removes such a plist
 	// it finds without a record of installing it: the retired installer's.
@@ -273,12 +276,20 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 // describes this machine, so it names one a feature enabled here owns. A
 // profile is shared by machines that turn features on and off, so one it
 // names may belong to a feature that is off here, and is then left out.
+// IgnoredPref is a machine manifest override of an app setting that only a
+// feature off on this machine owns.
+type IgnoredPref struct {
+	ID      string // <store>:<key>
+	Feature string // the feature that owns it
+	File    string // the machine manifest
+}
+
 func overridePrefs(p *Plan, features map[string]*manifest.Feature, order []string, layers []resolve.PrefLayer) error {
 	at := make(map[string]int, len(p.Prefs))
 	for i, pr := range p.Prefs {
 		at[pr.ID()] = i
 	}
-	var off map[string]bool // read the first time a profile needs it
+	var off map[string]string // setting -> owner off here; read the first time it is needed
 	for _, layer := range layers {
 		where := layer.File
 		if where == "" {
@@ -297,17 +308,21 @@ func overridePrefs(p *Plan, features map[string]*manifest.Feature, order []strin
 				return fmt.Errorf("%w: %s: [prefs] %q: %w", ErrPlan, where, id, err)
 			}
 			i, owned := at[id]
-			if !owned && layer.Source == "machine" {
-				return fmt.Errorf("%w: %s: [prefs] %q: no feature enabled here owns this setting", ErrPlan, where, id)
-			}
 			if !owned {
 				if off == nil {
 					if off, err = offPrefs(features, order); err != nil {
 						return err
 					}
 				}
-				if !off[id] {
+				feature, ok := off[id]
+				if !ok {
 					return fmt.Errorf("%w: %s: [prefs] %q: no feature owns this setting", ErrPlan, where, id)
+				}
+				// Its feature is off here. A profile is shared by machines
+				// that turn features on and off, so only the machine's own
+				// manifest is told.
+				if layer.Source == "machine" {
+					p.IgnoredPrefs = append(p.IgnoredPrefs, IgnoredPref{ID: id, Feature: feature, File: layer.File})
 				}
 				continue
 			}
@@ -319,10 +334,12 @@ func overridePrefs(p *Plan, features map[string]*manifest.Feature, order []strin
 	return nil
 }
 
-// offPrefs lists the settings that features not planned here own.
-func offPrefs(features map[string]*manifest.Feature, order []string) (map[string]bool, error) {
-	owned := map[string]bool{}
-	for id, f := range features {
+// offPrefs maps the settings that features not planned here own to those
+// features.
+func offPrefs(features map[string]*manifest.Feature, order []string) (map[string]string, error) {
+	owned := map[string]string{}
+	for _, id := range slices.Sorted(maps.Keys(features)) {
+		f := features[id]
 		if slices.Contains(order, id) {
 			continue
 		}
@@ -332,7 +349,7 @@ func offPrefs(features map[string]*manifest.Feature, order []string) (map[string
 				return nil, fmt.Errorf("%w: %s: %w", ErrPlan, id, err)
 			}
 			for _, e := range entries {
-				owned[store+":"+e.Key] = true
+				owned[store+":"+e.Key] = id
 			}
 		}
 	}

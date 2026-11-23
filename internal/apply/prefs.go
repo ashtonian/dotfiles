@@ -80,8 +80,12 @@ func (r *runner) pref(p plan.Pref) error {
 		r.next.Prefs[id] = record
 		return nil
 	case hadPrev && !prev.Pending && !(present && rawEqual(live, prev.Value)):
+		setTo := prev.Want
+		if len(setTo) == 0 {
+			setTo = prev.Value // a version 1 record: Value is what apply set
+		}
 		r.problem(id, fmt.Sprintf("changed here since dotfiles set it (now %s); keep it with `dotfiles adopt %s`, or set it back to %s",
-			describe(live, present), id, oneLine(prev.Want)))
+			describe(live, present), id, oneLine(setTo)))
 		keepPrevious()
 		return nil
 	}
@@ -109,8 +113,10 @@ func (r *runner) pref(p plan.Pref) error {
 			return ctxErr
 		}
 		if !errors.Is(err, prefs.ErrNotApplied) {
+			// The pending record stays: a store can fail after the app took
+			// the value (a timeout after the save), and the record then holds
+			// the only copy of the earlier one. The next run sets it again.
 			r.problem(id, "setting it: "+err.Error())
-			keepPrevious()
 			return nil
 		}
 		r.problem(id, err.Error()+"; restart the app to load it")
@@ -142,9 +148,10 @@ func (r *runner) pref(p plan.Pref) error {
 
 // teardownPrefs puts back the value each setting had before apply set it,
 // for the settings no enabled feature owns any more, when the setting still
-// has the value apply gave it. When the app is no longer installed nothing
-// can be put back: the earlier value is reported once, for the owner to set
-// by hand should the app return, and the record dropped.
+// has the value apply gave it. While the app is not available (uninstalled,
+// or its bundle swapped mid-update) nothing can be put back, and the record,
+// the only copy of the earlier value, waits for a later run; `dotfiles
+// forget` drops it once the app is gone for good.
 func (r *runner) teardownPrefs(p *plan.Plan) error {
 	want := make(map[string]bool, len(p.Prefs))
 	for _, pr := range p.Prefs {
@@ -170,7 +177,8 @@ func (r *runner) teardownPrefs(p *plan.Plan) error {
 		}
 		live, present, err := store.Get(r.ctx, key)
 		if errors.Is(err, prefs.ErrUnavailable) {
-			r.act("forget-pref", id, fmt.Sprintf("%s; before dotfiles set it, it was %s", err, earlier))
+			r.wait(id, fmt.Sprintf("%s, so its value from before dotfiles, %s, waits to be put back; if the app is gone for good, `dotfiles forget %s` drops it", err, earlier, id))
+			r.next.Prefs[id] = rec
 			continue
 		}
 		if err != nil {

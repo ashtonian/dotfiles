@@ -93,7 +93,7 @@ func prefStores(home, muxyApp string, appTimeout time.Duration) map[string]apply
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt [flags]")
+		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt|forget [flags]")
 		return exitUsage
 	}
 	cmd := args[0]
@@ -121,7 +121,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if err := flags.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
-	if cmd != "adopt" && flags.NArg() > 0 {
+	if cmd != "adopt" && cmd != "forget" && flags.NArg() > 0 {
 		fmt.Fprintf(stderr, "dotfiles %s: unexpected arguments %v\n", cmd, flags.Args())
 		return exitUsage
 	}
@@ -164,8 +164,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return cmdOverlays(p, stdout, stderr)
 	case "adopt":
 		return cmdAdopt(ctx, p, stores, flags.Args(), *lockWait, stdout, stderr)
+	case "forget":
+		return cmdForget(ctx, p, flags.Args(), *lockWait, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check, overlays or adopt\n", cmd)
+		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check, overlays, adopt or forget\n", cmd)
 		return exitUsage
 	}
 }
@@ -224,7 +226,7 @@ func (l *loaded) plan(p paths) (*plan.Plan, error) {
 
 func exitFor(err error, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "dotfiles:", err)
-	if errors.Is(err, apply.ErrNotManaged) {
+	if errors.Is(err, apply.ErrNotManaged) || errors.Is(err, apply.ErrNotForgettable) {
 		return exitUsage
 	}
 	if errors.Is(err, manifest.ErrInvalid) || errors.Is(err, manifest.ErrNoMachine) || errors.Is(err, manifest.ErrNoOverlay) ||
@@ -307,10 +309,13 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if doctor {
 		// Expected states, not problems; apply prints them only as it acts.
 		for _, w := range report.Waiting {
-			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Label, w.Reason)
+			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Subject, w.Reason)
 		}
 		for _, pr := range pl.Prefs {
 			fmt.Fprintf(stdout, "app-setting %s\n", describePref(pr))
+		}
+		for _, ig := range pl.IgnoredPrefs {
+			fmt.Fprintf(stdout, "ignored     %s\n", describeIgnored(ig))
 		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
@@ -408,6 +413,9 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	for _, pr := range pl.Prefs {
 		fmt.Fprintf(stdout, "app setting: %s\n", describePref(pr))
 	}
+	for _, ig := range pl.IgnoredPrefs {
+		fmt.Fprintf(stdout, "note: %s\n", describeIgnored(ig))
+	}
 	fmt.Fprintf(stdout, "ok: %d features plan for %s\n", len(l.result.Runnable(l.features)), p.machine)
 	return exitOK
 }
@@ -422,6 +430,46 @@ func cmdOverlays(p paths, stdout, stderr io.Writer) int {
 	}
 	for _, name := range machine.Overlays {
 		fmt.Fprintln(stdout, filepath.Join(p.overlays, name))
+	}
+	return exitOK
+}
+
+// cmdForget drops the records of app settings waiting to be put back for an
+// app that is gone for good, under the same lock as apply, printing each
+// earlier value.
+func cmdForget(ctx context.Context, p paths, ids []string, lockWait time.Duration, stdout, stderr io.Writer) int {
+	if len(ids) == 0 {
+		fmt.Fprintln(stderr, "dotfiles forget: name the app settings to forget, such as muxy:appearance.dark_theme")
+		return exitUsage
+	}
+	l, err := load(p)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	pl, err := l.plan(p)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	lockCtx, cancel := context.WithTimeout(ctx, lockWait)
+	unlock, err := apply.Lock(lockCtx, p.lock)
+	cancel()
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	defer unlock()
+	prev, err := apply.LoadState(p.state)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	report, next, err := apply.Forget(pl, prev, ids)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	if err := next.Save(p.state); err != nil {
+		return exitFor(err, stderr)
+	}
+	for _, a := range report.Actions {
+		fmt.Fprintf(stdout, "%-11s %s -> %s\n", a.Kind, a.Path, a.Detail)
 	}
 	return exitOK
 }
@@ -587,6 +635,11 @@ func describePref(pr plan.Pref) string {
 		d += fmt.Sprintf(" (%s shares %s)", pr.Feature, tomlValue(pr.Shared))
 	}
 	return d
+}
+
+// describeIgnored says why a machine manifest override changes nothing here.
+func describeIgnored(ig plan.IgnoredPref) string {
+	return fmt.Sprintf("%s: %s [prefs] sets it, but %s, which owns it, is off here, so it is ignored", ig.ID, ig.File, ig.Feature)
 }
 
 // tomlValue renders a setting value as a prefs file or [prefs] table writes it.

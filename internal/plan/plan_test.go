@@ -152,14 +152,22 @@ func TestPrefOverridesFollowTheSettingsOrder(t *testing.T) {
 	assert.Equal(t, "Nord", byID["muxy:appearance.dark_theme"].Value)
 	assert.Equal(t, "term", byID["muxy:appearance.tips_visible"].SetBy(), "then the feature")
 	assert.Len(t, p.Prefs, 3, "a profile's override for a feature that is off here plans nothing")
+	assert.Empty(t, p.IgnoredPrefs, "and is not reported: profiles are shared")
+
+	machineOff := resolve.PrefLayer{Source: "machine", File: "machine.toml", Values: map[string]any{"claude:theme": "light"}}
+	p, err = Build(features, []string{"term"}, nil, []resolve.PrefLayer{machineOff}, env)
+	require.NoError(t, err, "machine.toml naming a setting a feature that is off owns is no error")
+	assert.Len(t, p.Prefs, 3)
+	assert.Equal(t, []IgnoredPref{{ID: "claude:theme", Feature: "off", File: "machine.toml"}}, p.IgnoredPrefs,
+		"it is reported as ignored")
 
 	tests := []struct {
 		name  string
 		layer resolve.PrefLayer
 		want  string
 	}{
-		{"machine.toml naming a setting a feature that is off owns", resolve.PrefLayer{Source: "machine", File: "machine.toml",
-			Values: map[string]any{"claude:theme": "light"}}, `machine.toml: [prefs] "claude:theme": no feature enabled here owns this setting`},
+		{"machine.toml naming a setting no feature owns", resolve.PrefLayer{Source: "machine", File: "machine.toml",
+			Values: map[string]any{"muxy:terminal.font_siz": 13.0}}, `machine.toml: [prefs] "muxy:terminal.font_siz": no feature owns this setting`},
 		{"a profile naming a setting no feature owns", resolve.PrefLayer{Source: "profile:laptop", File: "laptop.toml",
 			Values: map[string]any{"muxy:terminal.font_siz": 13.0}}, `laptop.toml: [prefs] "muxy:terminal.font_siz": no feature owns this setting`},
 		{"no store", resolve.PrefLayer{Source: "machine", File: "machine.toml",

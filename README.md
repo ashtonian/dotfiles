@@ -219,6 +219,7 @@ dotfiles check             # validate the manifests and plan this machine; reads
 dotfiles overlays          # the checkout directory of each overlay machine.toml lists
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
 dotfiles adopt muxy:appearance.dark_theme   # the same for an app setting changed in the app
+dotfiles forget muxy:appearance.dark_theme  # drop the earlier value of a setting whose app is gone for good
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),

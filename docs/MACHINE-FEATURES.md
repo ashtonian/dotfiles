@@ -288,10 +288,18 @@ as 32 bits, so `1.3` reads back as `1.2999999523162842`. From then on:
 - disabling the feature, or removing the line, puts back the recorded earlier
   value (or unsets the key), unless the key changed in the app since;
 - a store that cannot be reached is a problem for its keys only; the rest of
-  apply converges, and the next run tries again. During teardown, an app that
-  is no longer installed (`app not available`) cannot take its old value back:
-  apply prints `forget-pref` once with the earlier value, to set by hand if
-  the app returns, and drops the record.
+  apply converges, and the next run tries again. A set that fails keeps the
+  record of the earlier value, since the app may have taken the new one
+  before the failure was reported;
+- during teardown, an app that is not available (`app not available`: not
+  installed, or its bundle replaced mid-update) cannot take its old value
+  back. The record, the only copy of that value, is kept, and `dotfiles
+  doctor` lists the setting as waiting; it is no failure, so sync does not
+  fail on every run. A later apply puts the value back once the app is
+  there. If the app is gone for good, `dotfiles forget <store>:<key>` drops
+  the record and prints the earlier value, to set by hand should the app
+  return. It refuses a setting an enabled feature still owns, and the
+  records are bounded: one per setting a feature once owned.
 
 #### Per-machine overrides
 
@@ -313,11 +321,12 @@ The order is the one settings follow: the feature's prefs file, then each
 profile in `machine.toml` order, then `machine.toml`; the last one that names
 the key wins. Each override is checked like a prefs file line (a known store,
 a leaf for Muxy, a top-level key for Claude Code, a value with a JSON form).
-`machine.toml` may name only a setting a feature enabled here owns, so a typo
-or a stale override is a plan error, never silently ignored. A profile is
-shared by machines that turn features on and off, so it may name a setting
-whose feature is off on a machine, which that machine leaves out; one that no
-feature owns at all is a plan error.
+A setting no feature owns at all, a typo or a key removed from its prefs
+file, is a plan error in any layer. A setting whose feature is off on this
+machine is left out: `machine.toml` naming one is reported by `dotfiles
+check` (`note: ... is off here, so it is ignored`) and `dotfiles doctor`
+(`ignored`), and fails nothing; a profile naming one is left out silently,
+since profiles are shared by machines that turn features on and off.
 
 An override changes the planned value, not the record of what was there
 before dotfiles, so:
