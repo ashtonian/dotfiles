@@ -1108,12 +1108,44 @@ class RealFeatures(Fixture):
         self.home.mkdir()
         self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_STATE_HOME=str(self.home / '.local/state'))
+        # Never the Muxy installed on this computer: install_muxy() points
+        # here at a stand-in.
+        self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-muxy.app')
+        self.muxy_settings = self.path / 'muxy-settings.json'
+
+    def install_muxy(self):
+        """A stand-in for Muxy under the fresh home's ~/Applications, where the
+        engine looks first: its `muxy config` keeps settings in a JSON file."""
+        settings = self.muxy_settings
+        settings.write_text(json.dumps({'appearance.dark_theme': 'Muxy', 'appearance.layout': 'project_focused'}))
+        cli = self.home / 'Applications/Muxy.app/Contents/MacOS/muxy'
+        cli.parent.mkdir(parents=True)
+        cli.write_text(f'''#!{sys.executable}
+import json, pathlib, sys, tomllib
+state = pathlib.Path({str(settings)!r})
+values = json.loads(state.read_text())
+args = [a for a in sys.argv[1:] if a not in ('--json', '--')]
+if args[:2] == ['config', 'list']:
+    print(json.dumps(values))
+elif args[:2] == ['config', 'set'] and len(args) == 4:
+    values[args[2]] = tomllib.loads('v = ' + args[3])['v']
+    state.write_text(json.dumps(values))
+    print(json.dumps({{'key': args[2], 'applied': False}}))
+elif args[:2] == ['config', 'unset'] and len(args) == 3:
+    values.pop(args[2], None)
+    state.write_text(json.dumps(values))
+else:
+    sys.exit('muxy: unknown command')
+''')
+        cli.chmod(0o755)
+        self.env['DOTFILES_MUXY_APP'] = str(self.home / 'Applications/Muxy.app')
 
     def dotfiles(self, *args):
         return subprocess.run([str(self.engine), *args, '--home', str(self.home), '--repo', str(ROOT)],
                               env=self.env, capture_output=True, text=True, timeout=60)
 
     def converge(self, profiles):
+        self.install_muxy()
         p = self.dotfiles('init', '--profiles', profiles)
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         p = self.dotfiles('apply')
@@ -1150,10 +1182,102 @@ class RealFeatures(Fixture):
         self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
         self.assertIn('no.such-feature', p.stderr)
 
+    def test_a_machine_overrides_a_shared_muxy_setting_and_says_where_it_comes_from(self):
+        self.install_muxy()
+        p = self.dotfiles('init', '--profiles', 'base,desktop')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        machine = self.home / '.config/dotfiles/machine.toml'
+        manifest = machine.read_text()
+        machine.write_text(manifest + '\n[prefs]\n"muxy:terminal.font_size" = 13.0 # the small screen\n')
+
+        check = self.dotfiles('check')
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn('app setting: muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)\n', check.stdout)
+        self.assertIn('app setting: muxy:appearance.dark_theme = "Dracula", from tool.muxy\n', check.stdout)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(self.muxy_settings.read_text())['terminal.font_size'], 13.0)
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn('app-setting muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)\n', doctor.stdout)
+        status = self.dotfiles('status')
+        self.assertRegex(status.stdout, r'muxy:terminal\.font_size +13\.0 +machine \(tool\.muxy shares 14\.0\)')
+        rows = {r['id']: r for r in json.loads(self.dotfiles('status', '--json').stdout)['prefs']}
+        self.assertEqual(rows['muxy:terminal.font_size'], {'id': 'muxy:terminal.font_size', 'value': 13.0,
+                                                           'set_by': 'machine', 'feature': 'tool.muxy', 'shared': 14.0})
+        self.assertEqual(rows['muxy:appearance.dark_theme']['set_by'], 'tool.muxy')
+
+        machine.write_text(manifest + '\n[prefs]\n"muxy:terminal.font_size" = 12.0\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('update-pref muxy:terminal.font_size', p.stdout)
+        self.assertEqual(json.loads(self.muxy_settings.read_text())['terminal.font_size'], 12.0)
+
+        machine.write_text(manifest)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(self.muxy_settings.read_text())['terminal.font_size'], 14.0, 'back to the shared value')
+
+        machine.write_text(manifest + '\n[prefs]\n"muxy:terminal.font_siz" = 13.0\n')
+        p = self.dotfiles('check')
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn('[prefs] "muxy:terminal.font_siz": no feature owns this setting', p.stderr)
+        status = self.dotfiles('status')
+        self.assertEqual(status.returncode, 2, 'status reports the plan error')
+        self.assertIn('tool.muxy', status.stdout, 'after showing what it can')
+        self.assertIn('no feature owns this setting', status.stderr)
+
+        # An override for a feature turned off here changes nothing and fails nothing.
+        machine.write_text(manifest + '\n[features]\ndisable = ["tool.muxy"]\n\n[prefs]\n"muxy:terminal.font_size" = 13.0\n')
+        check = self.dotfiles('check')
+        self.assertEqual(check.returncode, 0, check.stdout + check.stderr)
+        self.assertIn(f'note: muxy:terminal.font_size: {machine} [prefs] sets it, but tool.muxy, which owns it, is off here, so it is ignored\n',
+                      check.stdout)
+
+        machine.write_text(manifest + '\n[features]\ndisable = ["tool.muxy"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(json.loads(self.muxy_settings.read_text()), {'appearance.dark_theme': 'Muxy', 'appearance.layout': 'project_focused'},
+                         'teardown puts back what Muxy had before dotfiles')
+
+    def forget(self, *ids):
+        # Flags go before the settings named.
+        return subprocess.run([str(self.engine), 'forget', '--home', str(self.home), '--repo', str(ROOT), *ids],
+                              env=self.env, capture_output=True, text=True, timeout=60)
+
+    def test_an_uninstalled_muxy_keeps_its_earlier_values_until_forgotten(self):
+        self.install_muxy()
+        p = self.dotfiles('init', '--profiles', 'base,desktop')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.dotfiles('apply').returncode, 0)
+        p = self.forget('muxy:appearance.dark_theme')
+        self.assertEqual(p.returncode, 64, 'tool.muxy still owns it')
+
+        shutil.rmtree(self.home / 'Applications/Muxy.app')  # uninstalled
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '\n[features]\ndisable = ["tool.muxy"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, 'an app that is not there is no failure: ' + p.stdout + p.stderr)
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn('waiting     muxy:appearance.dark_theme: app not available', doctor.stdout)
+        self.assertIn('its value from before dotfiles, "Muxy", waits to be put back', doctor.stdout)
+
+        p = self.forget('muxy:appearance.dark_theme')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, 'forget-pref muxy:appearance.dark_theme -> before dotfiles set it, it was "Muxy"\n')
+        doctor = self.dotfiles('doctor')
+        self.assertNotIn('muxy:appearance.dark_theme', doctor.stdout)
+        self.assertIn('waiting     muxy:terminal.font_size', doctor.stdout, 'the others still wait')
+
     def test_a_desktop_machine_gets_a_working_shell_git_and_ssh(self):
         brewfile = self.converge('base,dev,desktop,server')
         self.assertIn('cask "', brewfile)
         self.assertIn('vscode "', brewfile)
+        self.assertIn('cask "muxy" # tool.muxy', brewfile)
+        shared = tomllib.loads((FEATURES / 'tool.muxy/muxy.toml').read_text())
+        self.assertEqual(json.loads(self.muxy_settings.read_text()), shared | {'appearance.layout': 'project_focused'},
+                         'the shared Muxy settings are set, and the rest of Muxy is left alone')
         if sys.platform == 'darwin':
             karabiner = self.home / '.config/karabiner/karabiner.json'
             self.assertTrue(karabiner.is_file() and not karabiner.is_symlink(),
@@ -1223,7 +1347,7 @@ class RealFeatures(Fixture):
 
     @unittest.skipUnless(sys.platform == 'darwin', 'tool.muxy is a macOS feature')
     def test_a_desktop_mac_gets_muxy_from_the_app_and_its_server_list_job(self):
-        brewfile = self.converge('base,dev,desktop')
+        brewfile = self.converge('base,dev,desktop')  # with the stand-in Muxy
         self.assertIn('brew "python" # tool.muxy', brewfile, 'muxy-reconcile needs tomllib')
         for name in ('muxy', 'muxy-reconcile'):
             link = self.home / '.local/bin' / name
@@ -1267,6 +1391,7 @@ class RealFeatures(Fixture):
         link = self.home / '.local/bin/muxy'
         link.symlink_to('.muxy/current/muxy')
         held = f'waiting     {link}: left alone while {copy} exists\n'
+        self.install_muxy()
 
         p = self.dotfiles('init', '--profiles', 'base,dev,desktop')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
@@ -1318,6 +1443,26 @@ class RealFeatures(Fixture):
             self.assertFalse((self.home / home_cluster).exists(), home_cluster)
         self.assertFalse((self.home / '.mackup.cfg').exists())
         self.assertTrue((self.home / '.claude/CLAUDE.md').is_symlink(), 'dev features are on')
+        self.assertEqual(json.loads(self.muxy_settings.read_text())['appearance.dark_theme'], 'Muxy',
+                         'Muxy is a desktop feature')
+
+    def test_claude_code_keeps_its_own_settings_and_takes_the_theme(self):
+        settings = self.home / '.claude/settings.json'
+        settings.parent.mkdir()
+        settings.write_text('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "dark-ansi"\n}\n')
+        self.converge('base,dev')
+        self.assertEqual(settings.read_text(), '{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula"\n}\n')
+        theme = self.home / '.claude/themes/dracula.json'
+        self.assertFalse(theme.is_symlink(), 'Claude Code rewrites its themes, so the theme is a managed copy')
+        self.assertEqual(json.loads(theme.read_text())['name'], 'Dracula')
+
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '[features]\ndisable = ["agents.claude.theme"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('restore-pref claude:theme -> "dark-ansi"', p.stdout)
+        self.assertEqual(json.loads(settings.read_text())['theme'], 'dark-ansi', 'disabling it puts back what was there')
+        self.assertFalse(theme.exists())
 
 
 class Install(Fixture):

@@ -15,6 +15,7 @@ updates servers by hand on each Mac. It installs:
 | Setting `muxy.reconcile` | `report` (the default): a run logs what it would change and writes nothing; `apply`: it makes the change ([Rollout](#rollout)) |
 | Setting `muxy.exclude_servers` | Declared servers this Mac leaves out ([Per-machine changes](#per-machine-changes)) |
 | Homebrew `python` | Python 3.11 or later for `muxy-reconcile` (`tomllib`); macOS's `/usr/bin/python3` is 3.9 |
+| Casks `muxy`, `font-fira-code-nerd-font`, and [muxy.toml](../features/tool.muxy/muxy.toml) | The app in `/Applications`, its terminal font, and the Muxy settings every Mac shares, set key by key through `muxy config set` ([App settings](MACHINE-FEATURES.md#app-settings)) |
 
 This repository is public, so it names no hosts. Each context's
 [overlay](../README.md#overlays) provides its Macs: an `ssh_config` fragment with one

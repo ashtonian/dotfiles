@@ -15,10 +15,12 @@ This file maps the checked-in implementation.
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests from the repository and overlays; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
-├── internal/plan/           # Links, managed copies, generated outputs, stubs and LaunchAgents to install
-├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, state, teardown, locking
+├── internal/plan/           # Links, managed copies, generated outputs, stubs, LaunchAgents and app settings to install
+├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, app settings, state, teardown, locking
 ├── internal/launchd/        # LaunchAgent plist reading; launchctl print, bootstrap and bootout in gui/<uid>
-├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig, launchagents/
+├── internal/prefs/          # App settings owned key by key: prefs files, and the Muxy and Claude Code stores
+├── internal/atomicfile/     # Write beside, then rename into place
+├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig, launchagents/, prefs files
 ├── profiles/                # Named feature sets: base, dev, desktop, server, work, studio
 ├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
 ├── bin/                     # Executable entry points
@@ -60,6 +62,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp` |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
 | `agents.claude` | dev | all | `~/.claude/CLAUDE.md` |
+| `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask) |
 | `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup) |
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`) |
@@ -92,10 +95,12 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
-| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); settings `muxy.reconcile` (`report` until a Mac sets `apply`) and `muxy.exclude_servers`; Brewfile: 1 brew |
+| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); settings `muxy.reconcile` (`report` until a Mac sets `apply`) and `muxy.exclude_servers`; 8 Muxy settings ([muxy.toml](features/tool.muxy/muxy.toml)): Dracula dark and light themes, FiraCode Nerd Font in the terminal and composer, terminal font size 14, copy on select, agent sessions shown, tips hidden; Brewfile: 2 cask (Muxy, FiraCode Nerd Font), 1 brew |
 
-Edit linked files in place. Add, remove or move files, then run
-`dotfiles apply`; a file in the way is reported, never overwritten. See
+Edit linked files in place. A feature's prefs file (`[provides.prefs]`) lists
+the app settings it owns, one `key = value` line each; apply sets each one
+through the app and leaves the rest of the app's settings to the machine. Add,
+remove or move files, then run `dotfiles apply`; a file in the way is reported, never overwritten. See
 [A file is in the way](README.md#a-file-is-in-the-way).
 
 ## Shell loading

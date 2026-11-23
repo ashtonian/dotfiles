@@ -1,0 +1,13 @@
+id = "agents.claude.theme"
+description = "Claude Code in the Dracula theme"
+category = "agents"
+
+# home/.claude/themes/dracula.json is the theme from dracula/claude-code pull
+# request 2 (commit 4df05e6), MIT licensed (LICENSE.dracula). Once that merges,
+# the theme can come from its plugin instead.
+[provides]
+# A copy: Claude Code rewrites the file when the theme is edited in /theme.
+copy = [".claude/themes/dracula.json"]
+
+[provides.prefs]
+claude = "claude.toml"

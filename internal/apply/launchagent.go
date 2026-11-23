@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
@@ -112,7 +113,7 @@ func (r *runner) launchAgent(a plan.LaunchAgent) error {
 			if err := r.mkdirParent(a.Target); err != nil {
 				return err
 			}
-			if err := writeAtomic(a.Target, a.Content, 0o644); err != nil {
+			if err := atomicfile.Write(a.Target, a.Content, 0o644); err != nil {
 				return err
 			}
 		}

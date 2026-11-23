@@ -1,13 +1,18 @@
 id = "tool.muxy"
-description = "Muxy's command line tool from the app, and the other Macs as Muxy remote servers from each context's list (muxy-reconcile)"
+description = "Muxy, its terminal font and the Muxy settings every machine shares; Muxy's command line tool from the app, and the other Macs as Muxy remote servers from each context's list (muxy-reconcile)"
 category = "tools"
 platforms = ["darwin"]
+requires = ["brew.base"]
 
 [provides]
+cask = ["muxy", "font-fira-code-nerd-font"]
 # muxy-reconcile needs Python 3.11 or later (tomllib); /usr/bin/python3 is 3.9.
 brew = ["python"]
 # ~/.local/bin/muxy is what Muxy on another Mac runs over SSH.
 link = [".local/bin/muxy", ".local/bin/muxy-reconcile"]
+
+[provides.prefs]
+muxy = "muxy.toml"
 
 # Muxy's own "Install muxy-server" keeps its server under ~/.local/bin/.muxy
 # and links ~/.local/bin/muxy to it. A server running from there holds the

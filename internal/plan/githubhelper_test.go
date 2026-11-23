@@ -33,7 +33,7 @@ func TestGitHubCredentialsComeFromGh(t *testing.T) {
 	result, err := resolve.Resolve(features, profiles, &manifest.Machine{Profiles: []string{"base"}}, "darwin")
 	require.NoError(t, err)
 	root := t.TempDir()
-	p, err := Build(features, result.Runnable(features), result.Values(),
+	p, err := Build(features, result.Runnable(features), result.Values(), result.PrefLayers,
 		Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"})
 	require.NoError(t, err)
 	gitconfig := filepath.Join(root, "gitconfig")
