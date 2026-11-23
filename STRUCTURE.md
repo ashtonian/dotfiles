@@ -31,6 +31,7 @@ This file maps the checked-in implementation.
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── docs/PASSKEYS.md         # Passkey prompts off (browser.passkeys-off)
 ├── docs/KARABINER.md       # Mouse buttons through Karabiner-Elements (tool.karabiner)
+├── docs/MUXY.md            # The other Macs as Muxy remote servers (tool.muxy)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -91,6 +92,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
+| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy`, `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); Brewfile: 1 brew |
 
 Edit linked files in place. Add, remove or move files, then run
 `dotfiles apply`; a file in the way is reported, never overwritten. See
@@ -182,6 +184,8 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |
+| [features/tool.muxy/home/.local/bin/muxy](features/tool.muxy/home/.local/bin/muxy) | Run the `muxy` inside `/Applications/Muxy.app` (`DOTFILES_MUXY_APP`); what Muxy on another Mac starts over SSH |
+| [features/tool.muxy/home/.local/bin/muxy-reconcile](features/tool.muxy/home/.local/bin/muxy-reconcile) | Bring Muxy's `[[servers]]` in step with `~/.config/muxy/servers.d/*.toml`, leaving out this Mac; `--dry-run` reports only |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
 
 ## Automation and data boundaries
@@ -198,6 +202,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |
+| com.ashtonian.muxy-reconcile | At load, when `~/.config/muxy/servers.d` gains or loses a list, and hourly, once Muxy.app and Homebrew's python3 exist | `~/Library/Logs/muxy-reconcile/muxy-reconcile.log`, `launchd.{out,err}` |
 
 Templates are rendered copies, not links. `dotfiles apply` (every sync) writes a
 changed template and reloads the job, except the job it runs in and a scheduled

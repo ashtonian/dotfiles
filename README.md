@@ -67,7 +67,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
+| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, the hourly Muxy server list, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
 
 ## Architecture
 
@@ -247,7 +247,7 @@ removed.
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), Muxy's command line tool and the other Macs as its remote servers, the Mackup config, neofetch and Taskwarrior settings |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -550,6 +550,28 @@ brew install --cask karabiner-elements
 
 Checking the button with Karabiner-EventViewer, and troubleshooting:
 [docs/KARABINER.md](docs/KARABINER.md).
+
+## Muxy remote servers
+
+Feature `tool.muxy` (desktop profile) makes each Mac's Muxy list the other Macs of
+every context it works in as remote servers. Each context's overlay names its Macs:
+`Host` aliases in an `ssh_config` fragment, and a list linked to
+`~/.config/muxy/servers.d/<context>.toml`. `muxy-reconcile`, run by the LaunchAgent
+`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, and hourly,
+rewrites only the `[[servers]]` tables of Muxy's `settings.toml`: it leaves out the Mac
+it runs on, keeps the ids of entries that already reach the same Mac (Muxy ties tabs to
+them), keeps entries added by hand, and writes only what Muxy's own parser accepts.
+`~/.local/bin/muxy` runs the app's own `muxy`, which is also what Muxy on the other Macs
+starts over SSH. Once per Mac:
+
+```sh
+rm -f ~/.local/bin/muxy && rm -rf ~/.local/bin/.muxy   # only if apply reports it in the way
+ssh <alias> true                                       # once per listed Mac: accept its host key
+muxy-reconcile --dry-run                               # what it would change, checked by Muxy
+```
+
+The algorithm, configuration, exit statuses and troubleshooting:
+[docs/MUXY.md](docs/MUXY.md).
 
 ## Multi-Machine Setup
 

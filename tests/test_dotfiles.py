@@ -1176,6 +1176,40 @@ class RealFeatures(Fixture):
         self.assertFalse(self.agent('com.ashtonian.otel-agent').exists())
         self.assertFalse((self.launchd / 'com.ashtonian.otel-agent').exists(), 'unloaded too')
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'tool.muxy is a macOS feature')
+    def test_a_desktop_mac_gets_muxy_from_the_app_and_its_server_list_job(self):
+        brewfile = self.converge('base,dev,desktop')
+        self.assertIn('brew "python" # tool.muxy', brewfile, 'muxy-reconcile needs tomllib')
+        for name in ('muxy', 'muxy-reconcile'):
+            link = self.home / '.local/bin' / name
+            self.assertEqual(link.resolve(), FEATURES / 'tool.muxy/home/.local/bin' / name)
+        label = 'com.ashtonian.muxy-reconcile'
+        ready = Path('/Applications/Muxy.app').exists() and Path('/opt/homebrew/bin/python3').exists()
+        if ready:
+            installed = self.agent(label).read_text()
+            self.assertIn(f'<string>{self.home}/.local/bin/muxy-reconcile</string>', installed)
+            self.assertIn(f'<string>{self.home}/.config/muxy/servers.d</string>', installed)
+            self.assertTrue((self.launchd / label).exists(), 'loaded')
+            self.assertTrue((self.home / 'Library/Logs/muxy-reconcile').is_dir())
+        else:
+            self.assertFalse(self.agent(label).exists(), 'it waits for the app and python3')
+            self.assertIn(f'waiting     {label}: installs once', self.dotfiles('doctor').stdout)
+
+    @unittest.skipUnless(sys.platform == 'darwin', 'tool.muxy is a macOS feature')
+    def test_a_muxy_installed_by_muxy_is_reported_not_replaced(self):
+        # What Muxy's "Install muxy-server" leaves: a link into its own copy.
+        own = self.home / '.local/bin/.muxy/current/muxy'
+        own.parent.mkdir(parents=True)
+        own.write_text('#!/bin/sh\n')
+        (self.home / '.local/bin/muxy').symlink_to('.muxy/current/muxy')
+        p = self.dotfiles('init', '--profiles', 'base,dev,desktop')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('a link to .muxy/current/muxy is in the way; remove it to let dotfiles manage this file',
+                      p.stdout + p.stderr)
+        self.assertEqual(os.readlink(self.home / '.local/bin/muxy'), '.muxy/current/muxy', 'left as it was')
+
     def test_apply_takes_over_the_retired_installers_agents(self):
         stale = '<?xml version="1.0"?>\n<plist version="1.0"><dict><key>Label</key><string>{}</string></dict></plist>\n'
         self.agent('x').parent.mkdir(parents=True)
@@ -2907,6 +2941,377 @@ process.stdout.write(JSON.stringify({
         self.assertFalse(any('System Profile' in l for l in lines))
         self.assertTrue(any(l.strip().startswith('1Password, in each browser') for l in lines), p.stdout)
 
+
+
+MUXY_APP = Path('/Applications/Muxy.app')
+needs_muxy = unittest.skipUnless((MUXY_APP / 'Contents/MacOS/muxy').exists(),
+                                 'Muxy.app required: its own parser checks what muxy-reconcile writes')
+
+# Muxy's settings.toml as the app saves it: tables in key order, servers among
+# them. The prompt holds a line that looks like a [[servers]] table.
+MUXY_SETTINGS = '''commands = []
+
+[ai.commit]
+include_unstaged = true
+push = true
+
+[ai.prompts]
+commit = """
+Summarize the change.
+[[servers]]
+id = "not a server"
+"""
+
+[appearance]
+dark_theme = "Dracula"
+hidden_worktrees = [
+    "0123456789abcdef0123456789abcdef",
+]
+tips_visible = true
+
+[appearance.sidebar_servers_expanded]
+
+[clipboard]
+copy_on_select = false
+
+[quick_terminal]
+enabled = true
+
+[quick_terminal.shortcut]
+type = "unassigned"
+
+{servers}[window]
+close_behavior = "close_session"
+default_size = [
+    1200.0,
+    800.0,
+]
+
+[worktrees.projects]
+'''
+
+
+class MuxyReconcile(Fixture):
+    """muxy-reconcile against a real Muxy profile directory and Muxy's own parser;
+    ssh -G and this Mac's addresses are stand-ins."""
+    FEATURE = FEATURES / 'tool.muxy'
+    TOOL = FEATURE / 'home/.local/bin/muxy-reconcile'
+    WRAPPER = FEATURE / 'home/.local/bin/muxy'
+    # Each destination's HostName, as `ssh -G` would print it. The desk has two
+    # interfaces: its alias names one, its .local name answers with the other.
+    HOSTS = {'desk': '192.0.2.94', 'desk.local': '192.0.2.230', 'laptop': '192.0.2.91',
+             'tower': '192.0.2.93', 'tower.local': '192.0.2.93', 'devbox': '198.51.100.7',
+             'gone': 'nowhere.invalid'}
+    # Each machine's sshd host key answers on these addresses.
+    MACHINES = {'desk': ('192.0.2.94', '192.0.2.230'), 'laptop': ('192.0.2.91',),
+                'tower': ('192.0.2.93',), 'devbox': ('198.51.100.7',)}
+    # The tests run as the Laptop.
+    SELF = '192.0.2.91 127.0.0.1'
+
+    @classmethod
+    def setUpClass(cls):
+        cls.keys = tempfile.TemporaryDirectory(prefix='muxy-host-keys-')
+        lines = []
+        for machine, addresses in cls.MACHINES.items():
+            key = Path(cls.keys.name) / machine
+            subprocess.run(['ssh-keygen', '-q', '-t', 'ed25519', '-N', '', '-C', machine, '-f', str(key)], check=True)
+            kind, blob = (key.with_suffix('.pub')).read_text().split()[:2]
+            lines.append(f'{",".join(addresses)} {kind} {blob}\n')
+        cls.known_hosts = Path(cls.keys.name) / 'known_hosts'
+        cls.known_hosts.write_text(''.join(lines))
+        # Hashed, as HashKnownHosts writes them.
+        subprocess.run(['ssh-keygen', '-q', '-H', '-f', str(cls.known_hosts)], check=True, capture_output=True)
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.keys.cleanup()
+
+    def setUp(self):
+        super().setUp()
+        self.user = subprocess.run(['id', '-un'], capture_output=True, text=True, check=True).stdout.strip()
+        self.profile = self.path / 'muxy'
+        self.profile.mkdir()
+        self.settings = self.profile / 'settings.toml'
+        self.lists = self.path / 'config/muxy/servers.d'
+        self.lists.mkdir(parents=True)
+        self.state = self.path / 'state/muxy-reconcile/managed.json'
+        self.log = self.path / 'logs/muxy-reconcile.log'
+        (self.path / 'hosts').write_text(''.join(f'{k} {v}\n' for k, v in self.HOSTS.items()))
+        self.cli('ssh', r'''[ "$1" = -G ] || exit 2; shift; [ "$1" = -- ] && shift
+d=$1; user=$(id -un); host=${d#*@}; [ "$host" = "$d" ] || user=${d%%@*}
+[ "$host" != "${FAKE_SSH_FAIL:-}" ] || { echo "ssh: $host: bad configuration" >&2; exit 255; }
+mapped=$(awk -v h="$host" '$1 == h {print $2}' "$FAKE_SSH_HOSTS")
+printf 'user %s\nhostname %s\nport 22\nuserknownhostsfile %s\nglobalknownhostsfile none\n' \
+    "$user" "${mapped:-$host}" "$FAKE_KNOWN_HOSTS"
+if [ -n "${FAKE_SSH_TOUCH:-}" ] && [ ! -e "$FAKE_SSH_TOUCH.done" ]; then
+    printf '\n' >> "$FAKE_SSH_TOUCH"; : > "$FAKE_SSH_TOUCH.done"
+fi''')
+        self.env.update(MUXY_DIR=str(self.profile), XDG_CONFIG_HOME=str(self.path / 'config'),
+                        XDG_STATE_HOME=str(self.path / 'state'), MUXY_RECONCILE_LOG=str(self.log),
+                        MUXY_RECONCILE_SSH=str(self.bin / 'ssh'), FAKE_SSH_HOSTS=str(self.path / 'hosts'),
+                        MUXY_RECONCILE_SELF_ADDRESSES=self.SELF, FAKE_KNOWN_HOSTS=str(self.known_hosts),
+                        MUXY_RECONCILE_HOST_KEYS=str(Path(self.keys.name) / 'laptop.pub'))
+        self.env.pop('DOTFILES_MUXY_APP', None)
+
+    def write_settings(self, *servers):
+        body = ''.join('[[servers]]\n' + ''.join(f'{k} = {json.dumps(v)}\n' for k, v in sorted(s.items())) + '\n'
+                       for s in servers)
+        self.settings.write_text(MUXY_SETTINGS.replace('{servers}', body))
+        return self.settings.read_bytes()
+
+    def declare(self, *servers, name='personal', group='Macs'):
+        text = f'group = "{group}"\n' + ''.join(
+            '\n[[server]]\n' + ''.join(f'{k} = {json.dumps(v)}\n' for k, v in s.items()) for s in servers)
+        (self.lists / f'{name}.toml').write_text(text)
+
+    def run_tool(self, *args):
+        return subprocess.run([sys.executable, str(self.TOOL), *args], env=self.env,
+                              capture_output=True, text=True, timeout=60)
+
+    def servers(self):
+        return tomllib.loads(self.settings.read_text()).get('servers', [])
+
+    def without_servers(self, text):
+        """The file with its [[servers]] tables taken out."""
+        return re.sub(r'^\[\[servers\]\]\n(?:[a-z_]+ = .*\n)*\n?', '', text, flags=re.MULTILINE)
+
+    def managed(self):
+        profiles = json.loads(self.state.read_text())['profiles']
+        return profiles[str(self.settings)]
+
+    def declare_macs(self):
+        self.declare({'name': 'Desk', 'ssh': 'desk'}, {'name': 'Laptop', 'ssh': 'laptop'},
+                     {'name': 'tower', 'ssh': 'tower'})
+
+    @needs_muxy
+    def test_adopts_the_same_machine_by_host_key_skips_this_mac_and_adds_the_rest(self):
+        desk_id = '5e1ec7ed5e1ec7ed5e1ec7ed5e1ec7ed'
+        before = self.write_settings({'group': 'active', 'id': desk_id, 'name': 'desk',
+                                      'password_login': True, 'ssh': f'{self.user}@desk.local'})
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 added, 1 adopted', p.stdout)
+        desk, tower = self.servers()
+        self.assertEqual(desk, {'group': 'Macs', 'id': desk_id, 'name': 'Desk', 'ssh': 'desk'},
+                         'the entry keeps its id; password_login goes: the ssh configuration logs in')
+        self.assertEqual({k: tower[k] for k in ('group', 'name', 'ssh')}, {'group': 'Macs', 'name': 'tower', 'ssh': 'tower'})
+        self.assertRegex(tower['id'], r'^[0-9a-f]{32}$')
+        self.assertNotIn('laptop', [s.get('ssh') for s in self.servers()], 'this Mac is never listed')
+        self.assertEqual(self.without_servers(self.settings.read_text()), self.without_servers(before.decode()),
+                         'every byte outside [[servers]] is as it was')
+        self.assertIn('[[servers]]\nid = "not a server"', self.settings.read_text(), 'the prompt is untouched')
+        self.assertEqual(self.managed(), {desk_id: {'ssh': 'desk'}, tower['id']: {'ssh': 'tower'}})
+
+    @needs_muxy
+    def test_adopts_by_address_when_no_host_key_is_known(self):
+        tower_id = '70e470e470e470e470e470e470e470e4'
+        self.write_settings({'id': tower_id, 'name': 'tower.local', 'ssh': f'{self.user}@tower.local'})
+        self.env['FAKE_KNOWN_HOSTS'] = str(self.path / 'empty_known_hosts')
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 adopted', p.stdout)
+        self.assertIn('2 no host key', p.stdout, 'Muxy cannot connect to either until a key is accepted')
+        self.assertEqual(self.servers()[0], {'group': 'Macs', 'id': tower_id, 'name': 'tower', 'ssh': 'tower'})
+        self.assertIn('`ssh desk` accepts one', self.log.read_text())
+
+    @needs_muxy
+    def test_this_mac_is_known_by_its_host_key_on_any_address(self):
+        self.write_settings()
+        self.env['MUXY_RECONCILE_SELF_ADDRESSES'] = '203.0.113.99'
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([s['ssh'] for s in self.servers()], ['desk', 'tower'])
+
+    @needs_muxy
+    def test_new_entries_go_where_muxy_writes_them_with_fresh_ids(self):
+        before = self.write_settings()
+        self.declare({'name': 'Desk', 'ssh': 'desk'}, {'name': 'tower', 'ssh': 'tower'},
+                     {'name': 'devbox', 'ssh': 'devbox', 'ssh_command': 'orb ssh devbox'})
+        self.env['FAKE_KNOWN_HOSTS'] = str(self.path / 'empty_known_hosts')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('3 added', p.stdout)
+        self.assertIn('2 no host key', p.stdout, 'devbox logs in through its command, not known_hosts')
+        text = self.settings.read_text()
+        self.assertLess(text.index('[quick_terminal.shortcut]'), text.index('[[servers]]\ngroup'))
+        self.assertLess(text.rindex('[[servers]]'), text.index('[window]'))
+        ids = [s['id'] for s in self.servers()]
+        self.assertEqual(len(set(ids)), 3)
+        self.assertTrue(all(re.fullmatch(r'[0-9a-f]{32}', i) for i in ids), ids)
+        self.assertEqual(self.servers()[2], {'group': 'Macs', 'id': ids[2], 'name': 'devbox',
+                                             'ssh_command': 'orb ssh devbox'}, 'a command replaces the destination')
+        self.assertEqual(self.without_servers(text), self.without_servers(before.decode()))
+
+    @needs_muxy
+    def test_keeps_entries_it_did_not_write_and_removes_its_own_when_undeclared(self):
+        hand = {'id': 'c0ffee00c0ffee00c0ffee00c0ffee00', 'identity_file': '~/.ssh/devbox', 'name': 'devbox',
+                'ssh': 'me@devbox'}
+        self.write_settings(hand)
+        hand_text = '[[servers]]\nid = "c0ffee00c0ffee00c0ffee00c0ffee00"\nidentity_file = "~/.ssh/devbox"\n'
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 not managed', p.stdout)
+        self.assertEqual([s['name'] for s in self.servers()], ['devbox', 'Desk', 'tower'])
+
+        self.declare({'name': 'Desk', 'ssh': 'desk'})
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 removed', p.stdout)
+        self.assertEqual(self.servers()[0], hand)
+        self.assertIn(hand_text, self.settings.read_text(), 'its table is byte for byte as it was')
+        self.assertEqual([s['name'] for s in self.servers()], ['devbox', 'Desk'])
+
+        (self.lists / 'personal.toml').unlink()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.servers(), [hand], 'with no lists, only the hand-added entry stays')
+
+    @needs_muxy
+    def test_removes_an_entry_it_wrote_once_it_turns_out_to_be_this_mac(self):
+        self.write_settings({'id': '0123456789abcdef0123456789abcdef', 'name': 'Laptop', 'ssh': 'laptop'})
+        self.state.parent.mkdir(parents=True)
+        self.state.write_text(json.dumps({'version': 1, 'profiles': {
+            str(self.settings): {'0123456789abcdef0123456789abcdef': {'ssh': 'laptop'}}}}))
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([s['ssh'] for s in self.servers()], ['desk', 'tower'])
+
+    @needs_muxy
+    def test_a_second_run_writes_nothing_and_never_calls_muxy(self):
+        self.write_settings()
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        written, stat = self.settings.read_bytes(), self.settings.stat()
+        self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-such.app')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, 'muxy-reconcile: in step: 2 unchanged, 1 this Mac\n')
+        self.assertEqual((self.settings.read_bytes(), self.settings.stat().st_mtime_ns), (written, stat.st_mtime_ns))
+
+    @needs_muxy
+    def test_a_value_muxy_refuses_leaves_the_file_as_it_was(self):
+        before = self.write_settings()
+        self.declare({'name': 'x' * 300, 'ssh': 'desk'})
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('Muxy refuses the new servers', p.stderr)
+        self.assertIn('enter a name of 1', p.stderr, "Muxy's own message")
+        self.assertEqual(self.settings.read_bytes(), before)
+        self.assertFalse(self.state.exists())
+        self.assertEqual(sorted(p.name for p in self.profile.iterdir()), ['settings.toml'], 'no temporary files left')
+
+    @needs_muxy
+    def test_a_file_muxy_already_refuses_is_left_alone(self):
+        before = self.write_settings({'id': '9eedd63357b54359b76e762c6bc2775c', 'name': 'here', 'ssh': 'devbox'})
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('Muxy refuses the current', p.stderr)
+        self.assertIn("this computer's server ID cannot be listed", p.stderr)
+        self.assertEqual(self.settings.read_bytes(), before)
+
+    @needs_muxy
+    def test_a_save_during_the_run_wins(self):
+        before = self.write_settings()
+        self.declare_macs()
+        self.env['FAKE_SSH_TOUCH'] = str(self.settings)
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 3, p.stdout + p.stderr)
+        self.assertIn('changed during this run', p.stderr)
+        self.assertEqual(self.settings.read_bytes(), before + b'\n', 'the other save is kept, this run wrote nothing')
+        self.assertFalse(self.state.exists())
+
+    @needs_muxy
+    def test_a_name_that_stops_resolving_keeps_its_entry(self):
+        self.write_settings()
+        self.declare({'name': 'gone', 'ssh': 'gone'})
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 unresolved', p.stdout)
+        self.assertEqual(self.servers(), [], 'an unknown name might be this Mac, so it is not added')
+
+        (self.path / 'hosts').write_text('gone 203.0.113.5\n')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        added, = self.servers()
+        (self.path / 'hosts').write_text('gone nowhere.invalid\n')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.servers(), [added], 'its entry stays while the name does not resolve')
+
+    def test_the_log_stays_under_its_bound(self):
+        self.write_settings()
+        self.env['MUXY_RECONCILE_LOG_MAX_BYTES'] = '1024'
+        for _ in range(30):
+            p = self.run_tool()
+            self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        logs = sorted(p.name for p in self.log.parent.iterdir())
+        self.assertEqual(logs, ['muxy-reconcile.log', 'muxy-reconcile.log.1'])
+        self.assertLessEqual(sum((self.log.parent / n).stat().st_size for n in logs), 2 * 1024 + 512)
+
+    def test_a_bad_list_stops_the_run_and_writes_nothing(self):
+        before = self.write_settings()
+        for text, message in (('[[server]]\nname = "a"\nssh = "-oProxyCommand=x"\n', 'must be one destination'),
+                              ('[[server]]\nname = "a"\nssh = "a"\nport = 22\n', 'unknown keys: port'),
+                              ('[[server]]\nname = "a"\n', 'ssh is required'),
+                              ('group = 1\n', 'group must be a string')):
+            with self.subTest(text=text):
+                (self.lists / 'bad.toml').write_text(text)
+                p = self.run_tool()
+                self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+                self.assertIn(message, p.stderr)
+                self.assertEqual(self.settings.read_bytes(), before)
+
+    def test_a_destination_declared_twice_is_refused(self):
+        self.write_settings()
+        self.declare({'name': 'Desk', 'ssh': 'desk'})
+        self.declare({'name': 'Desk again', 'ssh': 'desk'}, name='work', group='Work')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn("ssh 'desk' is declared in both personal.toml and work.toml", p.stderr)
+
+    def test_ssh_failing_for_a_declared_server_is_an_error(self):
+        before = self.write_settings()
+        self.declare_macs()
+        self.env['FAKE_SSH_FAIL'] = 'tower'
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('ssh -G tower: ssh: tower: bad configuration', p.stderr)
+        self.assertEqual(self.settings.read_bytes(), before)
+
+    def test_without_muxy_a_needed_change_exits_unavailable(self):
+        self.write_settings()
+        self.declare_macs()
+        self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-such.app')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 69, p.stdout + p.stderr)
+        self.assertIn('install Muxy', p.stderr)
+
+    def test_a_profile_muxy_has_not_created_is_left_for_later(self):
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('does not exist yet', p.stdout)
+        self.assertFalse(self.settings.exists())
+
+    @needs_muxy
+    def test_the_wrapper_runs_the_apps_own_tool(self):
+        p = subprocess.run([str(self.WRAPPER), '--version'], env=self.env, capture_output=True, text=True, timeout=20)
+        bundled = subprocess.run([str(MUXY_APP / 'Contents/MacOS/muxy'), '--version'],
+                                 capture_output=True, text=True, timeout=20)
+        self.assertEqual((p.returncode, p.stdout), (0, bundled.stdout))
+
+    def test_the_wrapper_names_a_missing_app(self):
+        self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-such.app')
+        p = subprocess.run([str(self.WRAPPER), '--version'], env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 69)
+        self.assertIn('no-such.app/Contents/MacOS/muxy is missing', p.stderr)
 
 
 class Karabiner(unittest.TestCase):

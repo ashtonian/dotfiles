@@ -1,0 +1,17 @@
+id = "tool.muxy"
+description = "Muxy's command line tool from the app, and the other Macs as Muxy remote servers from each context's list (muxy-reconcile)"
+category = "tools"
+platforms = ["darwin"]
+
+[provides]
+# muxy-reconcile needs Python 3.11 or later (tomllib); /usr/bin/python3 is 3.9.
+brew = ["python"]
+# ~/.local/bin/muxy is what Muxy on another Mac runs over SSH. A muxy there
+# from Muxy's own "Install muxy-server" is a file in the way: remove it once
+# (docs/MUXY.md).
+link = [".local/bin/muxy", ".local/bin/muxy-reconcile"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.muxy-reconcile.plist"
+# The app the muxy wrapper runs, and Homebrew's python3 (above).
+when_exists = ["/Applications/Muxy.app", "/opt/homebrew/bin/python3"]
