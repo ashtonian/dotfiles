@@ -9,9 +9,10 @@
 #                                            configure
 #   otel-agent configure URL HOST < token    store the gateway URL, this Mac's source
 #                                            name and its token, install the collector
-#                                            and (re)start the LaunchAgent
+#                                            and (re)start it: dotfiles apply installs
+#                                            the LaunchAgent once enrollment exists
 #   otel-agent install                       install or update the pinned collector, and
-#                                            its LaunchAgent once a gateway is configured
+#                                            restart it once a gateway is configured
 #   otel-agent converge                      after a pull: install the pinned collector and
 #                                            restart it when what it runs from changed
 #   otel-agent check                         exit 0 when the collector can start, else
@@ -50,7 +51,6 @@ esac
 otelcol=$libexec/${OTELCOL_VERSION}_$platform/otelcol-contrib
 queue=$state/queue
 agent=com.ashtonian.otel-agent
-plist=${bin_dir:h}/launchagents/$agent.plist
 receiver=http://127.0.0.1:4318
 health_url=http://127.0.0.1:13134/
 metrics_url=http://127.0.0.1:8889/metrics
@@ -59,6 +59,8 @@ die() { # die <exit status> <message>
 	print -u2 -r -- "otel-agent: $2"
 	exit $1
 }
+
+source ${bin_dir:h}/lib_sh/launch-agent.sh
 
 # valid_host: the gateway indexes Loki streams and Mimir series by host.name, so
 # it must be a short, stable source name (studio, mbp, mini), not a hostname.
@@ -123,25 +125,27 @@ install_release() {
 }
 
 # fingerprint identifies what a collector starts from: the pinned release, its
-# config, this script and the LaunchAgent template. serve records it and
-# converge restarts the collector when it no longer matches.
+# config and this script. serve records it and converge restarts the collector
+# when it no longer matches. dotfiles apply restarts it when its plist changes.
 fingerprint() {
-	{ print -r -- $OTELCOL_VERSION; cat $config $self $plist } | shasum -a 256 | cut -d' ' -f1
+	{ print -r -- $OTELCOL_VERSION; cat $config $self } | shasum -a 256 | cut -d' ' -f1
 }
 
 agent_loaded() {
-	launchctl list $agent >/dev/null 2>&1
+	launchctl print gui/$UID/$agent >/dev/null 2>&1
 }
 
-load_agent() {
-	DOTFILES_DIR=${bin_dir:h} $bin_dir/dotfiles-install-launchagents.sh --otel-agent-only
+# start_agent restarts the collector on what is configured now. Enrolling
+# satisfies the LaunchAgent's when_exists, so the first time apply installs it.
+start_agent() {
+	DOTFILES_DIR=${bin_dir:h} start_launch_agent $agent agents.otel-agent || exit
 }
 
 cmd_install() {
 	install_release
 	print "otel-agent: collector $OTELCOL_VERSION at $otelcol"
 	if [[ -z $(config_problem) ]]; then
-		load_agent
+		start_agent
 	else
 		print "otel-agent: next, run: otel-agent enroll HOST (see docs/AGENT-TELEMETRY.md)"
 	fi
@@ -167,7 +171,7 @@ cmd_configure() {
 	)
 	chmod 600 $home/endpoint $home/token $home/host
 	print "otel-agent: $host enrolled with $url"
-	load_agent
+	start_agent
 }
 
 cmd_enroll() {
@@ -208,10 +212,12 @@ cmd_converge() {
 	problem=$(config_problem)
 	[[ -z $problem ]] || die 78 $problem
 	install_release
-	if agent_loaded && [[ -s $state/serving && $(<$state/serving) == $(fingerprint) ]]; then
+	# sync.sh converges right after dotfiles apply, which loads the agent.
+	agent_loaded || die 78 "$agent is not loaded: dotfiles apply loads it while the agents.otel-agent feature is on; see dotfiles doctor"
+	if [[ -s $state/serving && $(<$state/serving) == $(fingerprint) ]]; then
 		return 0
 	fi
-	load_agent
+	launchctl kickstart -k gui/$UID/$agent
 	print "otel-agent: restarted the collector on otelcol-contrib $OTELCOL_VERSION"
 }
 

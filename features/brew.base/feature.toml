@@ -34,9 +34,6 @@ brew = [
   "diff-so-fancy",
   "direnv",
   "dive",
-  "docker",
-  "docker-compose",
-  "docker-credential-helper",
   "erlang",
   "eza",
   "findutils",
@@ -66,6 +63,7 @@ brew = [
   "kubectl-cnpg",
   "kustomize",
   "lftp",
+  "libpq",
   "lolcat",
   "mackup",
   "make",
@@ -79,7 +77,6 @@ brew = [
   "p7zip",
   "php",
   "pipx",
-  "postgresql@14",
   "pre-commit",
   "prettyping",
   "protobuf",
@@ -94,7 +91,6 @@ brew = [
   "ssh-copy-id",
   "swagger-codegen",
   "telnet",
-  "thefuck",
   "tlrc",
   "tmux",
   "vcpkg",
@@ -103,7 +99,6 @@ brew = [
   "yq",
   "zoxide",
   "zsh",
-  "zsh-git-prompt",
   "zsh-history-substring-search",
   "zsh-lovers",
   "anomalyco/tap/opencode",
@@ -115,5 +110,4 @@ brew = [
 ]
 
 [provides.brew_link]
-"docker" = false
 "ssh-copy-id" = true

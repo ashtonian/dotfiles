@@ -1,0 +1,13 @@
+id = "macos.disk-hygiene"
+description = "Daily: deletes stale agent scratch and caches, prunes pnpm stores, caps the LaunchAgents' logs (bin/disk-hygiene)"
+category = "macos"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.disk-hygiene.plist"
+
+[settings."disk_hygiene.keyed"]
+type = "string"
+default = ""
+env = "DISK_HYGIENE_KEYED"
+doc = "Space-separated cache names under ~/.cache holding one directory per branch, agent or tool version; disk-hygiene prunes them a key at a time. Repository-specific, so an overlay profile sets it"

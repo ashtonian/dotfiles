@@ -1,7 +1,9 @@
 // Package apply converges a machine on a plan: it makes the planned links,
-// managed copies, generated outputs and stubs, and removes what an earlier
-// run installed for features that are no longer enabled. It never overwrites
-// a file it did not create.
+// managed copies, generated outputs, stubs and LaunchAgents, sets the planned
+// app settings, and removes what an earlier run installed for features that
+// are no longer enabled. It never overwrites a file it did not create, except
+// a LaunchAgent plist at a label a feature declares, which the retired
+// LaunchAgent installer wrote.
 package apply
 
 import (
@@ -12,32 +14,71 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
+	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
 
+// Root is a checkout the plan installs from: the dotfiles repository or an
+// overlay. Links into it are apply's own, including stow's old ones.
+type Root struct {
+	Dir string
+	// Tracked reports whether a path relative to Dir is tracked by git.
+	// Unfolding moves only untracked files home: moving a tracked one would
+	// delete it from the checkout on the next sync.
+	Tracked func(rel string) bool
+}
+
 // Env is the machine apply works on.
 type Env struct {
-	Home     string
-	RepoRoot string // links into this tree are apply's own, including stow's old ones
-	// Tracked reports whether a path relative to RepoRoot is tracked by git.
-	// Unfolding moves only untracked files home: moving a tracked one would
-	// delete it from the repository on the next sync.
-	Tracked func(rel string) bool
+	Home  string
+	Roots []Root
 	// StowTree is the retired stow tree inside the repository, laid out as
 	// <package>/<path under $HOME>. Files still in it after the migration are
 	// untracked files a tool wrote, or that an older sync linked one by one;
 	// apply moves each one that $HOME still links to home. Empty for none.
 	StowTree string
+	// Prefs holds a store for each name in prefs.Stores.
+	Prefs map[string]PrefStore
+	// Checkpoint durably saves a state the run has reached, as the state
+	// file. apply calls it before it changes an app setting, with the
+	// setting's earlier value recorded, so a run that stops before saving
+	// its final state still knows what to put back. Required when the plan
+	// has app settings and the run is not a dry run.
+	Checkpoint func(*State) error
+	// Launchd is the user's launchd GUI domain. Required when the plan or the
+	// previous state has LaunchAgents.
+	Launchd Launchd
+	// Job is the label of the launchd job this run executes in
+	// ($XPC_SERVICE_NAME), or empty. apply never unloads that job, which
+	// would kill the run: it writes the new plist and leaves the reload to a
+	// run outside the job.
+	Job string
+	// LeaveLaunchAgents skips LaunchAgents entirely: none is installed,
+	// loaded or removed, and their records carry over. The installer applies
+	// this way before it installs packages, so a job that runs at load does
+	// not start in the middle of the install.
+	LeaveLaunchAgents bool
+}
+
+// Launchd loads and unloads jobs in the user's launchd GUI domain.
+type Launchd interface {
+	State(ctx context.Context, label string) (launchd.State, error)
+	// Load bootstraps the plist at path; launchd starts the job if its plist says to.
+	Load(ctx context.Context, path string) error
+	// Unload boots the job out, stopping it if it runs.
+	Unload(ctx context.Context, label string) error
 }
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, adopt
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref (Forget), adopt, agent, update-agent, load, reload, unload, remove-agent
 	Path   string
 	Detail string
 }
@@ -48,66 +89,141 @@ type Problem struct {
 	Detail string
 }
 
+// Waiting is a change apply leaves for a later run: a LaunchAgent's install
+// until a path it needs exists, its reload or removal while that would stop
+// the job in the middle of a run, a link held while a path that owns its
+// place exists (link_unless_exists), or putting back an app setting while its
+// app is not available.
+type Waiting struct {
+	Subject string // the LaunchAgent's label, the link's path, or the app setting's <store>:<key>
+	Reason  string
+}
+
 // Report lists what a run did and what it left alone.
 type Report struct {
 	Actions  []Action
 	Problems []Problem
+	Waiting  []Waiting
+}
+
+// spelling is one way to write a root's directory: as given, or with
+// symlinks resolved.
+type spelling struct {
+	dir  string
+	root int // index into Env.Roots
+}
+
+// rootPath is a path inside one of the roots.
+type rootPath struct {
+	root int
+	rel  string
 }
 
 type runner struct {
-	ctx    context.Context
-	env    Env
-	repos  []string // the repository root as given and with symlinks resolved
-	prev   *State
-	next   *State
-	dryRun bool
-	report Report
-	// sources holds every planned link and copy source, relative to the
-	// repository; unfolding leaves them in place even before they are tracked.
-	sources  map[string]bool
+	ctx       context.Context
+	env       Env
+	spellings []spelling
+	prev      *State
+	next      *State
+	dryRun    bool
+	report    Report
+	// sources holds every planned link and copy source; unfolding leaves them
+	// in place even before they are tracked.
+	sources  map[rootPath]bool
 	unfolded map[string]bool // folded directories handled this run
+	// unrecorded maps the labels of LaunchAgents to remove that apply has no
+	// record of installing to their plists: the retired installer's.
+	unrecorded map[string]string
 }
 
 // Run converges the machine on p. prev is the state the last run saved; the
-// returned state is what to save now. With dryRun nothing on disk changes and
-// the report lists what would. I/O failures stop the run; conflicts are
-// reported as problems and leave the file untouched.
+// returned state is what to save now, also when Run fails: then it holds what
+// the run did on top of prev. With dryRun nothing on disk changes and the
+// report lists what would. I/O failures stop the run; conflicts are reported
+// as problems and leave the file untouched.
 func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (*Report, *State, error) {
-	if env.Tracked == nil {
-		return nil, nil, errors.New("apply: Env.Tracked is required")
+	if len(env.Roots) == 0 {
+		return nil, nil, errors.New("apply: Env.Roots is required")
+	}
+	for _, root := range env.Roots {
+		if root.Tracked == nil {
+			return nil, nil, fmt.Errorf("apply: root %s needs Tracked", root.Dir)
+		}
+	}
+	if env.Launchd == nil && !env.LeaveLaunchAgents && (len(p.LaunchAgents) > 0 || len(p.OffAgents) > 0 || len(prev.Agents) > 0) {
+		return nil, nil, errors.New("apply: LaunchAgents need Env.Launchd, and launchd runs only on macOS")
+	}
+	if env.Checkpoint == nil && !dryRun && len(p.Prefs) > 0 {
+		return nil, nil, errors.New("apply: app settings need Env.Checkpoint")
 	}
 	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun,
-		sources: map[string]bool{}, unfolded: map[string]bool{}}
-	r.repos = []string{filepath.Clean(env.RepoRoot)}
-	if resolved, err := filepath.EvalSymlinks(env.RepoRoot); err == nil && resolved != r.repos[0] {
-		r.repos = append(r.repos, resolved)
+		sources: map[rootPath]bool{}, unfolded: map[string]bool{}, unrecorded: map[string]string{}}
+	for label, target := range p.OffAgents {
+		if _, recorded := prev.Agents[label]; !recorded {
+			r.unrecorded[label] = target
+		}
+	}
+	for i, root := range env.Roots {
+		given := filepath.Clean(root.Dir)
+		r.spellings = append(r.spellings, spelling{dir: given, root: i})
+		if resolved, err := filepath.EvalSymlinks(given); err == nil && resolved != given {
+			r.spellings = append(r.spellings, spelling{dir: resolved, root: i})
+		}
 	}
 	for _, l := range p.Links {
-		if rel, ok := r.repoRel(l.Source); ok {
-			r.sources[rel] = true
+		if at, ok := r.locate(l.Source); ok {
+			r.sources[at] = true
 		}
 	}
 	for _, c := range p.Copies {
-		if rel, ok := r.repoRel(c.Source); ok {
-			r.sources[rel] = true
+		if at, ok := r.locate(c.Source); ok {
+			r.sources[at] = true
 		}
 	}
 
+	agents, teardownAgents := func() error { return eachItem(r, p.LaunchAgents, r.launchAgent) }, r.teardownAgents
+	if env.LeaveLaunchAgents {
+		maps.Copy(r.next.Agents, prev.Agents)
+		agents, teardownAgents = func() error { return nil }, func() error { return nil }
+	}
 	steps := []func() error{
 		func() error { return eachItem(r, p.Generated, r.generated) },
 		func() error { return eachItem(r, p.Links, r.link) },
 		func() error { return eachItem(r, p.Copies, r.copy) },
 		func() error { return eachItem(r, p.Stubs, r.stub) },
+		// After the copies, so a setting can name a file a copy installs,
+		// such as a theme.
+		func() error { return eachItem(r, p.Prefs, r.pref) },
 		func() error { return eachItem(r, p.Retire, r.retire) },
 		r.rescueStowTree,
+		agents,
 		func() error { return r.teardown(p) },
+		func() error { return r.teardownPrefs(p) },
+		teardownAgents,
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
-			return &r.report, nil, err
+			return &r.report, r.partial(), err
 		}
 	}
 	return &r.report, r.next, nil
+}
+
+// partial is the state of a run that has not finished: what it recorded so
+// far over what the last run saved. A record the run would have dropped is
+// still there, and the next run looks at it again.
+func (r *runner) partial() *State {
+	s := r.prev.clone()
+	s.overlay(r.next)
+	return s
+}
+
+// checkpoint saves partial through Env.Checkpoint.
+func (r *runner) checkpoint() error {
+	if err := r.env.Checkpoint(r.partial()); err != nil {
+		return fmt.Errorf("apply: saving the state before changing an app setting: %w", err)
+	}
+	return nil
 }
 
 func eachItem[T any](r *runner, items []T, do func(T) error) error {
@@ -130,32 +246,41 @@ func (r *runner) problem(path, detail string) {
 	r.report.Problems = append(r.report.Problems, Problem{Path: path, Detail: detail})
 }
 
+func (r *runner) wait(subject, reason string) {
+	r.report.Waiting = append(r.report.Waiting, Waiting{Subject: subject, Reason: reason})
+}
+
 // inRepo reports whether the symlink at link, whose destination is dest,
-// points into the repository.
+// points into one of the roots.
 func (r *runner) inRepo(link, dest string) bool {
 	if !filepath.IsAbs(dest) {
 		dest = filepath.Join(filepath.Dir(link), dest)
 	}
 	dest = filepath.Clean(dest)
-	for _, repo := range r.repos {
-		if dest == repo || strings.HasPrefix(dest, repo+string(filepath.Separator)) {
+	for _, s := range r.spellings {
+		if dest == s.dir || strings.HasPrefix(dest, s.dir+string(filepath.Separator)) {
 			return true
 		}
 	}
 	return false
 }
 
-// repoRel returns path relative to the repository, under either spelling of
-// the repository root.
-func (r *runner) repoRel(path string) (string, bool) {
+// locate returns the root path is inside, under either spelling of the
+// root's directory, and path relative to it.
+func (r *runner) locate(path string) (rootPath, bool) {
 	path = filepath.Clean(path)
-	for _, repo := range r.repos {
-		if strings.HasPrefix(path, repo+string(filepath.Separator)) {
-			rel, err := filepath.Rel(repo, path)
-			return rel, err == nil
+	for _, s := range r.spellings {
+		if strings.HasPrefix(path, s.dir+string(filepath.Separator)) {
+			rel, err := filepath.Rel(s.dir, path)
+			return rootPath{root: s.root, rel: rel}, err == nil
 		}
 	}
-	return "", false
+	return rootPath{}, false
+}
+
+// tracked reports whether git tracks the file at at.
+func (r *runner) tracked(at rootPath) bool {
+	return r.env.Roots[at.root].Tracked(at.rel)
 }
 
 // foldedParents returns the directories between $HOME and target that are
@@ -224,7 +349,7 @@ func (r *runner) unfold(dir string) error {
 		if d.IsDir() {
 			return nil
 		}
-		if rel, ok := r.repoRel(path); ok && (r.sources[rel] || r.env.Tracked(rel)) {
+		if at, ok := r.locate(path); ok && (r.sources[at] || r.tracked(at)) {
 			return nil
 		}
 		rel, err := filepath.Rel(dest, path)
@@ -278,8 +403,8 @@ func (r *runner) unfold(dir string) error {
 }
 
 // removeEmptyDirs removes the directories unfolding left empty: those under
-// root, root itself, and then its parents up to the repository root. Git does
-// not track directories, so an empty one in the repository is clutter.
+// root, root itself, and then its parents up to the checkout's root. Git does
+// not track directories, so an empty one in a checkout is clutter.
 func (r *runner) removeEmptyDirs(root string) {
 	var dirs []string
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -292,7 +417,7 @@ func (r *runner) removeEmptyDirs(root string) {
 		_ = os.Remove(dirs[i]) // fails, as intended, unless the directory is empty
 	}
 	for dir := filepath.Dir(root); ; dir = filepath.Dir(dir) {
-		if _, inside := r.repoRel(dir); !inside || os.Remove(dir) != nil {
+		if _, inside := r.locate(dir); !inside || os.Remove(dir) != nil {
 			return
 		}
 	}
@@ -321,7 +446,7 @@ func move(from, to string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeAtomic(to, data, info.Mode().Perm()); err != nil {
+	if err := atomicfile.Write(to, data, info.Mode().Perm()); err != nil {
 		return err
 	}
 	return os.Remove(from)
@@ -385,7 +510,7 @@ func (r *runner) rescueStowTree() error {
 			return err
 		}
 		_, under, found := strings.Cut(filepath.ToSlash(rel), "/")
-		if repoRel, ok := r.repoRel(file); !found || (ok && r.env.Tracked(repoRel)) {
+		if at, ok := r.locate(file); !found || (ok && r.tracked(at)) {
 			continue // a package's own README, or a file git still tracks
 		}
 		target := filepath.Join(r.env.Home, filepath.FromSlash(under))
@@ -472,7 +597,7 @@ func (r *runner) generated(f plan.File) error {
 		if err := r.mkdirParent(f.Path); err != nil {
 			return err
 		}
-		if err := writeAtomic(f.Path, f.Content, 0o644); err != nil {
+		if err := atomicfile.Write(f.Path, f.Content, 0o644); err != nil {
 			return err
 		}
 	}
@@ -485,6 +610,21 @@ func (r *runner) link(l plan.Link) error {
 		if src, ok := r.prev.Links[l.Target]; ok {
 			r.next.Links[l.Target] = src
 		}
+	}
+	// Checked before prepare, which may unfold a parent: a held link changes
+	// nothing on disk.
+	for _, path := range l.UnlessExists {
+		_, err := os.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			r.problem(path, fmt.Sprintf("cannot tell whether it exists, which holds %s back: %v", l.Target, err))
+		} else {
+			r.wait(l.Target, "left alone while "+path+" exists")
+		}
+		keepPrevious()
+		return nil
 	}
 	pretend, err := r.prepare(l.Target)
 	if err != nil {
@@ -561,7 +701,7 @@ func (r *runner) copy(c plan.Copy) error {
 		if err := r.mkdirParent(c.Target); err != nil {
 			return err
 		}
-		return writeAtomic(c.Target, content, srcInfo.Mode().Perm())
+		return atomicfile.Write(c.Target, content, srcInfo.Mode().Perm())
 	}
 
 	info, err := os.Lstat(c.Target)
@@ -631,7 +771,7 @@ func (r *runner) stub(s plan.Stub) error {
 			if err := r.mkdirParent(s.Path); err != nil {
 				return err
 			}
-			if err := writeAtomic(s.Path, []byte(line), 0o644); err != nil {
+			if err := atomicfile.Write(s.Path, []byte(line), 0o644); err != nil {
 				return err
 			}
 		}
@@ -651,7 +791,7 @@ func (r *runner) stub(s plan.Stub) error {
 		// its place, so installers that append write the local file.
 		r.act("stub", s.Path, s.Line)
 		if !r.dryRun {
-			if err := writeAtomic(s.Path, []byte(line), 0o644); err != nil {
+			if err := atomicfile.Write(s.Path, []byte(line), 0o644); err != nil {
 				return err
 			}
 		}
@@ -795,32 +935,6 @@ func sortedKeys[V any](m map[string]V) []string {
 	}
 	sort.Strings(keys)
 	return keys
-}
-
-// writeAtomic writes data beside path and renames it into place, so a reader
-// never sees a partial file and a crash leaves the old one.
-func writeAtomic(path string, data []byte, mode fs.FileMode) error {
-	tmp, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".dotfiles-*")
-	if err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	name := tmp.Name()
-	defer os.Remove(name)
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := tmp.Chmod(mode); err != nil {
-		tmp.Close()
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := tmp.Close(); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	if err := os.Rename(name, path); err != nil {
-		return fmt.Errorf("write %s: %w", path, err)
-	}
-	return nil
 }
 
 // replaceWithSymlink swaps whatever is at target for a link to source in one
