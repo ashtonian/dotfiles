@@ -61,7 +61,7 @@ where the feature is off.
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
-| `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
+| `brew.apps` | desktop, work | darwin | Brewfile: 33 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 7 tap, 97 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 18 cask |
