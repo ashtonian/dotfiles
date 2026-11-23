@@ -10,6 +10,8 @@ enable = [
   "backup.mackup.config",
   "tool.neofetch",
   "tool.taskwarrior",
+  # Passkey prompts from sites, browsers and 1Password (docs/PASSKEYS.md).
+  "browser.passkeys-off",
   # They reach the home cluster: OpenCode's homelab gateway, and the
   # collector that forwards agent telemetry to it (D1, D31).
   "agents.opencode",

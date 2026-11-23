@@ -29,6 +29,7 @@ This file maps the checked-in implementation.
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
+├── docs/PASSKEYS.md         # Passkey prompts off (browser.passkeys-off)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -58,6 +59,7 @@ where the feature is off.
 | `agents.opencode` | desktop | all | `~/.config/opencode` |
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent` |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
+| `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
 | `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
@@ -169,6 +171,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
 | [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
+| [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
 
 ## Automation and data boundaries

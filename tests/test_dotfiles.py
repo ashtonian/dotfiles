@@ -2381,5 +2381,133 @@ class SessionDrive(Fixture):
                 self.assertEqual(p.stdout.split('\n')[:2], expected)
 
 
+class PasskeysOff(Fixture):
+    FEATURE = FEATURES / 'browser.passkeys-off'
+    EXTENSION = FEATURE / 'home/.local/share/browser-extensions/passkeys-off'
+    TOOL = FEATURE / 'home/.local/bin/passkeys-off'
+
+    def setUp(self):
+        super().setUp()
+        self.firefox = self.path / 'Firefox'
+        self.chromium = self.path / 'Brave-Browser'
+        self.env.update(PASSKEYS_OFF_FIREFOX=str(self.firefox), PASSKEYS_OFF_CHROMIUM=str(self.chromium),
+                        PASSKEYS_OFF_EXTENSION=str(self.EXTENSION))
+
+    def run_tool(self, *args):
+        return subprocess.run([sys.executable, str(self.TOOL), *args], env=self.env,
+                              capture_output=True, text=True, timeout=20)
+
+    def firefox_profiles(self):
+        """One relative and one absolute profile, as profiles.ini lists them."""
+        relative = self.firefox / 'Profiles/abc.default-release'
+        absolute = self.path / 'elsewhere/xyz.work'
+        relative.mkdir(parents=True)
+        absolute.mkdir(parents=True)
+        (self.firefox / 'profiles.ini').write_text(
+            '[General]\nStartWithLastProfile=1\n\n'
+            '[Profile0]\nName=default-release\nIsRelative=1\nPath=Profiles/abc.default-release\n\n'
+            f'[Profile1]\nName=work\nIsRelative=0\nPath={absolute}\n\n[Install4F96D1932A9F858E]\nDefault=x\n')
+        return relative, absolute
+
+    def chromium_profile(self, name, extensions):
+        profile = self.chromium / name
+        profile.mkdir(parents=True)
+        (profile / 'Secure Preferences').write_text(json.dumps({'extensions': {'settings': extensions}}))
+
+    @unittest.skipUnless(shutil.which('node'), 'node required to run the extension script')
+    def test_extension_refuses_passkeys_and_keeps_explicit_sign_in(self):
+        manifest = json.loads((self.EXTENSION / 'manifest.json').read_text())
+        script = manifest['content_scripts'][0]
+        self.assertEqual((script['world'], script['run_at'], script['all_frames']), ('MAIN', 'document_start', True))
+        harness = self.path / 'harness.mjs'
+        harness.write_text("""
+const {readFileSync} = await import('node:fs');
+const calls = [];
+globalThis.CredentialsContainer = class {
+  create(options) { calls.push('create'); return Promise.resolve('native create'); }
+  get(options) { calls.push('get'); return Promise.resolve('native get'); }
+};
+globalThis.PublicKeyCredential = class {};
+PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable = async () => true;
+PublicKeyCredential.isConditionalMediationAvailable = async () => true;
+PublicKeyCredential.getClientCapabilities = async () => ({conditionalGet: true, hybridTransport: true});
+(0, eval)(readFileSync(process.env.SCRIPT, 'utf8'));
+const credentials = new CredentialsContainer();
+const settle = (p) => p.then((v) => `resolved: ${v}`, (e) => e.name);
+const page = new AbortController();
+const conditional = settle(credentials.get({publicKey: {}, mediation: 'conditional', signal: page.signal}));
+const pending = await Promise.race([conditional, new Promise((r) => setTimeout(() => r('pending'), 50))]);
+page.abort(new DOMException('page cancelled', 'AbortError'));
+process.stdout.write(JSON.stringify({
+  uvpaa: await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable(),
+  conditionalAvailable: await PublicKeyCredential.isConditionalMediationAvailable(),
+  capabilities: await PublicKeyCredential.getClientCapabilities(),
+  createPasskey: await settle(credentials.create({publicKey: {}})),
+  createPassword: await settle(credentials.create({password: {}})),
+  conditionalBeforeAbort: pending,
+  conditionalAfterAbort: await conditional,
+  explicitSignIn: await settle(credentials.get({publicKey: {}})),
+  nativeCalls: calls,
+}));
+""")
+        env = dict(self.env, SCRIPT=str(self.EXTENSION / script['js'][0]))
+        p = subprocess.run(['node', str(harness)], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(p.stdout), {
+            'uvpaa': False,
+            'conditionalAvailable': False,
+            'capabilities': {'conditionalGet': False, 'hybridTransport': False},
+            'createPasskey': 'NotAllowedError',
+            'createPassword': 'resolved: native create',
+            'conditionalBeforeAbort': 'pending',
+            'conditionalAfterAbort': 'AbortError',
+            'explicitSignIn': 'resolved: native get',
+            'nativeCalls': ['create', 'get'],
+        })
+
+    def test_apply_writes_the_block_once_and_keeps_other_prefs(self):
+        relative, absolute = self.firefox_profiles()
+        (relative / 'user.js').write_text(
+            'user_pref("browser.startup.page", 3);\n'
+            '// BEGIN passkeys-off (old wording)\nuser_pref("security.webauthn.enable_macos_passkeys", true);\n'
+            '// END passkeys-off\nuser_pref("general.smoothScroll", false);')
+        dry = self.run_tool('apply', '--dry-run')
+        self.assertEqual(dry.returncode, 0, dry.stderr)
+        self.assertIn('would write', dry.stdout)
+        self.assertFalse((absolute / 'user.js').exists())
+
+        self.assertEqual(self.run_tool('check').returncode, 1)
+        first = self.run_tool('apply')
+        self.assertEqual(first.returncode, 0, first.stderr)
+        expected_block = ('// BEGIN passkeys-off (written by ~/.local/bin/passkeys-off; edits between these lines are replaced)\n'
+                          'user_pref("security.webauthn.enable_macos_passkeys", false);\n'
+                          'user_pref("security.webauthn.enable_conditional_mediation", false);\n'
+                          '// END passkeys-off\n')
+        self.assertEqual((relative / 'user.js').read_text(),
+                         'user_pref("browser.startup.page", 3);\nuser_pref("general.smoothScroll", false);\n' + expected_block)
+        self.assertEqual((absolute / 'user.js').read_text(), expected_block)
+
+        second = self.run_tool('apply')
+        self.assertEqual(second.stdout.count(': ok'), 2, second.stdout)
+        check = self.run_tool('check')
+        self.assertEqual(check.returncode, 0, check.stdout)
+        self.assertIn('Passwords app', check.stdout)
+
+    def test_check_reports_each_chromium_profile(self):
+        unpacked = {'location': 4, 'path': str(self.EXTENSION)}
+        self.chromium_profile('Default', {'a' * 32: unpacked, 'aeblfdkhhhdcdjpifhhbdiojplfjncoa': {'location': 1}})
+        self.chromium_profile('Profile 1', {'b' * 32: dict(unpacked, disable_reasons=[1])})
+        self.chromium_profile('Profile 2', {'c' * 32: {'location': 4, 'path': str(self.path / 'other')}})
+        self.chromium_profile('System Profile', {})
+        p = self.run_tool('check')
+        self.assertEqual(p.returncode, 1)
+        lines = p.stdout.splitlines()
+        self.assertIn('Brave-Browser Default: ok', lines)
+        self.assertIn('Brave-Browser Profile 1: Passkeys Off is disabled (turn it on in the extensions page)', lines)
+        self.assertTrue(any(l.startswith('Brave-Browser Profile 2: Passkeys Off not loaded') for l in lines), p.stdout)
+        self.assertFalse(any('System Profile' in l for l in lines))
+        self.assertTrue(any(l.strip().startswith('1Password, in each browser') for l in lines), p.stdout)
+
+
 if __name__ == '__main__':
     unittest.main()
