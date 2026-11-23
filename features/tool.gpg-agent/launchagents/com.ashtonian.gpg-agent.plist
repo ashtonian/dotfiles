@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Keeps gpg-agent running in the GUI login (bin/gpg-agent-supervisor), the only
+  session where pinentry-mac can reach the login keychain or show its dialog, so
+  SSH sessions and other jobs sign through it. Set GPG_AGENT_SUPERVISOR_SECONDS
+  below to change how often it checks. AbandonProcessGroup keeps the agent
+  running when the supervisor stops.
+  dotfiles apply installs it for the tool.gpg-agent feature, with $HOME replaced.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.gpg-agent</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/gpg-agent-supervisor</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>GPG_AGENT_SUPERVISOR_SECONDS</key>
+        <string>10</string>
+    </dict>
+    <key>LimitLoadToSessionType</key>
+    <string>Aqua</string>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>KeepAlive</key>
+    <true/>
+    <key>AbandonProcessGroup</key>
+    <true/>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/gpg-agent/supervisor.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/gpg-agent/supervisor.log</string>
+</dict>
+</plist>

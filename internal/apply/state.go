@@ -7,9 +7,14 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 )
 
-const stateVersion = 1
+// stateVersion is the state file format this build writes. Version 2 added
+// prefs; a build that knows only version 1 refuses a version 2 file rather
+// than save over it without them.
+const stateVersion = 2
 
 // State records what apply installed, so a later run can tell its own files
 // from the user's and remove exactly what it added when a feature goes away.
@@ -23,12 +28,49 @@ type State struct {
 	Generated map[string]string `json:"generated"`
 	// Stubs lists the stubs apply created.
 	Stubs map[string]bool `json:"stubs"`
+	// Prefs maps each app setting apply owns, by plan.Pref.ID, to what it set
+	// and what it replaced.
+	Prefs map[string]PrefRecord `json:"prefs"`
+	// Agents maps each LaunchAgent label apply installed to its plist.
+	Agents map[string]AgentRecord `json:"agents"`
+}
+
+// AgentRecord is an installed LaunchAgent: its plist, the hash apply wrote it
+// with, and the launchd.Definition of the plist launchd last loaded, empty
+// when unknown (a load failed). The definition differs from the plist's while
+// a reload waits for a later apply.
+type AgentRecord struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Loaded string `json:"loaded"`
 }
 
 // CopyRecord is a managed copy's source and content hash at write time.
 type CopyRecord struct {
 	Source string `json:"source"`
 	SHA256 string `json:"sha256"`
+}
+
+// PrefRecord is an app setting apply owns: the value it last set, and the
+// value the setting had before apply first set it, which teardown puts back.
+type PrefRecord struct {
+	// Want is the value apply last set. A plan that wants another means the
+	// repository, a profile or the machine manifest moved on. Empty until
+	// apply has set it once.
+	Want json.RawMessage `json:"want,omitempty"`
+	// Value is what the app stored for Want, as apply read it back: Want, or
+	// Want as the app rounds it (Muxy keeps a float as 32 bits).
+	Value json.RawMessage `json:"value,omitempty"`
+	// Previous is meaningful only with HadPrevious; without it the setting had
+	// no value, and teardown unsets it.
+	Previous    json.RawMessage `json:"previous,omitempty"`
+	HadPrevious bool            `json:"had_previous"`
+	// Pending is saved, with Previous, before apply changes the setting, and
+	// cleared once apply has read back what the app stored. A run that stops
+	// in between leaves it set: the setting then holds either Value or what
+	// apply was setting, and the next run sets it again instead of calling
+	// either one a change made here.
+	Pending bool `json:"pending,omitempty"`
 }
 
 func newState() *State {
@@ -38,20 +80,32 @@ func newState() *State {
 		Copies:    map[string]CopyRecord{},
 		Generated: map[string]string{},
 		Stubs:     map[string]bool{},
+		Prefs:     map[string]PrefRecord{},
+		Agents:    map[string]AgentRecord{},
 	}
 }
 
 func (s *State) clone() *State {
 	c := newState()
-	maps.Copy(c.Links, s.Links)
-	maps.Copy(c.Copies, s.Copies)
-	maps.Copy(c.Generated, s.Generated)
-	maps.Copy(c.Stubs, s.Stubs)
+	c.overlay(s)
 	return c
 }
 
+// overlay copies every record of o into s, replacing records of the same
+// path, label or setting.
+func (s *State) overlay(o *State) {
+	maps.Copy(s.Links, o.Links)
+	maps.Copy(s.Copies, o.Copies)
+	maps.Copy(s.Generated, o.Generated)
+	maps.Copy(s.Stubs, o.Stubs)
+	maps.Copy(s.Prefs, o.Prefs)
+	maps.Copy(s.Agents, o.Agents)
+}
+
 // LoadState reads the state file; a missing file is a machine apply has
-// never touched.
+// never touched. A version 1 file, from before app settings existed, has no
+// prefs, which reads as none set. A file from a newer build is refused: saving
+// over it would drop what this build does not know.
 func LoadState(path string) (*State, error) {
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -61,11 +115,19 @@ func LoadState(path string) (*State, error) {
 		return nil, fmt.Errorf("read state %s: %w", path, err)
 	}
 	s := newState()
+	s.Version = 0 // the file's own, or none
 	if err := json.Unmarshal(data, s); err != nil {
 		return nil, fmt.Errorf("parse state %s: %w", path, err)
 	}
-	if s.Version != stateVersion {
-		return nil, fmt.Errorf("state %s has version %d; this dotfiles build reads version %d", path, s.Version, stateVersion)
+	if s.Version > stateVersion {
+		return nil, fmt.Errorf("state %s has version %d; this dotfiles build reads versions 1 to %d, so a newer dotfiles wrote it: update dotfiles (git pull in the repository) and run that", path, s.Version, stateVersion)
+	}
+	if s.Version < 1 {
+		return nil, fmt.Errorf("state %s has no version; dotfiles did not write it", path)
+	}
+	s.Version = stateVersion
+	if s.Prefs == nil {
+		s.Prefs = map[string]PrefRecord{}
 	}
 	return s, nil
 }
@@ -79,5 +141,5 @@ func (s *State) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("create state directory: %w", err)
 	}
-	return writeAtomic(path, append(data, '\n'), 0o600)
+	return atomicfile.Write(path, append(data, '\n'), 0o600)
 }

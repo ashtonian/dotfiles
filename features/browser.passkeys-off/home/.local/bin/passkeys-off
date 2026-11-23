@@ -1,0 +1,222 @@
+#!/usr/bin/env python3
+"""passkeys-off - keep browsers and websites from offering, creating or auto-filling passkeys
+
+usage:
+  passkeys-off apply [--dry-run]   set Firefox's passkey prefs in every Firefox profile
+  passkeys-off check               report every browser profile; exit 1 if one still offers passkeys
+
+Firefox gets two prefs in each profile's user.js, between marker lines this
+command owns; Firefox reads them at its next start. Chromium browsers run the
+Passkeys Off extension, which no file can install: load it once per browser
+profile with "Load unpacked" from PASSKEYS_OFF_EXTENSION, and `check` finds it.
+1Password's passkey offers and the Passwords app's automatic passkey upgrades
+are settings in those apps; `check` lists them.
+
+Environment: PASSKEYS_OFF_EXTENSION (default
+~/.local/share/browser-extensions/passkeys-off), PASSKEYS_OFF_FIREFOX (default
+~/Library/Application Support/Firefox), PASSKEYS_OFF_CHROMIUM (colon-separated
+user-data folders; default Brave's and Chrome's).
+Exit status: 0 ok, 1 a profile still offers passkeys, 2 usage error.
+See docs/PASSKEYS.md.
+"""
+from __future__ import annotations
+
+import argparse
+import configparser
+import json
+import os
+import sys
+import tempfile
+from pathlib import Path
+
+SUPPORT = "~/Library/Application Support"
+DEFAULT_EXTENSION = "~/.local/share/browser-extensions/passkeys-off"
+DEFAULT_FIREFOX = f"{SUPPORT}/Firefox"
+DEFAULT_CHROMIUM = f"{SUPPORT}/BraveSoftware/Brave-Browser:{SUPPORT}/Google/Chrome"
+
+EXIT_DRIFT = 1
+EXIT_USAGE = 2
+
+# Matched by prefix, so a block written with other wording by an earlier version is still replaced.
+BEGIN_PREFIX = "// BEGIN passkeys-off"
+BEGIN = f"{BEGIN_PREFIX} (written by ~/.local/bin/passkeys-off; edits between these lines are replaced)"
+END = "// END passkeys-off"
+# Off: Firefox skips the macOS passkey service (no system sheet, iCloud Keychain or phone QR code) and
+# keeps its own handler, so USB security keys still work. Off: no passkey suggestions in sign-in fields.
+FIREFOX_PREFS = {
+    "security.webauthn.enable_macos_passkeys": False,
+    "security.webauthn.enable_conditional_mediation": False,
+}
+ONEPASSWORD_EXTENSION_IDS = {"aeblfdkhhhdcdjpifhhbdiojplfjncoa"}  # Chrome Web Store id
+UNPACKED = 4  # Chromium's Manifest::Location for "Load unpacked"
+MANUAL_STEPS = (
+    "1Password, in each browser: account menu > Settings > Autofill & save > turn off "
+    "\"Offer to sign in with passkeys\" and \"Offer to save passkeys\"",
+    "Passwords app: Passwords > Settings > turn off \"Automatically Create Passkeys\"",
+)
+
+
+def env_path(name: str, default: str) -> Path:
+    return Path(os.path.expanduser(os.environ.get(name) or default))
+
+
+def managed_block() -> str:
+    lines = [BEGIN]
+    lines += [f'user_pref("{name}", {json.dumps(value)});' for name, value in FIREFOX_PREFS.items()]
+    lines.append(END)
+    return "\n".join(lines) + "\n"
+
+
+def without_block(text: str) -> str:
+    """Return user.js text with this command's block removed; every other line is kept as it was."""
+    kept, inside = [], False
+    for line in text.splitlines(keepends=True):
+        stripped = line.strip()
+        if stripped.startswith(BEGIN_PREFIX):
+            inside = True
+        elif inside and stripped == END:
+            inside = False
+        elif not inside:
+            kept.append(line)
+    return "".join(kept)
+
+
+def desired_user_js(current: str) -> str:
+    rest = without_block(current)
+    if rest and not rest.endswith("\n"):
+        rest += "\n"
+    return rest + managed_block()
+
+
+def firefox_profiles(root: Path) -> list[Path]:
+    ini = root / "profiles.ini"
+    if not ini.is_file():
+        return []
+    parser = configparser.RawConfigParser(strict=False)
+    parser.optionxform = str
+    parser.read(ini, encoding="utf-8")
+    profiles = []
+    for section in parser.sections():
+        if not section.startswith("Profile") or not parser.has_option(section, "Path"):
+            continue
+        path = Path(parser.get(section, "Path"))
+        if parser.get(section, "IsRelative", fallback="1") == "1":
+            path = root / path
+        if path.is_dir():
+            profiles.append(path)
+    return profiles
+
+
+def write_atomic(path: Path, text: str) -> None:
+    mode = path.stat().st_mode & 0o777 if path.exists() else 0o644
+    fd, tmp = tempfile.mkstemp(dir=path.parent, prefix=".user.js.")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
+        os.chmod(tmp, mode)
+        os.replace(tmp, path)
+    except BaseException:
+        Path(tmp).unlink(missing_ok=True)
+        raise
+
+
+def chromium_profiles(user_data: Path) -> list[Path]:
+    if not user_data.is_dir():
+        return []
+    return sorted(p for p in user_data.iterdir()
+                  if p.is_dir() and p.name not in ("System Profile", "Guest Profile")
+                  and ((p / "Secure Preferences").is_file() or (p / "Preferences").is_file()))
+
+
+def chromium_extensions(profile: Path) -> dict[str, dict]:
+    """Installed extensions by id. Chromium keeps them in Secure Preferences, older builds in Preferences."""
+    found: dict[str, dict] = {}
+    for name in ("Preferences", "Secure Preferences"):
+        try:
+            data = json.loads((profile / name).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        found.update(data.get("extensions", {}).get("settings", {}))
+    return found
+
+
+def extension_state(extensions: dict[str, dict], extension_dir: Path) -> str:
+    want = os.path.realpath(extension_dir)
+    for entry in extensions.values():
+        path = entry.get("path")
+        if entry.get("location") == UNPACKED and path and os.path.realpath(os.path.expanduser(path)) == want:
+            return "disabled" if entry.get("disable_reasons") or entry.get("state") == 0 else "loaded"
+    return "missing"
+
+
+def cmd_apply(args: argparse.Namespace) -> int:
+    root = env_path("PASSKEYS_OFF_FIREFOX", DEFAULT_FIREFOX)
+    profiles = firefox_profiles(root)
+    if not profiles:
+        print(f"firefox: no profiles under {root}")
+    for profile in profiles:
+        user_js = profile / "user.js"
+        current = user_js.read_text(encoding="utf-8") if user_js.exists() else ""
+        wanted = desired_user_js(current)
+        if wanted == current:
+            print(f"firefox {profile.name}: ok")
+            continue
+        print(f"firefox {profile.name}: {'would write' if args.dry_run else 'wrote'} passkey prefs to {user_js}")
+        if not args.dry_run:
+            write_atomic(user_js, wanted)
+    if profiles and not args.dry_run:
+        print("firefox: restart Firefox to load the prefs")
+    return 0
+
+
+def cmd_check(_: argparse.Namespace) -> int:
+    drift = False
+    for profile in firefox_profiles(env_path("PASSKEYS_OFF_FIREFOX", DEFAULT_FIREFOX)):
+        user_js = profile / "user.js"
+        current = user_js.read_text(encoding="utf-8") if user_js.exists() else ""
+        ok = desired_user_js(current) == current
+        drift |= not ok
+        print(f"firefox {profile.name}: {'ok' if ok else 'passkey prefs missing (run: passkeys-off apply)'}")
+
+    extension_dir = env_path("PASSKEYS_OFF_EXTENSION", DEFAULT_EXTENSION)
+    uses_1password = False
+    for user_data in os.environ.get("PASSKEYS_OFF_CHROMIUM", DEFAULT_CHROMIUM).split(":"):
+        user_data_dir = Path(os.path.expanduser(user_data))
+        for profile in chromium_profiles(user_data_dir):
+            extensions = chromium_extensions(profile)
+            state = extension_state(extensions, extension_dir)
+            uses_1password |= bool(ONEPASSWORD_EXTENSION_IDS & extensions.keys())
+            drift |= state != "loaded"
+            label = f"{user_data_dir.name} {profile.name}"
+            if state == "loaded":
+                print(f"{label}: ok")
+            elif state == "disabled":
+                print(f"{label}: Passkeys Off is disabled (turn it on in the extensions page)")
+            else:
+                print(f"{label}: Passkeys Off not loaded (extensions page > Developer mode > Load unpacked > {extension_dir})")
+
+    print("in-app settings to check by hand:")
+    for step in MANUAL_STEPS:
+        if step.startswith("1Password") and not uses_1password:
+            continue
+        print(f"  {step}")
+    return EXIT_DRIFT if drift else 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(prog="passkeys-off", description=__doc__.split("\n\n")[0],
+                                     formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = parser.add_subparsers(dest="command", required=True)
+    apply = sub.add_parser("apply", help="set Firefox's passkey prefs in every profile")
+    apply.add_argument("--dry-run", action="store_true", help="report what would change; write nothing")
+    apply.set_defaults(func=cmd_apply)
+    sub.add_parser("check", help="report every browser profile").set_defaults(func=cmd_check)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as exc:
+        return EXIT_USAGE if exc.code else 0
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
