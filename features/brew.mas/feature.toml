@@ -8,18 +8,11 @@ platforms = ["darwin"]
 brew = ["mas"]
 mas = [
   { name = "1Password for Safari", id = 1569813296 },
-  { name = "Blackmagic Disk Speed Test", id = 425264550 },
   { name = "Dark Reader for Safari", id = 1438243180 },
   { name = "Horo", id = 1437226581 },
-  { name = "Keynote", id = 361285480 },
   { name = "Monosnap", id = 540348655 },
-  { name = "Notion Web Clipper", id = 1559269364 },
-  { name = "Numbers", id = 361304891 },
   { name = "Okta Verify", id = 490179405 },
-  { name = "Pages", id = 361309726 },
-  { name = "Parallels Desktop", id = 1085114709 },
   { name = "StopTheMadness Pro", id = 6471380298 },
   { name = "Toggl Track", id = 1291898086 },
   { name = "UTM", id = 1538878817 },
-  { name = "Vimari", id = 1480933944 },
 ]

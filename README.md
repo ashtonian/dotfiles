@@ -89,9 +89,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 
 ~/.sync/                        # Auxiliary repos (synced separately)
 ├── mackup/                     # Earlier Mackup backups (git repo); sync no longer writes here
-├── dracula-iterm/              # iTerm theme
-├── colorls/                    # Colorls theme
-└── alfred-dracula/             # Alfred theme
+└── colorls/                    # Colorls theme
 ```
 
 ## Features vs Mackup: When to Use What
@@ -108,8 +106,6 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 
 - `~/.config/zsh/*.zsh` → feature `shell.zsh` (you edit it, want version control)
 - `~/.config/git/config` → feature `git` (you edit it)
-- `com.googlecode.iterm2.plist` → Mackup (iTerm manages it)
-- `Alfred.alfredpreferences` → Mackup (Alfred manages it)
 - `~/.ssh/dotfiles.conf` → feature `ssh` (you edit it)
 - Terminal.app preferences → Mackup (macOS manages it)
 

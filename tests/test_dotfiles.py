@@ -409,7 +409,7 @@ exit 0""")
         self.assertNotIn('controlpath /', p.stdout)
 
     def test_bootstrap_creates_no_commit_identity_or_backup_repository(self):
-        for name in ('dracula-iterm', 'colorls', 'alfred-dracula'):
+        for name in ('colorls',):
             (self.path / 'sync' / name).mkdir(parents=True)
         self.cli('git', 'printf "%s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
         audit = self.path / 'git-audit'
@@ -1433,9 +1433,9 @@ else:
 
     def test_the_work_machine_gets_dev_apps_and_nothing_personal(self):
         brewfile = self.converge('base,dev,work')
-        self.assertIn('cask "iterm2"', brewfile)
+        self.assertIn('cask "orbstack"', brewfile)
         self.assertIn('cask "slack"', brewfile, 'applications for any desk reach the work machine')
-        for general in ('mas "Okta Verify"', 'mas "Keynote"'):
+        for general in ('mas "Okta Verify"', 'mas "Monosnap"'):
             self.assertIn(general, brewfile)
         for personal in ('cask "spotify"', 'cask "steam"', 'mas "Day One"', 'wakatime', 'rescuetime'):
             self.assertNotIn(personal, brewfile)
@@ -1473,7 +1473,7 @@ class Install(Fixture):
         self.home = self.path / 'home'
         dotfiles = self.home / '.dotfiles'
         (dotfiles / '.git').mkdir(parents=True)
-        for theme in ('dracula-iterm', 'colorls', 'alfred-dracula'):
+        for theme in ('colorls',):
             (self.home / '.sync' / theme).mkdir(parents=True)
         (dotfiles / 'profiles').mkdir()
         (dotfiles / 'profiles/base.toml').write_text('# Every machine.\n')

@@ -110,7 +110,7 @@ profiles = ["base", "dev", "desktop", "server", "personal"]
 
 [features]
 enable  = ["tool.toggl-focus", "browser.firefox.bypass-paywalls"]
-disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
+disable = ["shell.omz.web-search", "backup.mackup.macosx"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
@@ -500,7 +500,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Category | Features |
 | --- | --- |
 | shell | `shell.core`, `shell.prompt.dracula`, `shell.plugins.autosuggest`, `shell.plugins.syntax-highlighting`, `shell.plugins.autopair`, `shell.plugins.fzf`, `shell.plugins.you-should-use`, `shell.zoxide`, `shell.atuin`, `shell.direnv`, `shell.mise`, `shell.modern-aliases`, `shell.safety-aliases`, `shell.greeting`, `shell.claude-launchers`, `shell.gitstead` |
-| shell.omz | `shell.omz.git`, `shell.omz.git-auto-fetch`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.node`, `shell.omz.npm`, `shell.omz.ruby`, `shell.omz.rake`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.vscode`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.iterm2`, `shell.omz.gpg-agent` |
+| shell.omz | `shell.omz.git`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.gpg-agent` |
 | agents | `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
@@ -901,17 +901,12 @@ extensions now differ between Chromium browsers and Firefox.
 | Vimium | `dbepggeogbaibhgnhhndojpepiihcmeb` | `{d7742d87-e61d-4b78-b8a1-b469842139fa}` |
 | Just Read | `dgmanlpmmkibanfdgjocnabmcaclkmod` | `{cb2b337b-99d7-4b86-aa04-84a6f5c3e218}` |
 | Buster | `mpbjkejclgfgadiemmefgebjfooflfhl` | `{e58d3966-3d76-4cd9-8552-1582fbc800c1}` |
-| Don't F*** With Paste | `efaagigdgamehbpimpiagfpoihlkgamh` | `dont-fuck-with-paste@abg1979.github.io` |
 | Extensity | `jjmflmamggggndanpgfnpelongoepncg` | none (use about:addons) |
-| Old Reddit Redirect | `dneaehbmnbhcippjikoajpoabadpodje` | `{9063c2e9-e07c-4c2c-9646-cfe7ca8d0498}` |
 | Reddit Enhancement Suite | `kbmfpngjjgdllneeigpgjifpgocmfgmb` | `jid1-xUfzOsOFlzSOXg@jetpack` |
-| Open in IINA | `pdnojahnhpgmdhjdhgphgdcecehkbhfo` | `open_in_iina_firefox@iina.io` |
 | RegExp Download Organizer | `oamembonjndgangicfphlckkdmagpjlg` | none (only an untrusted port) |
 | WakaTime | `jnbbnacmeggbgdjgaoojpmhdlkkpblgi` | `addons@wakatime.com` |
-| Todoist | `jldhpllghnbhlbpcmnajkpdmadaolakh` | `support@todoist.com` |
 | Toolkit for YNAB | `lmhdkkhepllpnondndgpgclfjnlofgjl` | `{4F1FB113-D7D8-40AE-A5BA-9300EAEA0F51}` |
 | NordVPN | `fjoaledfpmneenckfbpdfhkmimnjocfa` | `nordvpnproxy@nordvpn.com` |
-| Notion Web Clipper | `knheggckgoiihginacbkhaalnibhilkk` | none (only look-alike listings) |
 | RescueTime | none (the desktop app tracks Chromium browsers) | `rescuetime_firefox@rescuetime.com` |
 | Refined GitHub | `hlepfoohegkhhmjieoechaddaejaokhf` | `{a4c4eda4-fb84-4a84-b4a1-f7c1cbf2a1ad}` |
 | Material Icons for GitHub | `bggfcpfjbdkhfhfmkjpbhnkhnpjjeomc` | to confirm |
@@ -924,20 +919,21 @@ Not carried over: HTTPS Everywhere (retired; every browser has an HTTPS-only
 mode), JSON Viewer (Firefox has one built in), Simple Allow Copy, Smile
 Always, friendly-github, GitHub code folding, github-awesome-autocomplete,
 hide-files-on-github, octohint and OctoLinker (removed from the store,
-archived, or covered natively by GitHub), and Sourcegraph (see self-hosted
-app extensions).
+archived, or covered natively by GitHub), Sourcegraph (see self-hosted
+app extensions), Open in IINA, Todoist and Notion Web Clipper. Don't F*** With
+Paste and Old Reddit Redirect are covered by StopTheMadness Pro (`brew.mas`),
+whose app installs its own extension in Brave, Firefox and Safari.
 
 Approved (D24). Extension features are off by default, so nothing reaches a
 machine unless one of its profiles enables it:
 
 - **`desktop` and `work`:** uBlock Origin (Lite on Chrome, Brave's hosted
   build on Brave), Privacy Badger, Decentraleyes, ClearURLs, Dark Reader,
-  Vimium, Just Read, Don't F*** With Paste, Extensity, RegExp Download
-  Organizer, Refined GitHub, Material Icons for GitHub, contributors-on-github
-  and View Image.
-- **`desktop` only:** Bypass Paywalls Clean, Old Reddit Redirect, Reddit
-  Enhancement Suite, Toolkit for YNAB and RescueTime; Enhanced GitHub and
-  Octotree, which want a GitHub token to work on private repositories; and the
+  Vimium, Just Read, Extensity, RegExp Download Organizer, Refined GitHub,
+  Material Icons for GitHub, contributors-on-github and View Image.
+- **`desktop` only:** Bypass Paywalls Clean, Reddit Enhancement Suite,
+  Toolkit for YNAB and RescueTime; Enhanced GitHub and Octotree, which want a
+  GitHub token to work on private repositories; and the
   self-hosted WakaTime (pointed at Wakapi), LibRedirect, Mini Mealie,
   ArchiveBox and Tube Archivist, which talk to the home cluster.
 
