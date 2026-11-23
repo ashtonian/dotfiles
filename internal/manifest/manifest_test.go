@@ -59,6 +59,8 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a stub keyword that is not one word", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".ssh/config\", line = \"Include x\", before = [\"Host *\"] }]\n", "must be one word"},
 		{"a setting with an unknown type", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"float\"\n", `unknown type "float"`},
 		{"a secret default that is a value", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"secret\"\ndefault = \"hunter2\"\n", "never a value"},
+		{"an unknown preference store", "a", "id = \"a\"\n[provides.prefs]\niterm = \"iterm.toml\"\n", `prefs names unknown store "iterm"`},
+		{"a prefs file outside the feature", "a", "id = \"a\"\n[provides.prefs]\nmuxy = \"../muxy.toml\"\n", "leaves the feature directory"},
 		{"a launch agent that is not a plist", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"agent.xml\"\n", "must be a .plist file"},
 		{"a launch agent outside the feature", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"../com.example.a.plist\"\n", "leaves the feature directory"},
 		{"a relative when_exists", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"com.example.a.plist\"\nwhen_exists = [\"bin/tool\"]\n", "must be absolute or start with ~/"},
@@ -128,7 +130,7 @@ disable = ["shell.greeting"]
 	require.NoError(t, os.WriteFile(path, MachineFile(nil, []string{"base", "dev"}), 0o644))
 	m, err = LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
 }
 
 func writeProfile(t *testing.T, root, name, body string) {
@@ -218,7 +220,7 @@ func TestLoadMachineOverlays(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, MachineFile([]string{"personal", "client-a"}, []string{"base"}), 0o644))
 	m, err := LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
 
 	for _, body := range []string{"overlays = [\"personal\", \"personal\"]\n", "overlays = [\"a.b\"]\n", "overlays = [\"../x\"]\n"} {
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))

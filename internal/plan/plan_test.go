@@ -5,12 +5,14 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
+	"github.com/ashtonian/dotfiles/internal/resolve"
 )
 
 // feature writes files under a throwaway features/<id>/ directory and returns
@@ -59,7 +61,7 @@ func TestBrewfileFollowsThePlatform(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.goos, func(t *testing.T) {
-			p, err := Build(features, []string{"pkgs", "again"}, nil, Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: tt.goos})
+			p, err := Build(features, []string{"pkgs", "again"}, nil, nil, Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: tt.goos})
 			require.NoError(t, err)
 			brewfile := generated(t, p, "Brewfile")
 			for _, line := range append([]string{`tap "owner/tap" # pkgs`, `brew "git" # pkgs`, `brew "zoxide", link: false # pkgs`,
@@ -81,10 +83,107 @@ func TestTwoFeaturesCannotInstallOneFile(t *testing.T) {
 	files := map[string]string{"home/.config/tool/config": "x\n"}
 	a := feature(t, root, manifest.Feature{ID: "a", Provides: manifest.Provides{Link: []string{".config/tool"}}}, files)
 	b := feature(t, root, manifest.Feature{ID: "b", Provides: manifest.Provides{Copy: []string{".config/tool/config"}}}, files)
-	_, err := Build(map[string]*manifest.Feature{"a": a, "b": b}, []string{"a", "b"}, nil,
+	_, err := Build(map[string]*manifest.Feature{"a": a, "b": b}, []string{"a", "b"}, nil, nil,
 		Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "linux"})
 	require.ErrorIs(t, err, ErrPlan)
 	assert.Contains(t, err.Error(), "a and b both install")
+}
+
+func TestPrefsArePlannedPerKey(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"}
+	theme := feature(t, root, manifest.Feature{ID: "theme", Provides: manifest.Provides{Prefs: map[string]string{
+		"muxy": "muxy.toml", "claude": "claude.toml"}}}, map[string]string{
+		"muxy.toml":   "\"appearance.dark_theme\" = \"Dracula\"\n",
+		"claude.toml": "theme = \"custom:dracula\"\n",
+	})
+	p, err := Build(map[string]*manifest.Feature{"theme": theme}, []string{"theme"}, nil, nil, env)
+	require.NoError(t, err)
+	assert.Equal(t, []Pref{
+		{Store: "claude", Key: "theme", Value: "custom:dracula", Shared: "custom:dracula", Feature: "theme", File: filepath.Join(theme.Dir, "claude.toml")},
+		{Store: "muxy", Key: "appearance.dark_theme", Value: "Dracula", Shared: "Dracula", Feature: "theme", File: filepath.Join(theme.Dir, "muxy.toml")},
+	}, p.Prefs)
+	assert.Equal(t, "theme", p.Prefs[0].SetBy())
+
+	tests := []struct {
+		name  string
+		files map[string]string // the second feature's prefs files
+		want  string
+	}{
+		{"two features owning one key", map[string]string{"muxy.toml": "\"appearance.dark_theme\" = \"Nord\"\n"},
+			"theme and other both install muxy:appearance.dark_theme"},
+		{"a whole Muxy section", map[string]string{"muxy.toml": "appearance = { dark_theme = \"Nord\" }\n"},
+			"muxy: appearance is a table"},
+		{"a line adopt could not rewrite", map[string]string{"muxy.toml": "[appearance]\n"}, "a table header"},
+		{"a missing file", map[string]string{}, "no such file"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			other := feature(t, t.TempDir(), manifest.Feature{ID: "other", Provides: manifest.Provides{Prefs: map[string]string{"muxy": "muxy.toml"}}}, tt.files)
+			_, err := Build(map[string]*manifest.Feature{"theme": theme, "other": other}, []string{"theme", "other"}, nil, nil, env)
+			require.ErrorIs(t, err, ErrPlan)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestPrefOverridesFollowTheSettingsOrder(t *testing.T) {
+	root := t.TempDir()
+	env := Env{Home: filepath.Join(root, "home"), GOOS: "darwin"}
+	term := feature(t, root, manifest.Feature{ID: "term", Provides: manifest.Provides{Prefs: map[string]string{"muxy": "muxy.toml"}}},
+		map[string]string{"muxy.toml": "\"terminal.font_size\" = 14.0\n\"appearance.dark_theme\" = \"Dracula\"\n\"appearance.tips_visible\" = false\n"})
+	off := feature(t, t.TempDir(), manifest.Feature{ID: "off", Provides: manifest.Provides{Prefs: map[string]string{"claude": "claude.toml"}}},
+		map[string]string{"claude.toml": "theme = \"dark\"\n"})
+	features := map[string]*manifest.Feature{"term": term, "off": off}
+	layers := []resolve.PrefLayer{
+		{Source: "profile:laptop", File: "/repo/profiles/laptop.toml", Values: map[string]any{
+			"muxy:terminal.font_size": 13.0, "muxy:appearance.dark_theme": "Nord", "claude:theme": "light"}},
+		{Source: "machine", File: "/home/.config/dotfiles/machine.toml", Values: map[string]any{"muxy:terminal.font_size": int64(12)}},
+	}
+	p, err := Build(features, []string{"term"}, nil, layers, env)
+	require.NoError(t, err)
+	byID := map[string]Pref{}
+	for _, pr := range p.Prefs {
+		byID[pr.ID()] = pr
+	}
+	assert.Equal(t, Pref{Store: "muxy", Key: "terminal.font_size", Value: int64(12), Shared: 14.0, Feature: "term",
+		Origin: "machine", File: "/home/.config/dotfiles/machine.toml"}, byID["muxy:terminal.font_size"], "machine.toml wins")
+	assert.Equal(t, "profile:laptop", byID["muxy:appearance.dark_theme"].SetBy(), "then the profile")
+	assert.Equal(t, "Nord", byID["muxy:appearance.dark_theme"].Value)
+	assert.Equal(t, "term", byID["muxy:appearance.tips_visible"].SetBy(), "then the feature")
+	assert.Len(t, p.Prefs, 3, "a profile's override for a feature that is off here plans nothing")
+	assert.Empty(t, p.IgnoredPrefs, "and is not reported: profiles are shared")
+
+	machineOff := resolve.PrefLayer{Source: "machine", File: "machine.toml", Values: map[string]any{"claude:theme": "light"}}
+	p, err = Build(features, []string{"term"}, nil, []resolve.PrefLayer{machineOff}, env)
+	require.NoError(t, err, "machine.toml naming a setting a feature that is off owns is no error")
+	assert.Len(t, p.Prefs, 3)
+	assert.Equal(t, []IgnoredPref{{ID: "claude:theme", Feature: "off", File: "machine.toml"}}, p.IgnoredPrefs,
+		"it is reported as ignored")
+
+	tests := []struct {
+		name  string
+		layer resolve.PrefLayer
+		want  string
+	}{
+		{"machine.toml naming a setting no feature owns", resolve.PrefLayer{Source: "machine", File: "machine.toml",
+			Values: map[string]any{"muxy:terminal.font_siz": 13.0}}, `machine.toml: [prefs] "muxy:terminal.font_siz": no feature owns this setting`},
+		{"a profile naming a setting no feature owns", resolve.PrefLayer{Source: "profile:laptop", File: "laptop.toml",
+			Values: map[string]any{"muxy:terminal.font_siz": 13.0}}, `laptop.toml: [prefs] "muxy:terminal.font_siz": no feature owns this setting`},
+		{"no store", resolve.PrefLayer{Source: "machine", File: "machine.toml",
+			Values: map[string]any{"terminal.font_size": 13.0}}, `does not name an app setting`},
+		{"a whole Muxy section", resolve.PrefLayer{Source: "machine", File: "machine.toml",
+			Values: map[string]any{"muxy:terminal": map[string]any{"font_size": 13.0}}}, "muxy: terminal is a table"},
+		{"a date", resolve.PrefLayer{Source: "machine", File: "machine.toml",
+			Values: map[string]any{"muxy:terminal.font_size": time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)}}, "is not a setting value"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := Build(features, []string{"term"}, nil, []resolve.PrefLayer{tt.layer}, env)
+			require.ErrorIs(t, err, ErrPlan)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
 }
 
 func TestRetireSkipsPathsAFeatureInstalls(t *testing.T) {
@@ -93,7 +192,7 @@ func TestRetireSkipsPathsAFeatureInstalls(t *testing.T) {
 	now := feature(t, root, manifest.Feature{ID: "now", Provides: manifest.Provides{Link: []string{".toolrc"}}},
 		map[string]string{"home/.toolrc": "x\n"})
 	old := feature(t, root, manifest.Feature{ID: "old", Retire: []string{".toolrc", ".gone"}}, nil)
-	p, err := Build(map[string]*manifest.Feature{"now": now, "old": old}, []string{"now"}, nil,
+	p, err := Build(map[string]*manifest.Feature{"now": now, "old": old}, []string{"now"}, nil, nil,
 		Env{Home: home, GeneratedDir: filepath.Join(root, "gen"), GOOS: "linux"})
 	require.NoError(t, err)
 	assert.Equal(t, []string{filepath.Join(home, ".gone")}, p.Retire,
@@ -109,7 +208,7 @@ func TestSettingExports(t *testing.T) {
 		"tool.quiet":  {Type: "bool"},
 	}}, nil)
 	values := map[string]any{"paths.cache": "~/Library/Caches/it's", "tool.label": "a'b $HOME", "tool.jobs": int64(4), "tool.quiet": true}
-	p, err := Build(map[string]*manifest.Feature{"env": f}, []string{"env"}, values,
+	p, err := Build(map[string]*manifest.Feature{"env": f}, []string{"env"}, values, nil,
 		Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"})
 	require.NoError(t, err)
 	env := generated(t, p, "env.sh")
@@ -142,7 +241,7 @@ func TestLaunchAgentsRenderForTheHome(t *testing.T) {
 			WhenExists: []string{"/opt/homebrew/bin/go", "~/.config/trim/on"}}},
 	}}, map[string]string{"launchagents/com.example.trim.plist": agentTemplate})
 
-	p, err := Build(map[string]*manifest.Feature{"trim": trim}, []string{"trim"}, nil, Env{Home: home, GeneratedDir: filepath.Join(home, "gen"), GOOS: "darwin"})
+	p, err := Build(map[string]*manifest.Feature{"trim": trim}, []string{"trim"}, nil, nil, Env{Home: home, GeneratedDir: filepath.Join(home, "gen"), GOOS: "darwin"})
 	require.NoError(t, err)
 	require.Len(t, p.LaunchAgents, 1)
 	a := p.LaunchAgents[0]
@@ -170,13 +269,13 @@ func TestLaunchAgentsOfFeaturesOffHereAreListedForRemoval(t *testing.T) {
 		}}, map[string]string{label + ".plist": strings.ReplaceAll(agentTemplate, "com.example.trim", label)})
 	}
 
-	p, err := Build(features, []string{"on"}, nil, Env{Home: home, GOOS: "darwin"})
+	p, err := Build(features, []string{"on"}, nil, nil, Env{Home: home, GOOS: "darwin"})
 	require.NoError(t, err)
 	require.Len(t, p.LaunchAgents, 1)
 	assert.Equal(t, "com.example.on", p.LaunchAgents[0].Label)
 	assert.Equal(t, map[string]string{"com.example.off": filepath.Join(home, "Library/LaunchAgents/com.example.off.plist")}, p.OffAgents)
 
-	p, err = Build(features, []string{"on"}, nil, Env{Home: home, GOOS: "linux"})
+	p, err = Build(features, []string{"on"}, nil, nil, Env{Home: home, GOOS: "linux"})
 	require.NoError(t, err)
 	assert.Empty(t, p.LaunchAgents, "launchd is macOS's")
 	assert.Empty(t, p.OffAgents)
@@ -193,7 +292,7 @@ func TestLaunchAgentsRefuseATemplateNamedForAnotherLabel(t *testing.T) {
 			f := feature(t, root, manifest.Feature{ID: "trim", Platforms: []string{"darwin"}, Provides: manifest.Provides{
 				LaunchAgent: []manifest.LaunchAgent{{Plist: "com.example.trim.plist"}},
 			}}, map[string]string{"com.example.trim.plist": template})
-			_, err := Build(map[string]*manifest.Feature{"trim": f}, []string{"trim"}, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
+			_, err := Build(map[string]*manifest.Feature{"trim": f}, []string{"trim"}, nil, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
 			require.ErrorIs(t, err, ErrPlan)
 		})
 	}
@@ -207,7 +306,7 @@ func TestTwoFeaturesCannotInstallOneLaunchAgent(t *testing.T) {
 			LaunchAgent: []manifest.LaunchAgent{{Plist: "com.example.trim.plist"}},
 		}}, map[string]string{"com.example.trim.plist": agentTemplate})
 	}
-	_, err := Build(features, []string{"one", "two"}, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
+	_, err := Build(features, []string{"one", "two"}, nil, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
 	require.ErrorIs(t, err, ErrPlan)
 	assert.Contains(t, err.Error(), "both install")
 }

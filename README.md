@@ -53,6 +53,7 @@ recognize `/usr/local` Homebrew installations.
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
+| Muxy 2.5 or later in `/Applications` or `~/Applications`, or at `DOTFILES_MUXY_APP` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
 Claude Code, gitstead, and gateway credentials need separate setup when those
@@ -217,6 +218,8 @@ dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if an
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
 dotfiles overlays          # the checkout directory of each overlay machine.toml lists
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
+dotfiles adopt muxy:appearance.dark_theme   # the same for an app setting changed in the app
+dotfiles forget muxy:appearance.dark_theme  # drop the earlier value of a setting whose app is gone for good
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
@@ -230,6 +233,19 @@ file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
 edits into its tracked file, which sync then publishes like any tracked edit. A
 second run with nothing changed does nothing.
+
+App settings that share a file with one machine's own state, such as Muxy's
+theme and Claude Code's `theme` in `~/.claude/settings.json`, are owned key by
+key: a feature's prefs file lists them, and `apply` sets each one through the
+app (`muxy config set` inside `Muxy.app`; an in-place edit of
+`settings.json`), leaving every other key to the machine. A setting changed in
+the app after apply set it is reported, never overwritten, and
+`dotfiles adopt <store>:<key>` keeps it; a `[prefs]` table in a profile or
+`machine.toml` gives one machine its own value (see
+[Profiles and machines](#profiles-and-machines)); disabling the feature puts
+back the value it replaced. See
+[App settings](docs/MACHINE-FEATURES.md#app-settings). `--app-timeout`
+(default `15s`) bounds each call to an app's settings tool.
 Without `machine.toml` it refuses to run, since no profile would apply and it
 would remove everything the profiles install.
 
@@ -246,8 +262,8 @@ removed.
 | Profile | Enables |
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
-| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14) |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -258,7 +274,7 @@ removed.
 | Mac mini | `base, dev, desktop, server` | `personal` and the clients worked from it |
 | A client's machine | `base, dev, work` | that client's only |
 
-Override one feature or setting for one machine in `machine.toml`:
+Override one feature, setting or app setting for one machine in `machine.toml`:
 
 ```toml
 profiles = ["base", "dev", "desktop", "server"]
@@ -268,7 +284,23 @@ disable = ["tool.colorls"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]
+"muxy:terminal.font_size" = 13.0   # instead of tool.muxy's shared 14.0
 ```
+
+| Table | Keys | Overrides | Checked |
+| --- | --- | --- | --- |
+| `[features]` | `enable`, `disable`: feature ids | the feature's `default`, then each profile in order | an unknown id is an error |
+| `[settings]` | setting names, such as `"paths.playwright_browsers"` | the declaring feature's default, then each profile's `[settings]` in order | an unknown name or a value of the wrong type is an error |
+| `[prefs]` | app settings, `<store>:<key>` as `dotfiles adopt` names them, such as `"muxy:terminal.font_size"` | the owning feature's prefs file, then each profile's `[prefs]` in order | a key no enabled feature owns, or a value the store cannot take, is a plan error |
+
+A profile's `[prefs]` table works the same way for every machine that lists
+the profile. Changing or removing an override takes effect on the next apply
+(removing one returns the setting to the shared value); disabling the feature
+still puts back the value from before dotfiles. `dotfiles check`, `doctor` and
+`status` show each app setting's value and where it comes from; see
+[Per-machine overrides](docs/MACHINE-FEATURES.md#per-machine-overrides).
 
 ### Overlays
 
@@ -309,7 +341,7 @@ profiles = ["base", "dev", "desktop", "studio", "personal"]
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
-| 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
+| 1 | Problems left for you (a file in the way, an edited copy, an app setting changed in the app, an app that is not installed, a missing setting), or for `doctor`, pending changes |
 | 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict), or a listed overlay is not cloned |
 | 64 | Usage |
 | 70 | An I/O failure |

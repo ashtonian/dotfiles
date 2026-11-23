@@ -1,5 +1,6 @@
-// Package plan turns the enabled features into the files a machine should
-// have: links, managed copies, generated outputs, local stubs and LaunchAgents.
+// Package plan turns the enabled features into what a machine should have:
+// links, managed copies, generated outputs, local stubs, LaunchAgents and app
+// settings.
 package plan
 
 import (
@@ -7,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -15,6 +17,8 @@ import (
 
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
+	"github.com/ashtonian/dotfiles/internal/prefs"
+	"github.com/ashtonian/dotfiles/internal/resolve"
 )
 
 // ErrPlan wraps failures caused by the features themselves, such as a missing
@@ -73,6 +77,37 @@ type LaunchAgent struct {
 	LogDirs []string
 }
 
+// Pref is one app setting a feature owns; see package prefs.
+type Pref struct {
+	Store, Key string
+	// Value is what the setting should be here: the feature's value, unless
+	// a profile's or the machine manifest's [prefs] table overrides it. As
+	// TOML decoded it.
+	Value   any
+	Feature string
+	// Shared is the feature's own value, which an override replaces.
+	Shared any
+	// Origin is the layer Value comes from: empty for the feature's prefs
+	// file, else "profile:<name>" or "machine".
+	Origin string
+	// File sets Value, and is what adopt rewrites: the feature's prefs file,
+	// or the manifest whose [prefs] table overrides it.
+	File string
+}
+
+// ID names the setting in reports, the state file, `dotfiles adopt` and
+// [prefs] overrides, as <store>:<key>.
+func (p Pref) ID() string { return p.Store + ":" + p.Key }
+
+// SetBy names where Value comes from: the feature that owns the setting, or
+// the layer that overrides it.
+func (p Pref) SetBy() string {
+	if p.Origin == "" {
+		return p.Feature
+	}
+	return p.Origin
+}
+
 // Plan is the desired state for one machine.
 type Plan struct {
 	Links        []Link
@@ -80,6 +115,11 @@ type Plan struct {
 	Generated    []File
 	Stubs        []Stub
 	LaunchAgents []LaunchAgent
+	// Prefs lists the app settings to own, in feature order.
+	Prefs []Pref
+	// IgnoredPrefs lists the machine manifest's [prefs] overrides of settings
+	// whose features are off here, which change nothing.
+	IgnoredPrefs []IgnoredPref
 	// OffAgents maps the labels of the LaunchAgents that features not
 	// enabled here declare to their install paths. apply removes such a plist
 	// it finds without a record of installing it: the retired installer's.
@@ -90,8 +130,10 @@ type Plan struct {
 }
 
 // Build plans the enabled features, in dependency order. values holds the
-// resolved settings, by setting name.
-func Build(features map[string]*manifest.Feature, order []string, values map[string]any, env Env) (*Plan, error) {
+// resolved settings, by setting name; overrides are the [prefs] tables that
+// replace the values the features' prefs files give, lowest precedence first.
+func Build(features map[string]*manifest.Feature, order []string, values map[string]any,
+	overrides []resolve.PrefLayer, env Env) (*Plan, error) {
 	p := &Plan{}
 	owner := map[string]string{} // target -> feature, to catch two features claiming one file
 	claim := func(target, feature string) error {
@@ -168,6 +210,27 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 			}
 			p.LaunchAgents = append(p.LaunchAgents, agent)
 		}
+		for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
+			source := filepath.Join(f.Dir, filepath.FromSlash(f.Provides.Prefs[store]))
+			entries, err := prefs.ReadFile(source)
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", ErrPlan, id, err)
+			}
+			for _, e := range entries {
+				if err := prefs.CheckSetting(store, e.Key, e.Value); err != nil {
+					return nil, fmt.Errorf("%w: %s: %s:%d: %w", ErrPlan, id, source, e.Line, err)
+				}
+				pref := Pref{Store: store, Key: e.Key, Value: e.Value, Feature: id, Shared: e.Value, File: source}
+				if err := claim(pref.ID(), id); err != nil {
+					return nil, err
+				}
+				p.Prefs = append(p.Prefs, pref)
+			}
+		}
+	}
+
+	if err := overridePrefs(p, features, order, overrides); err != nil {
+		return nil, err
 	}
 
 	// Every feature's retired paths, enabled or not: an old link is a leftover
@@ -205,6 +268,92 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 	}
 	p.Generated = generated
 	return p, nil
+}
+
+// overridePrefs applies the [prefs] tables over the values the features'
+// prefs files give, in order, so the last layer that names a setting decides
+// it. A table names only settings a feature owns. The machine manifest
+// describes this machine, so it names one a feature enabled here owns. A
+// profile is shared by machines that turn features on and off, so one it
+// names may belong to a feature that is off here, and is then left out.
+// IgnoredPref is a machine manifest override of an app setting that only a
+// feature off on this machine owns.
+type IgnoredPref struct {
+	ID      string // <store>:<key>
+	Feature string // the feature that owns it
+	File    string // the machine manifest
+}
+
+func overridePrefs(p *Plan, features map[string]*manifest.Feature, order []string, layers []resolve.PrefLayer) error {
+	at := make(map[string]int, len(p.Prefs))
+	for i, pr := range p.Prefs {
+		at[pr.ID()] = i
+	}
+	var off map[string]string // setting -> owner off here; read the first time it is needed
+	for _, layer := range layers {
+		where := layer.File
+		if where == "" {
+			where = layer.Source
+		}
+		for _, id := range slices.Sorted(maps.Keys(layer.Values)) {
+			value := layer.Values[id]
+			store, key, err := prefs.ParseID(id)
+			if err != nil {
+				return fmt.Errorf("%w: %s: [prefs]: %w", ErrPlan, where, err)
+			}
+			if err := prefs.CheckValue(value); err != nil {
+				return fmt.Errorf("%w: %s: [prefs] %q: %w", ErrPlan, where, id, err)
+			}
+			if err := prefs.CheckSetting(store, key, value); err != nil {
+				return fmt.Errorf("%w: %s: [prefs] %q: %w", ErrPlan, where, id, err)
+			}
+			i, owned := at[id]
+			if !owned {
+				if off == nil {
+					if off, err = offPrefs(features, order); err != nil {
+						return err
+					}
+				}
+				feature, ok := off[id]
+				if !ok {
+					return fmt.Errorf("%w: %s: [prefs] %q: no feature owns this setting", ErrPlan, where, id)
+				}
+				// Its feature is off here. A profile is shared by machines
+				// that turn features on and off, so only the machine's own
+				// manifest is told.
+				if layer.Source == "machine" {
+					p.IgnoredPrefs = append(p.IgnoredPrefs, IgnoredPref{ID: id, Feature: feature, File: layer.File})
+				}
+				continue
+			}
+			p.Prefs[i].Value = value
+			p.Prefs[i].Origin = layer.Source
+			p.Prefs[i].File = layer.File
+		}
+	}
+	return nil
+}
+
+// offPrefs maps the settings that features not planned here own to those
+// features.
+func offPrefs(features map[string]*manifest.Feature, order []string) (map[string]string, error) {
+	owned := map[string]string{}
+	for _, id := range slices.Sorted(maps.Keys(features)) {
+		f := features[id]
+		if slices.Contains(order, id) {
+			continue
+		}
+		for store, file := range f.Provides.Prefs {
+			entries, err := prefs.ReadFile(filepath.Join(f.Dir, filepath.FromSlash(file)))
+			if err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", ErrPlan, id, err)
+			}
+			for _, e := range entries {
+				owned[store+":"+e.Key] = id
+			}
+		}
+	}
+	return owned, nil
 }
 
 // expand lists the files under <feature>/home/<entry>, relative to home/. A

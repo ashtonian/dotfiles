@@ -194,7 +194,7 @@ func TestAReloadWaitsUntilItWouldNotCutARunShort(t *testing.T) {
 		report := m.run(false)
 		assert.Equal(t, []string{"unload com.example.server", "load com.example.server"}, m.launchd.takeCalls())
 		assert.Contains(t, m.installed("com.example.trim"), "<key>Nice</key>", "the new plist is written")
-		assert.Contains(t, report.Waiting, Waiting{Label: "com.example.trim", Reason: "reloads when apply next runs outside this job, which it is running in"})
+		assert.Contains(t, report.Waiting, Waiting{Subject: "com.example.trim", Reason: "reloads when apply next runs outside this job, which it is running in"})
 
 		m.job = ""
 		m.launchd.running["com.example.trim"] = false
@@ -213,7 +213,7 @@ func TestAReloadWaitsUntilItWouldNotCutARunShort(t *testing.T) {
 		report := m.run(false)
 		assert.Equal(t, []string{"unload com.example.server", "load com.example.server"}, m.launchd.takeCalls(),
 			"a running service restarts on its new plist; a running job finishes first")
-		assert.Contains(t, report.Waiting, Waiting{Label: "com.example.trim", Reason: "reloads once its current run ends"})
+		assert.Contains(t, report.Waiting, Waiting{Subject: "com.example.trim", Reason: "reloads once its current run ends"})
 
 		m.launchd.running["com.example.trim"] = false
 		report = m.run(false)
@@ -232,7 +232,7 @@ when_exists = ["~/.config/trim/enabled"]
 `)
 	report := m.run(false)
 	assert.Empty(t, agentKinds(report))
-	assert.Equal(t, []Waiting{{Label: "com.example.trim", Reason: "installs once " + m.at(".config/trim/enabled") + " exists"}}, report.Waiting)
+	assert.Equal(t, []Waiting{{Subject: "com.example.trim", Reason: "installs once " + m.at(".config/trim/enabled") + " exists"}}, report.Waiting)
 	assert.NoFileExists(t, m.agent("com.example.trim"))
 
 	require.NoError(t, os.MkdirAll(m.at(".config/trim"), 0o700))
@@ -257,7 +257,7 @@ func TestDisablingAFeatureUnloadsAndRemovesItsAgents(t *testing.T) {
 	m.launchd.running["com.example.trim"] = true
 	report := m.run(false)
 	assert.Equal(t, []string{"unload com.example.server"}, m.launchd.takeCalls(), "a job in the middle of a run is unloaded later")
-	assert.Contains(t, report.Waiting, Waiting{Label: "com.example.trim", Reason: "unloads once its current run ends"})
+	assert.Contains(t, report.Waiting, Waiting{Subject: "com.example.trim", Reason: "unloads once its current run ends"})
 	assert.FileExists(t, m.agent("com.example.trim"))
 	assert.NoFileExists(t, m.agent("com.example.server"))
 

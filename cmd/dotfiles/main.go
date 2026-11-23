@@ -10,11 +10,13 @@
 //	                                        and the LaunchAgents waiting for a later run
 //	dotfiles status [--json]                list every feature, whether it is enabled, and why
 //	dotfiles check                          validate the manifests and plan this machine, reading nothing under $HOME
-//	dotfiles adopt [flags] <path>...        make local edits to managed copies the repository's version
+//	dotfiles adopt [flags] <target>...      make local edits to managed copies (a path) or app
+//	                                        settings (<store>:<key>) the repository's version
 //
 // Exit status: 0 done; 1 doctor or apply left problems for the owner; 2 the
 // manifests are invalid or contradict each other, or the machine has none; 64
-// usage, or adopt named a path that is not a managed copy; 70 an I/O failure.
+// usage, or adopt named something that is not a managed copy or app setting;
+// 70 an I/O failure.
 package main
 
 import (
@@ -30,6 +32,7 @@ import (
 	"os/signal"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"sort"
 	"strings"
 	"syscall"
@@ -40,6 +43,7 @@ import (
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 	"github.com/ashtonian/dotfiles/internal/plan"
+	"github.com/ashtonian/dotfiles/internal/prefs"
 	"github.com/ashtonian/dotfiles/internal/resolve"
 )
 
@@ -76,11 +80,20 @@ type applyOptions struct {
 	launchctl            string
 	launchctlTimeout     time.Duration
 	launchAgents         bool
+	stores               map[string]apply.PrefStore
+}
+
+// prefStores builds the store for each app in prefs.Stores.
+func prefStores(home, muxyApp string, appTimeout time.Duration) map[string]apply.PrefStore {
+	return map[string]apply.PrefStore{
+		"claude": prefs.NewClaude(home),
+		"muxy":   prefs.NewMuxy(prefs.MuxyCommands(home, muxyApp), appTimeout),
+	}
 }
 
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
-		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt [flags]")
+		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt|forget [flags]")
 		return exitUsage
 	}
 	cmd := args[0]
@@ -104,10 +117,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	gitTimeout := flags.Duration("git-timeout", 30*time.Second, "apply: how long listing the repository's tracked files may take")
 	launchctlTimeout := flags.Duration("launchctl-timeout", 30*time.Second, "apply: how long one launchctl call may take")
 	launchAgents := flags.Bool("launch-agents", true, "apply: install, load and remove LaunchAgents; false leaves them as they are")
+	appTimeout := flags.Duration("app-timeout", 15*time.Second, "apply, doctor, adopt: how long one call to an app's settings command may take")
 	if err := flags.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
-	if cmd != "adopt" && flags.NArg() > 0 {
+	if cmd != "adopt" && cmd != "forget" && flags.NArg() > 0 {
 		fmt.Fprintf(stderr, "dotfiles %s: unexpected arguments %v\n", cmd, flags.Args())
 		return exitUsage
 	}
@@ -130,8 +144,10 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		p.machine = filepath.Join(config, "dotfiles", "machine.toml")
 	}
 
+	stores := prefStores(p.home, os.Getenv("DOTFILES_MUXY_APP"), *appTimeout)
 	opts := applyOptions{dryRun: *dryRun, lockWait: *lockWait, gitTimeout: *gitTimeout,
-		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents}
+		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents,
+		stores: stores}
 	switch cmd {
 	case "init":
 		return cmdInit(p, *overlays, *profiles, *force, stdout, stderr)
@@ -147,9 +163,11 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	case "overlays":
 		return cmdOverlays(p, stdout, stderr)
 	case "adopt":
-		return cmdAdopt(ctx, p, flags.Args(), *lockWait, stdout, stderr)
+		return cmdAdopt(ctx, p, stores, flags.Args(), *lockWait, stdout, stderr)
+	case "forget":
+		return cmdForget(ctx, p, flags.Args(), *lockWait, stdout, stderr)
 	default:
-		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check, overlays or adopt\n", cmd)
+		fmt.Fprintf(stderr, "dotfiles: unknown command %q; want init, apply, doctor, status, check, overlays, adopt or forget\n", cmd)
 		return exitUsage
 	}
 }
@@ -202,13 +220,13 @@ func load(p paths) (*loaded, error) {
 
 // plan builds the desired state for this machine from what load resolved.
 func (l *loaded) plan(p paths) (*plan.Plan, error) {
-	return plan.Build(l.features, l.result.Runnable(l.features), l.result.Values(),
+	return plan.Build(l.features, l.result.Runnable(l.features), l.result.Values(), l.result.PrefLayers,
 		plan.Env{Home: p.home, GeneratedDir: p.generated, GOOS: runtime.GOOS})
 }
 
 func exitFor(err error, stderr io.Writer) int {
 	fmt.Fprintln(stderr, "dotfiles:", err)
-	if errors.Is(err, apply.ErrNotCopy) {
+	if errors.Is(err, apply.ErrNotManaged) || errors.Is(err, apply.ErrNotForgettable) {
 		return exitUsage
 	}
 	if errors.Is(err, manifest.ErrInvalid) || errors.Is(err, manifest.ErrNoMachine) || errors.Is(err, manifest.ErrNoOverlay) ||
@@ -245,7 +263,8 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	env := apply.Env{Home: p.home, StowTree: filepath.Join(p.repo, retiredStowTree)}
+	env := apply.Env{Home: p.home, StowTree: filepath.Join(p.repo, retiredStowTree), Prefs: opts.stores,
+		Checkpoint: func(s *apply.State) error { return s.Save(p.state) }}
 	for _, root := range l.roots {
 		tracked, err := trackedFiles(ctx, root.Dir, opts.gitTimeout)
 		if err != nil {
@@ -261,13 +280,15 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		env.Job = os.Getenv("XPC_SERVICE_NAME")
 	}
 	report, next, err := apply.Run(ctx, pl, prev, env, dryRun)
+	// A run that fails partway still returns what it did, which the next
+	// run needs: an app setting's earlier value, a link it made.
+	if !dryRun && next != nil {
+		if saveErr := next.Save(p.state); saveErr != nil {
+			return exitFor(errors.Join(err, saveErr), stderr)
+		}
+	}
 	if err != nil {
 		return exitFor(err, stderr)
-	}
-	if !dryRun {
-		if err := next.Save(p.state); err != nil {
-			return exitFor(err, stderr)
-		}
 	}
 
 	verb := ""
@@ -288,7 +309,13 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if doctor {
 		// Expected states, not problems; apply prints them only as it acts.
 		for _, w := range report.Waiting {
-			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Label, w.Reason)
+			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Subject, w.Reason)
+		}
+		for _, pr := range pl.Prefs {
+			fmt.Fprintf(stdout, "app-setting %s\n", describePref(pr))
+		}
+		for _, ig := range pl.IgnoredPrefs {
+			fmt.Fprintf(stdout, "ignored     %s\n", describeIgnored(ig))
 		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
@@ -373,7 +400,8 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	if _, err := l.plan(p); err != nil {
+	pl, err := l.plan(p)
+	if err != nil {
 		return exitFor(err, stderr)
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
@@ -381,6 +409,12 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	}
 	for _, root := range l.roots[1:] {
 		fmt.Fprintf(stdout, "overlay: %s at %s\n", root.Overlay, root.Dir)
+	}
+	for _, pr := range pl.Prefs {
+		fmt.Fprintf(stdout, "app setting: %s\n", describePref(pr))
+	}
+	for _, ig := range pl.IgnoredPrefs {
+		fmt.Fprintf(stdout, "note: %s\n", describeIgnored(ig))
 	}
 	fmt.Fprintf(stdout, "ok: %d features plan for %s\n", len(l.result.Runnable(l.features)), p.machine)
 	return exitOK
@@ -400,20 +434,13 @@ func cmdOverlays(p paths, stdout, stderr io.Writer) int {
 	return exitOK
 }
 
-// cmdAdopt copies local edits of managed copies into the repository, under
-// the same lock as apply, and records them so apply no longer reports drift.
-func cmdAdopt(ctx context.Context, p paths, targets []string, lockWait time.Duration, stdout, stderr io.Writer) int {
-	if len(targets) == 0 {
-		fmt.Fprintln(stderr, "dotfiles adopt: name the managed copies to keep, such as ~/.config/htop/htoprc")
+// cmdForget drops the records of app settings waiting to be put back for an
+// app that is gone for good, under the same lock as apply, printing each
+// earlier value.
+func cmdForget(ctx context.Context, p paths, ids []string, lockWait time.Duration, stdout, stderr io.Writer) int {
+	if len(ids) == 0 {
+		fmt.Fprintln(stderr, "dotfiles forget: name the app settings to forget, such as muxy:appearance.dark_theme")
 		return exitUsage
-	}
-	abs := make([]string, len(targets))
-	for i, t := range targets {
-		a, err := filepath.Abs(t)
-		if err != nil {
-			return exitFor(err, stderr)
-		}
-		abs[i] = a
 	}
 	l, err := load(p)
 	if err != nil {
@@ -434,7 +461,59 @@ func cmdAdopt(ctx context.Context, p paths, targets []string, lockWait time.Dura
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	report, next, err := apply.Adopt(pl, prev, abs)
+	report, next, err := apply.Forget(pl, prev, ids)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	if err := next.Save(p.state); err != nil {
+		return exitFor(err, stderr)
+	}
+	for _, a := range report.Actions {
+		fmt.Fprintf(stdout, "%-11s %s -> %s\n", a.Kind, a.Path, a.Detail)
+	}
+	return exitOK
+}
+
+// cmdAdopt copies local edits of managed copies and app settings into the
+// repository, under the same lock as apply, and records them so apply no
+// longer reports drift.
+func cmdAdopt(ctx context.Context, p paths, stores map[string]apply.PrefStore, targets []string, lockWait time.Duration, stdout, stderr io.Writer) int {
+	if len(targets) == 0 {
+		fmt.Fprintln(stderr, "dotfiles adopt: name the managed copies or app settings to keep, such as ~/.config/htop/htoprc or muxy:appearance.dark_theme")
+		return exitUsage
+	}
+	resolved := make([]string, len(targets))
+	for i, t := range targets {
+		if store, _, ok := strings.Cut(t, ":"); ok && slices.Contains(prefs.Stores, store) {
+			resolved[i] = t // an app setting, <store>:<key>
+			continue
+		}
+		a, err := filepath.Abs(t)
+		if err != nil {
+			return exitFor(err, stderr)
+		}
+		resolved[i] = a
+	}
+	l, err := load(p)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	pl, err := l.plan(p)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	lockCtx, cancel := context.WithTimeout(ctx, lockWait)
+	unlock, err := apply.Lock(lockCtx, p.lock)
+	cancel()
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	defer unlock()
+	prev, err := apply.LoadState(p.state)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
+	report, next, err := apply.Adopt(ctx, pl, prev, resolved, stores)
 	if err != nil {
 		return exitFor(err, stderr)
 	}
@@ -454,6 +533,8 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	if err != nil {
 		return exitFor(err, stderr)
 	}
+	// A plan error is reported after the rest, which still helps find it.
+	pl, planErr := l.plan(p)
 	type rootRow struct {
 		Name   string `json:"name"`
 		Dir    string `json:"dir"`
@@ -466,9 +547,19 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 		Enabled bool   `json:"enabled"`
 		Source  string `json:"source"`
 	}
+	type prefRow struct {
+		ID    string `json:"id"`
+		Value any    `json:"value"`
+		// SetBy is the feature that owns the setting, or "profile:<name>" or
+		// "machine" when an override sets it.
+		SetBy   string `json:"set_by"`
+		Feature string `json:"feature"`
+		Shared  any    `json:"shared"` // the feature's own value
+	}
 	var out struct {
 		Roots    []rootRow    `json:"roots"`
 		Features []featureRow `json:"features"`
+		Prefs    []prefRow    `json:"prefs"`
 	}
 	for _, root := range l.roots {
 		row := rootRow{Name: root.Overlay, Dir: root.Dir}
@@ -485,11 +576,19 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 		d := l.result.Decisions[id]
 		out.Features = append(out.Features, featureRow{ID: id, Enabled: d.Enabled, Source: d.Source})
 	}
+	if planErr == nil {
+		for _, pr := range pl.Prefs {
+			out.Prefs = append(out.Prefs, prefRow{ID: pr.ID(), Value: pr.Value, SetBy: pr.SetBy(), Feature: pr.Feature, Shared: pr.Shared})
+		}
+	}
 	if jsonOut {
 		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(out); err != nil {
 			return exitFor(err, stderr)
+		}
+		if planErr != nil {
+			return exitFor(planErr, stderr)
 		}
 		return exitOK
 	}
@@ -507,10 +606,49 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	for _, r := range out.Features {
 		fmt.Fprintf(w, "%s\t%t\t%s\n", r.ID, r.Enabled, r.Source)
 	}
+	if len(out.Prefs) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "APP SETTING\tVALUE\tSET BY")
+		for _, pr := range pl.Prefs {
+			setBy := pr.SetBy()
+			if pr.Origin != "" {
+				setBy += fmt.Sprintf(" (%s shares %s)", pr.Feature, tomlValue(pr.Shared))
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\n", pr.ID(), tomlValue(pr.Value), setBy)
+		}
+	}
 	if err := w.Flush(); err != nil {
 		return exitFor(err, stderr)
 	}
+	if planErr != nil {
+		return exitFor(planErr, stderr)
+	}
 	return exitOK
+}
+
+// describePref says what value an app setting gets here and where it comes
+// from: the feature that owns it, or the profile or machine manifest whose
+// [prefs] table overrides the feature's value.
+func describePref(pr plan.Pref) string {
+	d := fmt.Sprintf("%s = %s, from %s", pr.ID(), tomlValue(pr.Value), pr.SetBy())
+	if pr.Origin != "" {
+		d += fmt.Sprintf(" (%s shares %s)", pr.Feature, tomlValue(pr.Shared))
+	}
+	return d
+}
+
+// describeIgnored says why a machine manifest override changes nothing here.
+func describeIgnored(ig plan.IgnoredPref) string {
+	return fmt.Sprintf("%s: %s [prefs] sets it, but %s, which owns it, is off here, so it is ignored", ig.ID, ig.File, ig.Feature)
+}
+
+// tomlValue renders a setting value as a prefs file or [prefs] table writes it.
+func tomlValue(v any) string {
+	s, err := prefs.EncodeTOML(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return s
 }
 
 // gitState returns the checkout's short commit and whether a tracked file has
