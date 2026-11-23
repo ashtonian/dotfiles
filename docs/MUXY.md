@@ -9,7 +9,7 @@ updates servers by hand on each Mac. It installs:
 
 | Part | What it does |
 | --- | --- |
-| `~/.local/bin/muxy` | Runs the `muxy` command line tool inside `/Applications/Muxy.app` |
+| `~/.local/bin/muxy` | Runs the `muxy` command line tool inside the installed Muxy app (`~/Applications/Muxy.app`, else `/Applications/Muxy.app`) |
 | `~/.local/bin/muxy-reconcile` | Brings `[[servers]]` in step with the server lists in `~/.config/muxy/servers.d/` |
 | LaunchAgent `com.ashtonian.muxy-reconcile` | Runs `muxy-reconcile` at load, when a list is added or removed, when `dotfiles apply` rewrites its generated files, and hourly |
 | Setting `muxy.exclude_servers` | Declared servers this Mac leaves out ([Per-machine changes](#per-machine-changes)) |
@@ -176,7 +176,7 @@ exclusions, which belong in the `muxy.exclude_servers` setting.
 | `MUXY_RECONCILE_HOST_KEYS` | Space-separated files or glob patterns | `/etc/ssh/ssh_host_*_key.pub` | This Mac's sshd public host keys |
 | `MUXY_RECONCILE_TIMEOUT` | Whole seconds, at least 1 | `30` | Limit for each `ssh -G`, `ssh-keygen`, name lookup, `muxy` call and setting read |
 | `MUXY_RECONCILE_EXCLUDE` | Space-separated `<list>/<ssh>` names | the `muxy.exclude_servers` setting `dotfiles apply` generated (empty) | Declared servers this Mac leaves out ([Per-machine changes](#per-machine-changes)) |
-| `DOTFILES_MUXY_APP` | Directory path | `/Applications/Muxy.app` | The app bundle whose `Contents/MacOS/muxy` the wrapper runs, and so the one `muxy-reconcile` checks with |
+| `DOTFILES_MUXY_APP` | Directory path | unset: `~/Applications/Muxy.app` if it holds the tool, else `/Applications/Muxy.app` | The app bundle whose `Contents/MacOS/muxy` the wrapper runs, and so the one `muxy-reconcile` checks with. The search order is the one `dotfiles apply` uses for Muxy settings |
 | `XDG_CONFIG_HOME` / `XDG_STATE_HOME` | Directory path | `~/.config` / `~/.local/state` | Bases of the two defaults above |
 
 Fixed: Muxy's settings lock is waited for 10 s, another `muxy-reconcile` run 60 s.
@@ -191,7 +191,9 @@ Fixed: Muxy's settings lock is waited for 10 s, another `muxy-reconcile` run 60 
 | `EnvironmentVariables.PATH` | `/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin` | Homebrew's python3 first |
 | `ProcessType`, `LowPriorityIO`, `Nice` | `Background`, true, 10 | It is never urgent |
 
-apply installs it once `/Applications/Muxy.app` and `/opt/homebrew/bin/python3` exist.
+apply installs it once `/Applications/Muxy.app` and `/opt/homebrew/bin/python3` exist. The
+`muxy` cask installs the app there; a Muxy only in `~/Applications` gets the wrapper but not
+the LaunchAgent.
 
 ### Growth bounds
 
@@ -208,7 +210,7 @@ when something changes (two `config list` and one `config reload`).
 
 ## External Dependencies
 
-- Muxy in `/Applications/Muxy.app` (Homebrew cask `muxy`), with
+- Muxy in `~/Applications/Muxy.app` or `/Applications/Muxy.app` (Homebrew cask `muxy`), with
   `muxy config list --json` and `muxy config reload --json`; tested with 2.5.0. Without it the wrapper exits
   69, `muxy-reconcile` exits 69 when it has something to write, and the LaunchAgent waits.
 - Homebrew `python` (3.11 or later).
@@ -354,7 +356,7 @@ Troubleshooting:
 | Exit 2 naming a list | The file and key it names | Fix the overlay's list |
 | Exit 2 `not a muxy-reconcile state file` | `managed.json` | Delete it; entries are matched again by destination and machine |
 | Exit 3 | Muxy saved during the run | Nothing to do; the next run retries |
-| Exit 69 | `ls /Applications/Muxy.app` | `brew install --cask muxy` |
+| Exit 69 | `ls -d ~/Applications/Muxy.app /Applications/Muxy.app` | `brew install --cask muxy` |
 | `needs Python 3.11 or later` | `which python3` in the job's PATH | `brew install python` |
 
 ## Security

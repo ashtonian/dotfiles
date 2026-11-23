@@ -3455,6 +3455,19 @@ fi''')
                                  capture_output=True, text=True, timeout=20)
         self.assertEqual((p.returncode, p.stdout), (0, bundled.stdout))
 
+    def test_the_wrapper_prefers_a_per_user_app(self):
+        home = self.path / 'home'
+        tool = home / 'Applications/Muxy.app/Contents/MacOS/muxy'
+        tool.parent.mkdir(parents=True)
+        tool.write_text('#!/bin/sh\necho "per-user $*"\n')
+        tool.chmod(0o755)
+        env = dict(self.env, HOME=str(home))
+        p = subprocess.run([str(self.WRAPPER), '--version'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual((p.returncode, p.stdout), (0, 'per-user --version\n'))
+        env['DOTFILES_MUXY_APP'] = str(self.path / 'no-such.app')
+        p = subprocess.run([str(self.WRAPPER), '--version'], env=env, capture_output=True, text=True, timeout=20)
+        self.assertEqual(p.returncode, 69, 'DOTFILES_MUXY_APP, when set, is the only app')
+
     def test_the_wrapper_names_a_missing_app(self):
         self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-such.app')
         p = subprocess.run([str(self.WRAPPER), '--version'], env=self.env, capture_output=True, text=True, timeout=20)
