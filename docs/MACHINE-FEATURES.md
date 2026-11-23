@@ -166,6 +166,9 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.brew_link]          # a formula's Brewfile `link:` option
 # zoxide = false
 
+[provides.link_unless_exists] # a `link` entry left alone while any of these absolute or ~/ paths exists
+# ".local/bin/zoxide" = ["~/.local/bin/.zoxide-installer"]
+
 [[provides.launch_agent]]     # a launchd job (macOS); one table per agent
 plist       = "launchagents/com.example.zoxide-gc.plist"  # template named <Label>.plist; $HOME is replaced
 when_exists = ["/opt/homebrew/bin/zoxide"]  # absolute or ~/ paths; installed only once all exist
@@ -213,6 +216,20 @@ removes it again when one goes away; `dotfiles doctor` lists what waits. An
 installed plist edited by hand is reported and left loaded. LaunchAgents are
 installed on macOS only; on other platforms the rest of the feature applies.
 [OPERATIONS.md](OPERATIONS.md#launchagents) lists the repository's agents.
+
+### Held links
+
+`link_unless_exists` names, for an entry of `link`, paths whose presence means
+another installer owns that place, and a running program may depend on what is
+there. While any of them exists, apply neither replaces the entry's link nor
+creates it where nothing is: `dotfiles doctor` lists it as waiting (`left alone
+while <path> exists`), not as a problem, and a link apply made earlier stays,
+with its record. Once none exists, apply links the entry as usual. A file
+another tool put there is never replaced in any case (it is reported as in the
+way); the hold also keeps the place empty and quiet while the owner is there.
+Files under `Library/` cannot be held, since they are installed as managed
+copies on macOS. `tool.muxy` holds `~/.local/bin/muxy` while Muxy's own server
+copy, `~/.local/bin/.muxy`, exists ([MUXY.md](MUXY.md#why-the-wrapper)).
 
 `schedules` (rollout step 6) will render one job definition for launchd,
 systemd and Task Scheduler; `launch_agent` is the macOS-only form that runs the

@@ -97,6 +97,11 @@ type Provides struct {
 	Link      []string        `toml:"link"`       // files under home/, linked one by one
 	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
 	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
+	// LinkUnlessExists holds links back: for an entry of Link, paths
+	// (absolute or starting with ~/) whose presence means something else owns
+	// the link's place. While any exists, apply neither makes nor replaces the
+	// entry's links.
+	LinkUnlessExists map[string][]string `toml:"link_unless_exists"`
 	// LaunchAgent lists launchd jobs for the user's GUI session. They are
 	// installed on macOS only; elsewhere the rest of the feature applies.
 	LaunchAgent []LaunchAgent `toml:"launch_agent"`
@@ -431,6 +436,19 @@ func validateFeature(f *Feature, dirName string) error {
 	for _, p := range append(slices.Clone(f.Provides.Link), f.Provides.Copy...) {
 		if err := checkRelative(p); err != nil {
 			return err
+		}
+	}
+	for entry, paths := range f.Provides.LinkUnlessExists {
+		if !slices.Contains(f.Provides.Link, entry) {
+			return fmt.Errorf("link_unless_exists names %q, which is not in link", entry)
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("link_unless_exists %s: list the paths that hold it", entry)
+		}
+		for _, w := range paths {
+			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
+				return fmt.Errorf("link_unless_exists %s: %q must be absolute or start with ~/", entry, w)
+			}
 		}
 	}
 	for _, s := range f.Provides.Stub {

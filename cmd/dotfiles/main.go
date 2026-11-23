@@ -288,7 +288,7 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if doctor {
 		// Expected states, not problems; apply prints them only as it acts.
 		for _, w := range report.Waiting {
-			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Label, w.Reason)
+			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Subject, w.Reason)
 		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {

@@ -504,3 +504,72 @@ func TestDryRunChangesNothing(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, entries)
 }
+
+func TestAHeldLinkIsLeftAloneWhileItsOwnerIsThere(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/tool/feature.toml", `id = "tool"
+default = true
+[provides]
+link = [".local/bin/tool", ".local/bin/tool-helper"]
+[provides.link_unless_exists]
+".local/bin/tool" = ["~/.local/bin/.tool"]
+`)
+	m.write("features/tool/home/.local/bin/tool", "#!/bin/sh\n")
+	m.write("features/tool/home/.local/bin/tool-helper", "#!/bin/sh\n")
+	target, owner := m.at(".local/bin/tool"), m.at(".local/bin/.tool")
+	ours := filepath.Join(m.repo, "features/tool/home/.local/bin/tool")
+	held := Waiting{Subject: target, Reason: "left alone while " + owner + " exists"}
+
+	// Another installer's copy, and the link it reaches that copy through.
+	require.NoError(t, os.MkdirAll(filepath.Join(owner, "current"), 0o700))
+	require.NoError(t, os.Symlink(".tool/current/tool", target))
+	report := m.run(false)
+	assert.Empty(t, report.Problems, "its link is not in the way while its owner is there")
+	assert.Contains(t, report.Waiting, held)
+	dest, err := os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ".tool/current/tool", dest, "left as it was")
+	assert.NotContains(t, m.state.Links, target)
+	assert.Contains(t, m.state.Links, m.at(".local/bin/tool-helper"), "only the held entry waits")
+
+	require.NoError(t, os.Remove(target))
+	report = m.run(false)
+	assert.Contains(t, report.Waiting, held)
+	_, err = os.Lstat(target)
+	assert.ErrorIs(t, err, os.ErrNotExist, "an empty place is not filled while the owner is there")
+
+	require.NoError(t, os.RemoveAll(owner))
+	report = m.run(false)
+	assert.NotContains(t, report.Waiting, held)
+	dest, err = os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ours, dest, "linked once the owner is gone")
+
+	// The owner comes back, even as a dangling link: apply's own link stays, and so does its record.
+	require.NoError(t, os.Symlink("nowhere", owner))
+	report = m.run(false)
+	assert.Empty(t, report.Actions)
+	assert.Contains(t, report.Waiting, held)
+	assert.Equal(t, ours, m.state.Links[target])
+	dest, err = os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ours, dest)
+}
+
+func TestALinkWithoutItsHolderIsStillInTheWay(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/tool/feature.toml", `id = "tool"
+default = true
+[provides]
+link = [".local/bin/tool"]
+[provides.link_unless_exists]
+".local/bin/tool" = ["~/.local/bin/.tool"]
+`)
+	m.write("features/tool/home/.local/bin/tool", "#!/bin/sh\n")
+	require.NoError(t, os.MkdirAll(m.at(".local/bin"), 0o700))
+	require.NoError(t, os.Symlink(".tool/current/tool", m.at(".local/bin/tool")))
+	report := m.run(false)
+	require.Len(t, report.Problems, 1)
+	assert.Contains(t, report.Problems[0].Detail, "a link to .tool/current/tool is in the way")
+	assert.Empty(t, report.Waiting)
+}

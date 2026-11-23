@@ -119,6 +119,42 @@ func TestSettingExports(t *testing.T) {
 	assert.NotContains(t, env, "tool.quiet", "a setting without an env name is not exported")
 }
 
+func TestLinkHoldsAreExpandedForTheHome(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	tool := feature(t, root, manifest.Feature{ID: "tool", Provides: manifest.Provides{
+		Link:             []string{".local/bin/tool", ".local/bin/helper"},
+		LinkUnlessExists: map[string][]string{".local/bin/tool": {"~/.local/bin/.tool", "/opt/tool"}},
+	}}, map[string]string{"home/.local/bin/tool": "", "home/.local/bin/helper": ""})
+
+	p, err := Build(map[string]*manifest.Feature{"tool": tool}, []string{"tool"}, nil,
+		Env{Home: home, GeneratedDir: filepath.Join(home, "gen"), GOOS: "darwin"})
+	require.NoError(t, err)
+	holds := map[string][]string{}
+	for _, l := range p.Links {
+		holds[filepath.Base(l.Target)] = l.UnlessExists
+	}
+	assert.Equal(t, map[string][]string{
+		"tool":   {filepath.Join(home, ".local/bin/.tool"), "/opt/tool"},
+		"helper": nil,
+	}, holds)
+}
+
+func TestALinkHoldUnderLibraryIsRefused(t *testing.T) {
+	root := t.TempDir()
+	app := feature(t, root, manifest.Feature{ID: "app", Provides: manifest.Provides{
+		Link:             []string{"Library/Preferences/app.plist"},
+		LinkUnlessExists: map[string][]string{"Library/Preferences/app.plist": {"~/.app"}},
+	}}, map[string]string{"home/Library/Preferences/app.plist": ""})
+
+	for _, goos := range []string{"darwin", "linux"} {
+		_, err := Build(map[string]*manifest.Feature{"app": app}, []string{"app"}, nil,
+			Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: goos})
+		require.ErrorIs(t, err, ErrPlan, goos)
+		assert.Contains(t, err.Error(), "installed as copies on macOS, which it cannot hold")
+	}
+}
+
 const agentTemplate = `<?xml version="1.0" encoding="UTF-8"?>
 <plist version="1.0">
 <dict>

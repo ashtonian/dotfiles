@@ -62,6 +62,9 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a launch agent that is not a plist", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"agent.xml\"\n", "must be a .plist file"},
 		{"a launch agent outside the feature", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"../com.example.a.plist\"\n", "leaves the feature directory"},
 		{"a relative when_exists", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"com.example.a.plist\"\nwhen_exists = [\"bin/tool\"]\n", "must be absolute or start with ~/"},
+		{"a hold on a path it does not link", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/b\" = [\"~/.b\"]\n", `link_unless_exists names ".local/bin/b", which is not in link`},
+		{"a hold with no paths", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = []\n", "list the paths that hold it"},
+		{"a relative hold", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = [\".local/bin/.a\"]\n", "must be absolute or start with ~/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +91,23 @@ when_exists = ["/opt/homebrew/bin/go", "~/.config/trim/enabled"]
 	require.NoError(t, err)
 	assert.Equal(t, []LaunchAgent{{Plist: "launchagents/com.example.trim.plist",
 		WhenExists: []string{"/opt/homebrew/bin/go", "~/.config/trim/enabled"}}}, features["tool.trim"].Provides.LaunchAgent)
+}
+
+func TestLoadFeaturesReadsLinkHolds(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "tool.a", `
+id = "tool.a"
+
+[provides]
+link = [".local/bin/a", ".local/bin/b"]
+
+[provides.link_unless_exists]
+".local/bin/a" = ["~/.local/bin/.a", "/opt/a"]
+`)
+	features, err := LoadFeatures(Root{Dir: root})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{".local/bin/a": {"~/.local/bin/.a", "/opt/a"}},
+		features["tool.a"].Provides.LinkUnlessExists)
 }
 
 func TestLoadFeaturesRejectsALaunchAgentDeclaredTwice(t *testing.T) {
