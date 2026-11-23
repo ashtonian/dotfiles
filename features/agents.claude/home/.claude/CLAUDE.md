@@ -235,8 +235,9 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 ### Testing
 
-- Prefer integration tests against real dependencies (Docker) over unit tests with mocks.
-- Unit tests only for pure logic with no external deps — validation, parsing, transforms.
+- **Integration tests are the default.** Test behavior against real dependencies (Docker) through the boundaries the code actually crosses: the database, queue, cache or HTTP API it talks to.
+- **Unit tests rarely**, only where one clearly beats an integration test: input validation, or pure logic with many edge cases (parsing, encoding). Never as a stand-in for an integration test, and never to move a coverage number.
+- **No fuzz tests.** They find something only over long `-fuzz` runs with a maintained corpus; a plain `go test` runs just their seed inputs, which a table-driven test states more plainly.
 - Do not mock unless genuinely necessary (e.g., simulating hard-to-reproduce errors). When you do, use hand-rolled mocks implementing interfaces — no mock generation frameworks.
 - Use table-driven tests with `t.Run(tt.name, ...)` when testing multiple inputs against the same logic.
 - Use `testify/assert` for assertions.
