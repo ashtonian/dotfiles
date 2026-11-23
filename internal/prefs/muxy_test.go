@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"slices"
@@ -37,8 +38,15 @@ func fakeMuxy(t *testing.T, mode string, settings map[string]any) (home, state s
 	return home, state
 }
 
+// fakeMuxyDefaults are the settings the stand-in lists while nothing sets
+// them, as Muxy lists every setting with a default; both keep their floats as
+// 32-bit numbers, as Muxy does.
+var fakeMuxyDefaults = map[string]any{"terminal.font_size": 13.0, "composer.line_height": float64(float32(1.2))}
+
 // TestFakeMuxy is not a test: fakeMuxy runs the test binary through it to
-// answer `muxy config` the way Muxy 2.5 does.
+// answer `muxy config` the way Muxy 2.5 does: set and unset save the change,
+// then a running app that fails to apply it makes them exit 1 with "saved,
+// but the running app couldn't apply it".
 func TestFakeMuxy(t *testing.T) {
 	state := os.Getenv("FAKE_MUXY_STATE")
 	if state == "" {
@@ -69,7 +77,14 @@ func TestFakeMuxy(t *testing.T) {
 	case len(args) == 3 && args[0] == "config" && args[1] == "list":
 		fail("list takes no arguments")
 	case len(args) == 2 && args[0] == "config" && args[1] == "list":
-		out, _ := json.Marshal(settings)
+		listed := maps.Clone(fakeMuxyDefaults)
+		for k, v := range settings {
+			if f, isFloat := v.(float64); isFloat && fakeMuxyDefaults[k] != nil {
+				v = float64(float32(f))
+			}
+			listed[k] = v
+		}
+		out, _ := json.Marshal(listed)
 		fmt.Println(string(out))
 	case len(args) == 4 && args[0] == "config" && args[1] == "set":
 		var parsed map[string]any
@@ -88,7 +103,10 @@ func TestFakeMuxy(t *testing.T) {
 	case len(args) == 3 && args[0] == "config" && args[1] == "unset":
 		delete(settings, args[2])
 		save()
-		fmt.Printf("{\"key\":%q}\n", args[2])
+		if mode == "not-applied" {
+			fail("saved, but the running app couldn't apply it: no response from Muxy")
+		}
+		fmt.Printf("{\"key\":%q,\"applied\":true}\n", args[2])
 	default:
 		fail(fmt.Sprintf("unknown command %v", args))
 	}
@@ -119,9 +137,15 @@ func TestMuxyRoundTripsThroughTheAppsTool(t *testing.T) {
 		"terminal.font_families": []any{"FiraCode Nerd Font Mono"}, "terminal.font_size": 14.0}, saved)
 
 	require.NoError(t, m.Unset(ctx, "terminal.font_size"))
-	_, ok, err = m.Get(ctx, "terminal.font_size")
+	v, ok, err = m.Get(ctx, "terminal.font_size")
 	require.NoError(t, err)
-	assert.False(t, ok)
+	assert.True(t, ok, "Muxy lists a setting with a default whether or not the file sets it")
+	assert.True(t, Equal(13.0, v))
+
+	require.NoError(t, m.Set(ctx, "composer.line_height", 1.3))
+	v, _, err = m.Get(ctx, "composer.line_height")
+	require.NoError(t, err)
+	assert.Equal(t, json.Number("1.2999999523162842"), v, "Muxy keeps the float as 32 bits")
 }
 
 func TestMuxyReportsWhatTheAppRefused(t *testing.T) {
@@ -132,12 +156,23 @@ func TestMuxyReportsWhatTheAppRefused(t *testing.T) {
 	assert.False(t, errors.Is(err, ErrNotApplied))
 }
 
-func TestMuxyTellsASavedButUnappliedValueApart(t *testing.T) {
+func TestMuxyTellsASavedButUnappliedChangeApart(t *testing.T) {
 	ctx := context.Background()
-	home, _ := fakeMuxy(t, "not-applied", map[string]any{})
-	err := NewMuxy(MuxyCommands(home), 10*time.Second).Set(ctx, "terminal.font_families", []any{"Menlo"})
+	home, _ := fakeMuxy(t, "not-applied", map[string]any{"terminal.font_size": 14.0})
+	m := NewMuxy(MuxyCommands(home), 10*time.Second)
+
+	err := m.Set(ctx, "terminal.font_families", []any{"Menlo"})
 	assert.ErrorIs(t, err, ErrNotApplied)
 	assert.ErrorContains(t, err, "unknown field")
+
+	// Read back as 1.2999999523162842, which is not the 1.3 asked for, but
+	// the setting moved, so Muxy saved it.
+	assert.ErrorIs(t, m.Set(ctx, "composer.line_height", 1.3), ErrNotApplied)
+
+	// Back to its default, which Muxy still lists.
+	err = m.Unset(ctx, "terminal.font_size")
+	assert.ErrorIs(t, err, ErrNotApplied)
+	assert.ErrorContains(t, err, "no response from Muxy")
 }
 
 func TestMuxyGivesUpOnAToolThatDoesNotAnswer(t *testing.T) {

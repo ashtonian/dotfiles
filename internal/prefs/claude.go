@@ -129,9 +129,31 @@ func (c *Claude) update(ctx context.Context, key string, change func([]member) [
 				return fmt.Errorf("creating %s: %w", filepath.Dir(c.path), err)
 			}
 		}
-		return atomicfile.Write(c.path, after, mode)
+		target, err := c.target()
+		if err != nil {
+			return err
+		}
+		return atomicfile.Write(target, after, mode)
 	}
 	return fmt.Errorf("setting %s in %s: the file kept changing while it was being written", key, c.path)
+}
+
+// target is the file a write replaces: the settings file, or the file it
+// links to, so a settings.json kept elsewhere and linked into ~/.claude stays
+// linked.
+func (c *Claude) target() (string, error) {
+	info, err := os.Lstat(c.path)
+	if errors.Is(err, fs.ErrNotExist) || (err == nil && info.Mode()&fs.ModeSymlink == 0) {
+		return c.path, nil
+	}
+	if err != nil {
+		return "", fmt.Errorf("reading %s: %w", c.path, err)
+	}
+	resolved, err := filepath.EvalSymlinks(c.path)
+	if err != nil {
+		return "", fmt.Errorf("%s is a link to a file that cannot be written: %w", c.path, err)
+	}
+	return resolved, nil
 }
 
 // read returns the file's content and mode; nil content means it does not

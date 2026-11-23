@@ -65,30 +65,40 @@ func (m *Muxy) Get(ctx context.Context, key string) (any, bool, error) {
 
 // Set saves key = value. Muxy refuses a value its app could not start with.
 // When it saves a value the running app then fails to apply, the error wraps
-// ErrNotApplied.
+// ErrNotApplied. Muxy keeps some numbers less precisely than TOML writes them
+// (a float setting is 32-bit), so Get can read back a value that differs a
+// little from the one set.
 func (m *Muxy) Set(ctx context.Context, key string, value any) error {
 	rendered, err := EncodeTOML(value)
 	if err != nil {
 		return fmt.Errorf("muxy setting %s: %w", key, err)
 	}
-	_, err = m.run(ctx, "config", "set", "--json", "--", key, rendered)
-	if err == nil {
-		return nil
-	}
-	if ctx.Err() != nil {
-		return err
-	}
-	// Muxy reports a value it saved but the running app rejected the same
-	// way as one it refused; what it saved tells them apart.
-	if live, ok, getErr := m.Get(ctx, key); getErr == nil && ok && Equal(live, value) {
-		return fmt.Errorf("%w: %w", ErrNotApplied, err)
-	}
-	return err
+	return m.change(ctx, key, "config", "set", "--json", "--", key, rendered)
 }
 
-// Unset returns key to Muxy's default.
+// Unset returns key to Muxy's default. As with Set, an error wrapping
+// ErrNotApplied means the file changed and the running app did not take it.
 func (m *Muxy) Unset(ctx context.Context, key string) error {
-	_, err := m.run(ctx, "config", "unset", "--json", "--", key)
+	return m.change(ctx, key, "config", "unset", "--json", "--", key)
+}
+
+// change runs a `muxy config` command that saves key, then has a running app
+// apply it. Muxy exits the same way when it refuses the change as when it
+// saved the change and the running app failed to apply it; whether key's
+// value moved tells them apart.
+func (m *Muxy) change(ctx context.Context, key string, args ...string) error {
+	before, had, err := m.Get(ctx, key)
+	if err != nil {
+		return err
+	}
+	_, err = m.run(ctx, args...)
+	if err == nil || ctx.Err() != nil {
+		return err
+	}
+	after, has, getErr := m.Get(ctx, key)
+	if getErr == nil && (had != has || !Equal(before, after)) {
+		return fmt.Errorf("%w: %w", ErrNotApplied, err)
+	}
 	return err
 }
 

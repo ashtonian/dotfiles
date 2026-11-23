@@ -111,3 +111,27 @@ func TestClaudeRefusesAFileThatIsNotAnObject(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "[1, 2]\n", string(got), "a file it cannot read is left alone")
 }
+
+func TestClaudeWritesThroughALinkedSettingsFile(t *testing.T) {
+	home := t.TempDir()
+	kept := filepath.Join(home, "elsewhere", "settings.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(kept), 0o755))
+	require.NoError(t, os.WriteFile(kept, []byte("{\n  \"theme\": \"dark\"\n}\n"), 0o644))
+	link := filepath.Join(home, ".claude", "settings.json")
+	require.NoError(t, os.MkdirAll(filepath.Dir(link), 0o700))
+	require.NoError(t, os.Symlink(kept, link))
+
+	require.NoError(t, NewClaude(home).Set(context.Background(), "theme", "custom:dracula"))
+	dest, err := os.Readlink(link)
+	require.NoError(t, err, "settings.json is still a link")
+	assert.Equal(t, kept, dest)
+	data, err := os.ReadFile(kept)
+	require.NoError(t, err)
+	assert.Equal(t, "{\n  \"theme\": \"custom:dracula\"\n}\n", string(data))
+
+	require.NoError(t, os.Remove(kept))
+	err = NewClaude(home).Set(context.Background(), "theme", "dark")
+	assert.ErrorContains(t, err, "is a link to a file that cannot be written")
+	_, err = os.Readlink(link)
+	assert.NoError(t, err, "a dangling link is left for the owner, not replaced")
+}
