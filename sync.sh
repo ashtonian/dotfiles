@@ -10,6 +10,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/rotate-log.sh"
 source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/brew-root.sh"
 # shellcheck source=lib_sh/sync-lock.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/sync-lock.sh"
+# shellcheck source=lib_sh/private-names.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/private-names.sh"
 
 DOTFILES_DIR=$(cd "${DOTFILES_DIR:-$HOME/.dotfiles}" && pwd -P)
 SYNC_DIR="${SYNC_DIR:-$HOME/.sync}"
@@ -198,6 +200,17 @@ scan_dotfiles() {
         log "ERROR: Secret scan failed; no commit or push will be attempted"
         return 1
     fi
+    # The public repository names nothing an overlay keeps private.
+    local found status=0
+    [[ -f "$MACHINE_FILE" ]] || return 0
+    found=$(private_names_found . "$DOTFILES_BIN") || status=$?
+    case $status in
+        0) log "ERROR: Tracked files name what an overlay keeps private; no commit or push will be attempted. Reword them or move them to the overlay:"
+           printf '%s\n' "$found" | tee -a "$LOG_FILE"
+           return 1 ;;
+        1) ;;
+        *) log "ERROR: Cannot list the overlays in $MACHINE_FILE for the private-name check; no commit or push will be attempted"; return 1 ;;
+    esac
 }
 
 integrate_remote() {
