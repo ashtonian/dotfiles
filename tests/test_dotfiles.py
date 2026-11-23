@@ -57,6 +57,8 @@ class Fixture(unittest.TestCase):
                         XDG_CONFIG_HOME=str(self.path / 'config'),
                         TMPDIR=str(self.path),
                         PYTHONDONTWRITEBYTECODE='1')
+        # No test reaches the real sudo; one that needs root to be available stubs it again.
+        self.cli('sudo', 'exit 1')
 
     def cli(self, name, code):
         file = self.bin / name
@@ -251,22 +253,88 @@ class Helpers(Fixture):
         p = subprocess.run(args, env=self.env, capture_output=True, text=True)
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(p.stdout, '')
-        self.assertIn('upgrade', audit.read_text())
+        self.assertIn('upgrade --formula', audit.read_text())
+        self.assertIn('upgrade --cask', audit.read_text())
         self.env['DOTFILES_TEST_BREW_EXIT'] = '7'
         p = subprocess.run(args, env=self.env, capture_output=True, text=True)
-        self.assertEqual(p.returncode, 7)
+        self.assertEqual(p.returncode, 1)
         self.assertEqual(p.stdout, '')
-        self.assertIn('Command failed', p.stderr)
+        self.assertIn('brew update failed', p.stderr)
+        self.assertIn('brew cleanup failed', p.stderr, 'every step runs after a failed one')
 
-    def test_failed_brew_upgrade_still_cleans_up_and_fails_the_step(self):
+    def update_brew_unattended(self, script):
+        """`dotfiles-update.sh --quiet --brew` with no terminal, brew answering from script."""
         audit = self.path / 'brew-audit'
         self.env['DOTFILES_TEST_AUDIT'] = str(audit)
-        self.cli('brew', 'printf "%s\\n" "$1" >> "$DOTFILES_TEST_AUDIT"\n[ "$1" != upgrade ] || exit 7')
+        self.cli('brew', 'printf "%s NO_SUDO=%s\\n" "$*" "${HOMEBREW_NO_SUDO:-}" >> "$DOTFILES_TEST_AUDIT"\n' + script)
         p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-update.sh'), '--quiet', '--brew'],
-                           env=self.env, capture_output=True, text=True)
-        self.assertEqual(p.returncode, 7)
-        self.assertEqual(audit.read_text().split(), ['update', 'upgrade', 'cleanup', 'doctor'])
-        self.assertIn('brew upgrade failed', p.stderr)
+                           env=self.env, capture_output=True, text=True, timeout=60, start_new_session=True)
+        log = (self.path / 'logs/update.log').read_text()
+        return p, audit.read_text().splitlines(), log
+
+    def test_unattended_update_retries_each_item_alone_and_leaves_root_upgrades_for_a_terminal(self):
+        p, calls, log = self.update_brew_unattended(r"""case "$*" in
+  "upgrade --formula") echo "Error: Your Xcode (26.1.1) is too outdated." >&2; exit 1 ;;
+  "outdated --formula --json=v2") echo '{"formulae":[{"name":"ripgrep","pinned":false},{"name":"tap/x/opencode","pinned":false},{"name":"held","pinned":true}],"casks":[]}' ;;
+  "upgrade --formula tap/x/opencode") echo "Error: Your Xcode (26.1.1) is too outdated." >&2; exit 1 ;;
+  "upgrade --cask") exit 1 ;;
+  "outdated --cask --json=v2") echo '{"formulae":[],"casks":[{"name":"wireshark-app"},{"name":"parallels"},{"name":"slack"}]}' ;;
+  "upgrade --cask wireshark-app") echo "Error: wireshark-app: The pkg artifact requires sudo, but HOMEBREW_NO_SUDO is set." >&2; exit 1 ;;
+  "upgrade --cask parallels") echo "touch: /Applications/Parallels Desktop.app/.homebrew-write-test: Permission denied" >&2; exit 1 ;;
+  doctor) echo "Warning: Your Xcode is too outdated." >&2; exit 1 ;;
+esac
+exit 0""")
+        self.assertEqual(p.returncode, 1, p.stderr)
+        upgrades = [c for c in calls if c.startswith('upgrade')]
+        self.assertEqual(upgrades, ['upgrade --formula NO_SUDO=1', 'upgrade --formula ripgrep NO_SUDO=1',
+                                    'upgrade --formula tap/x/opencode NO_SUDO=1', 'upgrade --cask NO_SUDO=1',
+                                    'upgrade --cask wireshark-app NO_SUDO=1', 'upgrade --cask parallels NO_SUDO=1',
+                                    'upgrade --cask slack NO_SUDO=1'], 'a pinned formula is never retried')
+        self.assertIn('cleanup --prune=7 NO_SUDO=1', calls, 'cleanup runs after failed upgrades')
+        self.assertIn('ERROR: brew upgrade --formula failed for tap/x/opencode;', log)
+        self.assertIn('WARN: Left wireshark-app parallels for a terminal', log)
+        self.assertIn('run: brew upgrade --cask wireshark-app parallels', log)
+        self.assertNotIn('brew upgrade --cask failed', log, 'needing root is not a failure')
+        self.assertIn('WARN: brew doctor reported problems', log)
+
+    def test_unattended_update_with_only_root_upgrades_left_succeeds(self):
+        p, calls, log = self.update_brew_unattended(r"""case "$*" in
+  "upgrade --cask") exit 1 ;;
+  "outdated --cask --json=v2") echo '{"casks":[{"name":"nordvpn"}]}' ;;
+  "upgrade --cask nordvpn") echo "Error: nordvpn: The pkg artifact requires sudo, but HOMEBREW_NO_SUDO is set." >&2; exit 1 ;;
+esac
+exit 0""")
+        self.assertEqual(p.returncode, 0, p.stderr + log)
+        self.assertIn('WARN: Left nordvpn for a terminal', log)
+        self.assertIn('Homebrew update complete', log)
+
+    def test_update_with_passwordless_sudo_lets_homebrew_use_it(self):
+        self.cli('sudo', 'exit 0')
+        p, calls, log = self.update_brew_unattended('exit 0')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('upgrade --cask NO_SUDO=', calls)
+        self.assertNotIn('NO_SUDO=1', '\n'.join(calls))
+
+    def test_every_update_stage_runs_when_an_earlier_one_fails(self):
+        home = self.path / 'home'
+        (home / '.local/share/zinit/zinit.git').mkdir(parents=True)
+        (self.path / '.git').mkdir()
+        audit = self.path / 'audit'
+        sync = self.path / 'sync.sh'
+        sync.write_text('#!/bin/sh\nprintf "sync.sh %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\n')
+        sync.chmod(0o755)
+        self.cli('brew', 'printf "brew %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"\nexit 1')
+        for tool in ('git', 'zsh'):
+            self.cli(tool, f'printf "{tool} %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
+        self.env.update(HOME=str(home), DOTFILES_TEST_AUDIT=str(audit), XDG_DATA_HOME=str(home / '.local/share'))
+        self.env.pop('DOTFILES_MISE_CANARY', None)  # not the canary: the Go stage has nothing to do
+        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-update.sh'), '--quiet', '--all'],
+                           env=self.env, capture_output=True, text=True, timeout=60, start_new_session=True)
+        self.assertEqual(p.returncode, 1, p.stderr)
+        steps = audit.read_text()
+        self.assertIn('zsh -ic zinit update --all --quiet', steps)
+        self.assertIn('sync.sh sync', steps)
+        self.assertIn('failed stages: brew\n', p.stderr)
 
     def test_atuin_keeps_history_keys_after_fzf_loads(self):
         fzf = shutil.which('fzf')
@@ -371,6 +439,53 @@ class Sync(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn('install --no-upgrade', audit.read_text())
         self.assertIn('AUTO_UPDATE=1', audit.read_text())
+
+    def brewfile_with_root_entries(self):
+        home = self.path / 'home'
+        generated = home / '.config/dotfiles/generated'
+        generated.mkdir(parents=True)
+        (generated / 'Brewfile').write_text('cask "karabiner-elements" # tool.karabiner\ncask "slack" # brew.apps\n'
+                                            'cask "alfred" # brew.apps\n'
+                                            'mas "Keynote", id: 361285480 # brew.mas\n'
+                                            'mas "Parallels Desktop", id: 1085114709 # brew.mas\n')
+        audit = self.path / 'brew-audit'
+        self.env.update(HOME=str(home), DOTFILES_TEST_AUDIT=str(audit))
+        info = json.dumps({'formulae': [], 'casks': [
+            {'token': 'karabiner-elements', 'full_token': 'karabiner-elements',
+             'artifacts': [{'uninstall': [{'script': {'sudo': True}}]}, {'pkg': ['Karabiner-Elements.pkg']}]},
+            {'token': 'slack', 'full_token': 'slack',
+             'artifacts': [{'uninstall': [{'delete': ['/x'], 'sudo': True}]}, {'app': ['Slack.app']}]}]})
+        self.cli('brew', f'''case "$*" in
+  "bundle check"*) exit 1 ;;
+  "bundle list --cask"*) printf 'karabiner-elements\\nslack\\nalfred\\n' ;;
+  "list --cask -1") echo alfred ;;
+  "info --json=v2 --cask karabiner-elements slack") echo '{info}' ;;
+  "bundle install"*) printf 'install CASK_SKIP=%s MAS_SKIP=%s NO_SUDO=%s\\n' "$HOMEBREW_BUNDLE_CASK_SKIP" "$HOMEBREW_BUNDLE_MAS_SKIP" "${{HOMEBREW_NO_SUDO:-}}" >> "$DOTFILES_TEST_AUDIT" ;;
+  *) echo "unexpected brew $*" >&2; exit 2 ;;
+esac''')
+        self.cli('mas', 'printf "361285480  Keynote  (16.0)\\n"')
+        return audit
+
+    def test_unattended_sync_leaves_root_installs_for_a_terminal(self):
+        audit = self.brewfile_with_root_entries()
+        p = subprocess.run(['/bin/bash', '-c', 'source "$1"; sync_brewfile', 'test', str(ROOT / 'sync.sh')],
+                           cwd=self.path, env=self.env, capture_output=True, text=True, timeout=30,
+                           start_new_session=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(audit.read_text(), 'install CASK_SKIP=karabiner-elements MAS_SKIP=1085114709 NO_SUDO=1\n',
+                         'a cask that needs root only to uninstall still installs; an installed app is not skipped')
+        self.assertIn('WARN: Left cask karabiner-elements, mas Parallels Desktop (1085114709) for a terminal', p.stdout)
+        self.assertIn('run: brew bundle install --file=', p.stdout)
+
+    def test_sync_with_passwordless_sudo_installs_everything(self):
+        audit = self.brewfile_with_root_entries()
+        self.cli('sudo', 'exit 0')
+        p = subprocess.run(['/bin/bash', '-c', 'source "$1"; sync_brewfile', 'test', str(ROOT / 'sync.sh')],
+                           cwd=self.path, env=self.env, capture_output=True, text=True, timeout=30,
+                           start_new_session=True)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(audit.read_text(), 'install CASK_SKIP= MAS_SKIP= NO_SUDO=\n')
+        self.assertNotIn('WARN', p.stdout)
 
     def test_sync_installs_mise_tools_only_when_some_are_missing(self):
         audit = self.path / 'mise-audit'

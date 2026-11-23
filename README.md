@@ -47,6 +47,7 @@ recognize `/usr/local` Homebrew installations.
 | Git, GnuPG, usable signing key | Repository sync and signed commits |
 | Homebrew, Go (version in `go.mod`), Python 3 | Packages, building the `dotfiles` engine, and AWS profile helpers |
 | Gitleaks | Scanning dotfiles before automatic publication |
+| jq (`/usr/bin/jq` on macOS 15 and later, or the `brew.base` formula) | Sync and the weekly update telling which casks need root, and the update's retries |
 | GitHub CLI (gh), authenticated for each destination | Checking GitHub commit verification after a push |
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
@@ -126,7 +127,7 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
 | This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
 | The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
-| Missing packages | brew bundle install `--no-upgrade` | Every sync |
+| Missing packages | brew bundle install `--no-upgrade` | Every sync; under the LaunchAgent, casks that install as root and App Store apps wait for a terminal, named in a `WARN` line |
 
 Sync publishes edits to files the repository already tracks. A new file is
 never published until you commit it yourself. A repository with a Git index
