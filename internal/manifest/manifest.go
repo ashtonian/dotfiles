@@ -100,6 +100,11 @@ type Provides struct {
 	Link      []string        `toml:"link"`       // files under home/, linked one by one
 	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
 	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
+	// LinkUnlessExists holds links back: for an entry of Link, paths
+	// (absolute or starting with ~/) whose presence means something else owns
+	// the link's place. While any exists, apply neither makes nor replaces the
+	// entry's links.
+	LinkUnlessExists map[string][]string `toml:"link_unless_exists"`
 	// Prefs maps a store from prefs.Stores to a file of the settings this
 	// feature owns in that app, set key by key; see package prefs.
 	Prefs map[string]string `toml:"prefs"`
@@ -156,6 +161,20 @@ type Setting struct {
 	// Env exports the resolved value under this name in the generated env.sh.
 	// Secrets cannot be exported.
 	Env string `toml:"env"`
+	// Values, for a string setting, are the only values it may take, so a
+	// typo fails resolve instead of the script that reads the setting.
+	Values []string `toml:"values"`
+}
+
+// Check validates a value for this setting: its type, then Values.
+func (s Setting) Check(v any) error {
+	if err := CheckValue(s.Type, v); err != nil {
+		return err
+	}
+	if len(s.Values) > 0 && !slices.Contains(s.Values, v.(string)) {
+		return fmt.Errorf("want one of %s, got %q", strings.Join(s.Values, ", "), v)
+	}
+	return nil
 }
 
 // Profile is a named set of feature decisions, setting values and app
@@ -451,6 +470,19 @@ func validateFeature(f *Feature, dirName string) error {
 			return err
 		}
 	}
+	for entry, paths := range f.Provides.LinkUnlessExists {
+		if !slices.Contains(f.Provides.Link, entry) {
+			return fmt.Errorf("link_unless_exists names %q, which is not in link", entry)
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("link_unless_exists %s: list the paths that hold it", entry)
+		}
+		for _, w := range paths {
+			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
+				return fmt.Errorf("link_unless_exists %s: %q must be absolute or start with ~/", entry, w)
+			}
+		}
+	}
 	for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
 		if !slices.Contains(prefs.Stores, store) {
 			return fmt.Errorf("prefs names unknown store %q (want one of %s)", store, strings.Join(prefs.Stores, ", "))
@@ -514,8 +546,16 @@ func validateFeature(f *Feature, dirName string) error {
 		if !slices.Contains(SettingTypes, s.Type) {
 			return fmt.Errorf("setting %q has unknown type %q (want one of %s)", name, s.Type, strings.Join(SettingTypes, ", "))
 		}
+		if len(s.Values) > 0 && s.Type != "string" {
+			return fmt.Errorf("setting %q lists values, which only a string setting can", name)
+		}
+		for i, v := range s.Values {
+			if v == "" || slices.Contains(s.Values[:i], v) {
+				return fmt.Errorf("setting %q values must be distinct and not empty", name)
+			}
+		}
 		if s.Default != nil {
-			if err := CheckValue(s.Type, s.Default); err != nil {
+			if err := s.Check(s.Default); err != nil {
 				return fmt.Errorf("setting %q default: %w", name, err)
 			}
 		}

@@ -238,7 +238,7 @@ func resolveSettings(features map[string]*manifest.Feature, profiles map[string]
 			if !ok {
 				return fmt.Errorf("%w: %s sets unknown setting %q", ErrConflict, source, name)
 			}
-			if err := manifest.CheckValue(d.setting.Type, src[name]); err != nil {
+			if err := d.setting.Check(src[name]); err != nil {
 				return fmt.Errorf("%w: %s: setting %q: %w", ErrConflict, source, name, err)
 			}
 			if slices.Contains(order, d.feature) {

@@ -35,6 +35,9 @@ type Env struct {
 // Link is a file in $HOME that should be a symlink to a tracked file.
 type Link struct {
 	Target, Source, Feature string
+	// UnlessExists are absolute paths; while any exists, something else owns
+	// Target and apply leaves it alone.
+	UnlessExists []string
 }
 
 // Copy is a file in $HOME that should be a managed copy of a tracked file.
@@ -151,6 +154,15 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 			if err != nil {
 				return nil, err
 			}
+			var unless []string
+			if held, ok := f.Provides.LinkUnlessExists[entry]; ok {
+				if underLibrary(entry) {
+					return nil, fmt.Errorf("%w: %s: link_unless_exists %s: files under Library/ are installed as copies on macOS, which it cannot hold", ErrPlan, id, entry)
+				}
+				for _, path := range held {
+					unless = append(unless, homePath(path, env.Home))
+				}
+			}
 			for _, rel := range files {
 				target := filepath.Join(env.Home, rel)
 				if err := claim(target, id); err != nil {
@@ -162,7 +174,7 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 				if env.GOOS == "darwin" && underLibrary(rel) {
 					p.Copies = append(p.Copies, Copy{Target: target, Source: source, Feature: id})
 				} else {
-					p.Links = append(p.Links, Link{Target: target, Source: source, Feature: id})
+					p.Links = append(p.Links, Link{Target: target, Source: source, Feature: id, UnlessExists: unless})
 				}
 			}
 		}
@@ -417,10 +429,7 @@ func launchAgent(f *manifest.Feature, a manifest.LaunchAgent, home string) (Laun
 	agent := LaunchAgent{Label: job.Label, Target: agentTarget(home, job.Label), Source: source, Content: content,
 		Definition: def, Feature: f.ID, KeepAlive: job.KeepAlive}
 	for _, path := range a.WhenExists {
-		if rest, ok := strings.CutPrefix(path, "~/"); ok {
-			path = filepath.Join(home, filepath.FromSlash(rest))
-		}
-		agent.WhenExists = append(agent.WhenExists, path)
+		agent.WhenExists = append(agent.WhenExists, homePath(path, home))
 	}
 	for _, log := range []string{job.StandardOutPath, job.StandardErrorPath} {
 		if log == "" {
@@ -436,6 +445,15 @@ func launchAgent(f *manifest.Feature, a manifest.LaunchAgent, home string) (Laun
 
 func agentTarget(home, label string) string {
 	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
+}
+
+// homePath turns a manifest path that starts with ~/ into one under home;
+// an absolute path stays as it is.
+func homePath(path, home string) string {
+	if rest, ok := strings.CutPrefix(path, "~/"); ok {
+		return filepath.Join(home, filepath.FromSlash(rest))
+	}
+	return path
 }
 
 func underLibrary(rel string) bool {

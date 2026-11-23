@@ -171,6 +171,9 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.brew_link]          # a formula's Brewfile `link:` option
 # zoxide = false
 
+[provides.link_unless_exists] # a `link` entry left alone while any of these absolute or ~/ paths exists
+# ".local/bin/zoxide" = ["~/.local/bin/.zoxide-installer"]
+
 [provides.prefs]              # app settings owned key by key: store = prefs file (see App settings)
 # muxy = "muxy.toml"
 
@@ -183,6 +186,7 @@ type    = "bool"
 default = true
 doc     = "Replace cd with zoxide's cd in real interactive sessions only"
 env     = ""                  # export the value under this name in the generated env.sh (not for secrets); an inherited value wins
+values  = []                  # string settings only: the values allowed; any other is a resolve error, which `dotfiles check` reports
 
 [hooks]
 apply    = ""                 # idempotent converge script, settings passed as env
@@ -221,6 +225,20 @@ removes it again when one goes away; `dotfiles doctor` lists what waits. An
 installed plist edited by hand is reported and left loaded. LaunchAgents are
 installed on macOS only; on other platforms the rest of the feature applies.
 [OPERATIONS.md](OPERATIONS.md#launchagents) lists the repository's agents.
+
+### Held links
+
+`link_unless_exists` names, for an entry of `link`, paths whose presence means
+another installer owns that place, and a running program may depend on what is
+there. While any of them exists, apply neither replaces the entry's link nor
+creates it where nothing is: `dotfiles doctor` lists it as waiting (`left alone
+while <path> exists`), not as a problem, and a link apply made earlier stays,
+with its record. Once none exists, apply links the entry as usual. A file
+another tool put there is never replaced in any case (it is reported as in the
+way); the hold also keeps the place empty and quiet while the owner is there.
+Files under `Library/` cannot be held, since they are installed as managed
+copies on macOS. `tool.muxy` holds `~/.local/bin/muxy` while Muxy's own server
+copy, `~/.local/bin/.muxy`, exists ([MUXY.md](MUXY.md#why-the-wrapper)).
 
 `schedules` (rollout step 6) will render one job definition for launchd,
 systemd and Task Scheduler; `launch_agent` is the macOS-only form that runs the
@@ -473,7 +491,7 @@ Sections:
 The target catalog, grouped by category; each row is one toggle. Rollout step
 5b built the coarser features the later steps split into these: `shell.env`,
 `shell.zsh`, `git`, `git.keychain`, `ssh`, `tool.gh`, `tool.atuin`, `tool.htop`,
-`tool.colorls`, `tool.mise`, `tool.neofetch`, `tool.taskwarrior`,
+`tool.colorls`, `tool.mise`,
 `agents.claude`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
 `backup.mackup.config`, and the packages `brew.base`, `brew.macos`,
 `brew.apps`, `brew.desktop`, `brew.activity-trackers`, `brew.mas`,
@@ -491,7 +509,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
-| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner` |
+| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner`, `tool.muxy` |
 | security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
 
 ## Mackup

@@ -91,10 +91,11 @@ type Problem struct {
 
 // Waiting is a change apply leaves for a later run: a LaunchAgent's install
 // until a path it needs exists, its reload or removal while that would stop
-// the job in the middle of a run, or putting back an app setting while its
+// the job in the middle of a run, a link held while a path that owns its
+// place exists (link_unless_exists), or putting back an app setting while its
 // app is not available.
 type Waiting struct {
-	Subject string // the LaunchAgent's label, or the app setting's <store>:<key>
+	Subject string // the LaunchAgent's label, the link's path, or the app setting's <store>:<key>
 	Reason  string
 }
 
@@ -609,6 +610,21 @@ func (r *runner) link(l plan.Link) error {
 		if src, ok := r.prev.Links[l.Target]; ok {
 			r.next.Links[l.Target] = src
 		}
+	}
+	// Checked before prepare, which may unfold a parent: a held link changes
+	// nothing on disk.
+	for _, path := range l.UnlessExists {
+		_, err := os.Lstat(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			r.problem(path, fmt.Sprintf("cannot tell whether it exists, which holds %s back: %v", l.Target, err))
+		} else {
+			r.wait(l.Target, "left alone while "+path+" exists")
+		}
+		keepPrevious()
+		return nil
 	}
 	pretend, err := r.prepare(l.Target)
 	if err != nil {

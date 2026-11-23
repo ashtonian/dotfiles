@@ -74,8 +74,9 @@ The `dotfiles` engine's flags:
 
 OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
-agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), and the agent
-telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config).
+agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), the agent
+telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config), and
+`muxy-reconcile`'s in [MUXY.md](MUXY.md#config).
 LaunchAgents do not read `~/.zshrc.local`. Set a service's variables in its
 template's `EnvironmentVariables` (`features/<id>/launchagents/`); the next
 `dotfiles apply` writes the plist and reloads the job. apply never overwrites an
@@ -162,6 +163,7 @@ profiles enable without running an installer.
 | `com.ashtonian.disk-hygiene` | `macos.disk-hygiene` (base) | Daily 04:15, or at wake | |
 | `com.ashtonian.go-cache-trim` | `tool.go-cache-trim` (base) | Hourly and at load | `/opt/homebrew/bin/go` |
 | `com.ashtonian.gpg-agent` | `tool.gpg-agent` (base) | Service, GUI login only | `/opt/homebrew/bin/gpgconf` |
+| `com.ashtonian.muxy-reconcile` | `tool.muxy` (desktop) | At load, when a server list is added or removed, when apply rewrites its generated files (`muxy.reconcile`, `muxy.exclude_servers`), and hourly | `/Applications/Muxy.app`, `/opt/homebrew/bin/python3` |
 | `com.ashtonian.codex-remote-control` | `agents.codex` (dev) | Service | `/opt/homebrew/bin/codex` |
 | `com.ashtonian.agent-monitor` | `agents.agent-monitor` (dev) | Service, while the data link resolves | `agent-monitor install`'s release |
 | `com.ashtonian.agent-monitor-gate` | `agents.agent-monitor` (dev) | Service | `agent-monitor lan enable`'s token |
@@ -379,6 +381,54 @@ started outside this login`) mean something keeps stopping the agent: look for
 `gpg-agent did not start` means the agent cannot listen on its socket: run
 `gpgconf --list-dirs agent-socket` and check that `~/.gnupg` exists with mode
 0700.
+
+### Muxy remote servers
+
+`com.ashtonian.muxy-reconcile` runs `muxy-reconcile`, which keeps the
+`[[servers]]` tables of Muxy's `settings.toml` in step with the lists in
+`~/.config/muxy/servers.d/` (each context's overlay links one). While the
+setting `muxy.reconcile` is `report`, the default, a run only logs what it would
+change (`diff:` lines, then `report: would change ...`) and writes nothing; a Mac
+moves to `apply` in its own `machine.toml`, the Mac mini first
+([Rollout](MUXY.md#rollout)). A run that finds nothing to change writes nothing
+and does not start Muxy. Its exit status: 0 in step, changed or reported, 1 Muxy
+refused the file or a command failed, 2 a bad list, `muxy.reconcile` or
+`muxy.exclude_servers` value, or the lists directory missing while entries are
+managed (nothing written), 3 Muxy saved during the run (the next run retries), 69
+Muxy.app missing. It never stops, restarts or upgrades a Muxy
+server, and the only command it sends a running app is `muxy config reload`
+([what that does](MUXY.md#what-muxys-commands-do-to-a-running-muxy)).
+
+One Mac changes what it gets in files only it has: `muxy.exclude_servers` in
+`machine.toml` leaves declared servers out, a local list in
+`~/.config/muxy/servers.d/` adds its own (and, with an exclusion, renames one),
+and `~/.ssh/config.local` changes how one is reached
+([Per-machine changes](MUXY.md#per-machine-changes)).
+
+On a Mac where Muxy's own **Install muxy-server** ran, `~/.local/bin/.muxy`
+holds the server copy that a running `muxy-server` may execute from. apply
+leaves `~/.local/bin/muxy` alone while it exists (`dotfiles doctor`: `waiting
+... left alone while ~/.local/bin/.muxy exists`). Never remove or move either
+path while a `muxy-server` runs from it (`ps -axo pid,command | grep
+'[m]uxy-server'`): that waits for a planned server restart
+([Replacing Muxy's own server copy](MUXY.md#replacing-muxys-own-server-copy)).
+
+```sh
+muxy-reconcile --mode report                               # decisions and the diff it would make; writes nothing
+tail -30 ~/Library/Logs/muxy-reconcile/muxy-reconcile.log  # one line per decision per run
+launchctl print "gui/$(id -u)/com.ashtonian.muxy-reconcile"   # last exit status
+ssh -G <alias> | grep -E '^(user|hostname|port) '          # where a listed server leads from this Mac
+```
+
+At 2am, a server Muxy shows offline is almost always one of three things:
+`~/.ssh/config.local` has its own `Host <alias>` block, which ssh reads first;
+known_hosts has no key under the HostName the alias leads to (the log says
+`no host key`; Muxy connects with `StrictHostKeyChecking=ask` and `BatchMode=yes`, so
+it refuses instead of asking; `ssh <alias> true` once fixes it); or the far
+side's `~/.local/bin/muxy` is missing or is Muxy's own copy, not the app's
+(held for a planned restart there; see above).
+The full table, and what each exit status asks for, is in
+[MUXY.md](MUXY.md#operations).
 
 ## App backups
 

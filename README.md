@@ -68,7 +68,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
+| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, the hourly Muxy server list, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
 
 ## Architecture
 
@@ -263,7 +263,7 @@ removed.
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14) |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, passkey prompts turned off (`browser.passkeys-off`), the Karabiner mouse mapping (`tool.karabiner`), Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14), its command line tool and the other Macs as its remote servers |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -588,6 +588,36 @@ brew install --cask karabiner-elements
 
 Checking the button with Karabiner-EventViewer, and troubleshooting:
 [docs/KARABINER.md](docs/KARABINER.md).
+
+## Muxy remote servers
+
+Feature `tool.muxy` (desktop profile) makes each Mac's Muxy list the other Macs of
+every context it works in as remote servers. Each context's overlay names its Macs:
+`Host` aliases in an `ssh_config` fragment, and a list linked to
+`~/.config/muxy/servers.d/<context>.toml`. `muxy-reconcile`, run by the LaunchAgent
+`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, when apply
+rewrites its generated files, and hourly,
+rewrites only the `[[servers]]` tables of Muxy's `settings.toml`: it leaves out the Mac
+it runs on, keeps the ids of entries that already reach the same Mac (Muxy ties tabs to
+them), keeps entries added by hand, and writes only what Muxy's own parser accepts. Until
+a Mac's `machine.toml` sets `muxy.reconcile` to `apply`, it only logs what it would change
+(the Mac mini moves first; [Rollout](docs/MUXY.md#rollout)).
+`~/.local/bin/muxy` runs the app's own `muxy`, which is also what Muxy on the other Macs
+starts over SSH. While Muxy's own server copy `~/.local/bin/.muxy` exists, apply leaves
+`~/.local/bin/muxy` alone (a running server may execute from it); the copy is retired by
+hand at a planned server restart only. Neither apply nor `muxy-reconcile` stops, restarts
+or upgrades a Muxy server. One Mac leaves out, adds or renames servers, or changes how one
+is reached, in files only it has (`muxy.exclude_servers` in `machine.toml`, a local list,
+`~/.ssh/config.local`). Once per Mac:
+
+```sh
+dotfiles doctor            # "waiting ~/.local/bin/muxy": Muxy's own server copy is here; leave it
+ssh <alias> true           # once per listed Mac: accept its host key
+muxy-reconcile --mode report   # what it would change, checked by Muxy; writes nothing
+```
+
+The algorithm, configuration, exit statuses and troubleshooting:
+[docs/MUXY.md](docs/MUXY.md).
 
 ## Multi-Machine Setup
 
