@@ -141,6 +141,8 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
 | [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`, `bin/agent-monitor`) |
 | [brew-root.sh](lib_sh/brew-root.sh) | `brew_root_available`, `brew_casks_needing_root`: which Homebrew steps a run without a terminal must leave for one (`sync.sh`, `dotfiles-update.sh`) |
+| [machine-setting.sh](lib_sh/machine-setting.sh) | `machine_setting`: a setting's value as `dotfiles apply` generated it into `env.sh`, for scripts LaunchAgents run (`bin/disk-hygiene`, `dotfiles-update.sh`) |
+| [private-names.sh](lib_sh/private-names.sh) | `private_names_found`: tracked lines that name something on an overlay's `denylist.txt` (`sync.sh`, `bin/check-private-names`) |
 | [sync-lock.sh](lib_sh/sync-lock.sh) | `sync_lock_take`, `without_sync_lock`: the `logs/sync.flock` lock that makes sync and update runs exclusive, and runs a step without its descriptor (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
@@ -182,6 +184,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry to the cluster gateway through a disk queue; `converge` (run by sync), `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
 | [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
+| [bin/check-private-names](bin/check-private-names) | Fail when a tracked line names something an overlay keeps private (its `denylist.txt`); sync runs the same check before publishing |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |
 | [features/tool.muxy/home/.local/bin/muxy](features/tool.muxy/home/.local/bin/muxy) | Run the `muxy` inside `/Applications/Muxy.app` (`DOTFILES_MUXY_APP`); what Muxy on another Mac starts over SSH |
