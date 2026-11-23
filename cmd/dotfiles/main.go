@@ -4,8 +4,10 @@
 // Usage:
 //
 //	dotfiles init --profiles a,b [--force]  write this machine's manifest
-//	dotfiles apply [--dry-run]              install, update and remove what the features say
-//	dotfiles doctor                         report drift and conflicts without changing anything
+//	dotfiles apply [--dry-run]              install, update and remove what the features say,
+//	                                        LaunchAgents included
+//	dotfiles doctor                         report drift and conflicts without changing anything,
+//	                                        and the LaunchAgents waiting for a later run
 //	dotfiles status [--json]                list every feature, whether it is enabled, and why
 //	dotfiles check                          validate the manifests and plan this machine, reading nothing under $HOME
 //	dotfiles adopt [flags] <path>...        make local edits to managed copies the repository's version
@@ -35,6 +37,7 @@ import (
 	"time"
 
 	"github.com/ashtonian/dotfiles/internal/apply"
+	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 	"github.com/ashtonian/dotfiles/internal/plan"
 	"github.com/ashtonian/dotfiles/internal/resolve"
@@ -65,6 +68,15 @@ type paths struct {
 	config                                      string // ~/.config
 }
 
+// applyOptions are apply's and doctor's limits and their launchd domain.
+type applyOptions struct {
+	dryRun               bool
+	lockWait, gitTimeout time.Duration
+	launchctl            string
+	launchctlTimeout     time.Duration
+	launchAgents         bool
+}
+
 func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|adopt [flags]")
@@ -87,6 +99,8 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	profiles := flags.String("profiles", "", "init: comma-separated profiles, in order")
 	force := flags.Bool("force", false, "init: replace an existing machine manifest")
 	gitTimeout := flags.Duration("git-timeout", 30*time.Second, "apply: how long listing the repository's tracked files may take")
+	launchctlTimeout := flags.Duration("launchctl-timeout", 30*time.Second, "apply: how long one launchctl call may take")
+	launchAgents := flags.Bool("launch-agents", true, "apply: install, load and remove LaunchAgents; false leaves them as they are")
 	if err := flags.Parse(args[1:]); err != nil {
 		return exitUsage
 	}
@@ -112,13 +126,16 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		p.machine = filepath.Join(config, "dotfiles", "machine.toml")
 	}
 
+	opts := applyOptions{dryRun: *dryRun, lockWait: *lockWait, gitTimeout: *gitTimeout,
+		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents}
 	switch cmd {
 	case "init":
 		return cmdInit(p, *profiles, *force, stdout, stderr)
 	case "apply":
-		return cmdApply(ctx, p, *dryRun, *lockWait, *gitTimeout, stdout, stderr)
+		return cmdApply(ctx, p, opts, false, stdout, stderr)
 	case "doctor":
-		return cmdApply(ctx, p, true, *lockWait, *gitTimeout, stdout, stderr)
+		opts.dryRun = true
+		return cmdApply(ctx, p, opts, true, stdout, stderr)
 	case "status":
 		return cmdStatus(p, *jsonOut, stdout, stderr)
 	case "check":
@@ -178,8 +195,10 @@ func exitFor(err error, stderr io.Writer) int {
 }
 
 // cmdApply runs apply, or with dryRun the doctor check: the same plan, with
-// nothing changed on disk.
-func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout time.Duration, stdout, stderr io.Writer) int {
+// nothing changed on disk. The doctor also lists the LaunchAgents waiting for
+// a later run.
+func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdout, stderr io.Writer) int {
+	dryRun := opts.dryRun
 	l, err := load(p)
 	if err != nil {
 		return exitFor(err, stderr)
@@ -190,7 +209,7 @@ func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout ti
 	}
 
 	if !dryRun {
-		lockCtx, cancel := context.WithTimeout(ctx, lockWait)
+		lockCtx, cancel := context.WithTimeout(ctx, opts.lockWait)
 		unlock, err := apply.Lock(lockCtx, p.lock)
 		cancel()
 		if err != nil {
@@ -202,12 +221,18 @@ func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout ti
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	tracked, err := trackedFiles(ctx, p.repo, gitTimeout)
+	tracked, err := trackedFiles(ctx, p.repo, opts.gitTimeout)
 	if err != nil {
 		return exitFor(err, stderr)
 	}
 	env := apply.Env{Home: p.home, RepoRoot: p.repo, StowTree: filepath.Join(p.repo, retiredStowTree),
 		Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }}
+	env.LeaveLaunchAgents = !opts.launchAgents
+	if runtime.GOOS == "darwin" && opts.launchAgents {
+		env.Launchd = launchd.New(opts.launchctl, os.Getuid(), opts.launchctlTimeout)
+		// launchd names the job a process runs in; a terminal's is no LaunchAgent's label.
+		env.Job = os.Getenv("XPC_SERVICE_NAME")
+	}
 	report, next, err := apply.Run(ctx, pl, prev, env, dryRun)
 	if err != nil {
 		return exitFor(err, stderr)
@@ -232,6 +257,12 @@ func cmdApply(ctx context.Context, p paths, dryRun bool, lockWait, gitTimeout ti
 	problems := len(report.Problems)
 	for _, pr := range report.Problems {
 		fmt.Fprintf(stdout, "problem     %s: %s\n", pr.Path, pr.Detail)
+	}
+	if doctor {
+		// Expected states, not problems; apply prints them only as it acts.
+		for _, w := range report.Waiting {
+			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Label, w.Reason)
+		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
 		problems++

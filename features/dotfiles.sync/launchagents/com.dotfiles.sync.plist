@@ -24,14 +24,17 @@ LOGS:
     - Full log: ~/.dotfiles/logs/sync.log
 
 INSTALLATION:
-    ~/.dotfiles/bin/dotfiles-install-launchagents.sh
+    dotfiles apply, for the dotfiles.sync feature. Edit this template, not the
+    installed copy: apply reloads the job when the template changes. A run of
+    this job cannot reload itself, so its own change takes effect at the next
+    apply outside it (the weekly update, or a terminal).
 
 MANUAL COMMANDS:
-    # Check if running:
-    launchctl list | grep com.dotfiles.sync
+    # Check its state:
+    launchctl print gui/$(id -u)/com.dotfiles.sync
 
     # Manually trigger sync:
-    launchctl start com.dotfiles.sync
+    launchctl kickstart gui/$(id -u)/com.dotfiles.sync
 
     # Or run directly:
     ~/.dotfiles/sync.sh sync
@@ -39,8 +42,8 @@ MANUAL COMMANDS:
     # View recent logs:
     tail -50 ~/.dotfiles/logs/sync.log
 
-    # Unload (disable):
-    launchctl unload ~/Library/LaunchAgents/com.dotfiles.sync.plist
+    # Disable: add "dotfiles.sync" to [features] disable in
+    # ~/.config/dotfiles/machine.toml, then run dotfiles apply.
 
 ================================================================================
 -->

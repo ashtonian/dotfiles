@@ -203,8 +203,11 @@ setup_features() {
         # ${a[@]+...}: bash 3.2 rejects an empty array under set -u.
         "$DOTFILES_BIN" init --repo "$DOTFILES_DIR" --profiles "$PROFILES" ${force[@]+"${force[@]}"}
     fi
+    # Without the LaunchAgents: the sync job runs at load and would take the
+    # sync lock from the package steps below, then install unattended, which
+    # skips every package that needs root. start_launch_agents loads them last.
     info "Applying this machine's features..."
-    if "$DOTFILES_DIR/sync.sh" apply; then
+    if "$DOTFILES_BIN" apply --repo "$DOTFILES_DIR" --launch-agents=false; then
         success "Features applied"
     else
         warn "dotfiles apply left problems to resolve; run '$DOTFILES_BIN doctor'"
@@ -223,14 +226,15 @@ install_packages() {
 #=============================================================================
 # LAUNCH AGENTS
 #=============================================================================
-install_launch_agents() {
-    info "Installing LaunchAgents..."
-
-    if [[ -x "$DOTFILES_DIR/bin/dotfiles-install-launchagents.sh" ]]; then
-        "$DOTFILES_DIR/bin/dotfiles-install-launchagents.sh"
-        success "LaunchAgents installed"
+# A full apply, now that the packages some agents wait for are installed
+# (docs/OPERATIONS.md#launchagents). `dotfiles doctor` lists the ones still
+# waiting for a setup step.
+start_launch_agents() {
+    info "Installing and loading the features' LaunchAgents..."
+    if "$DOTFILES_DIR/sync.sh" apply; then
+        success "LaunchAgents loaded; '$DOTFILES_BIN doctor' lists any waiting for a setup step"
     else
-        warn "LaunchAgent installer not found"
+        warn "dotfiles apply left problems to resolve; run '$DOTFILES_BIN doctor'"
     fi
 }
 
@@ -280,7 +284,7 @@ main() {
     install_go
     setup_features
     install_packages
-    install_launch_agents
+    start_launch_agents
     configure_macos
 
     echo ""

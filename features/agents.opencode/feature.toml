@@ -14,3 +14,8 @@ retire = [
 # ~/.config/opencode/node_modules, and Bun resolves a linked plugin's imports
 # from the link's location, so they are found there.
 link = [".config/opencode"]
+
+# The server waits for opencode and the local setup in README.md here.
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.opencode.plist"
+when_exists = ["/opt/homebrew/bin/opencode", "~/.local/share/opencode/homelab/server-password"]

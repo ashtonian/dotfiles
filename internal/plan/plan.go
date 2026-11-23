@@ -1,5 +1,5 @@
 // Package plan turns the enabled features into the files a machine should
-// have: links, managed copies, generated outputs and local stubs.
+// have: links, managed copies, generated outputs, local stubs and LaunchAgents.
 package plan
 
 import (
@@ -9,9 +9,11 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
+	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 )
 
@@ -50,12 +52,38 @@ type Stub struct {
 	KeepExisting        bool
 }
 
+// LaunchAgent is a launchd job to install into ~/Library/LaunchAgents and load.
+type LaunchAgent struct {
+	Label   string
+	Target  string // ~/Library/LaunchAgents/<Label>.plist
+	Source  string // the template in the feature
+	Content []byte // the template with $HOME replaced
+	// Definition fingerprints the job Content defines (launchd.Definition):
+	// a template change that leaves it alone needs no reload.
+	Definition string
+	Feature    string
+	// KeepAlive marks a service launchd keeps running, which a reload
+	// restarts, rather than a job that runs on a schedule and exits.
+	KeepAlive bool
+	// WhenExists are absolute paths that must all exist before the agent is
+	// installed.
+	WhenExists []string
+	// LogDirs are the directories, under $HOME, of its StandardOutPath and
+	// StandardErrorPath. launchd does not create them.
+	LogDirs []string
+}
+
 // Plan is the desired state for one machine.
 type Plan struct {
-	Links     []Link
-	Copies    []Copy
-	Generated []File
-	Stubs     []Stub
+	Links        []Link
+	Copies       []Copy
+	Generated    []File
+	Stubs        []Stub
+	LaunchAgents []LaunchAgent
+	// OffAgents maps the labels of the LaunchAgents that features not
+	// enabled here declare to their install paths. apply removes such a plist
+	// it finds without a record of installing it: the retired installer's.
+	OffAgents map[string]string
 	// Retire lists old install paths to remove when they are still links into
 	// the repository.
 	Retire []string
@@ -127,6 +155,19 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 			}
 			p.Stubs = append(p.Stubs, Stub{Path: target, Line: s.Line, Feature: id, Before: s.Before, KeepExisting: s.KeepExisting})
 		}
+		for _, a := range f.Provides.LaunchAgent {
+			if env.GOOS != "darwin" {
+				break
+			}
+			agent, err := launchAgent(f, a, env.Home)
+			if err != nil {
+				return nil, err
+			}
+			if err := claim(agent.Target, id); err != nil {
+				return nil, err
+			}
+			p.LaunchAgents = append(p.LaunchAgents, agent)
+		}
 	}
 
 	// Every feature's retired paths, enabled or not: an old link is a leftover
@@ -141,6 +182,19 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 			target := filepath.Join(env.Home, filepath.FromSlash(rel))
 			if _, installed := owner[target]; !installed {
 				p.Retire = append(p.Retire, target)
+			}
+		}
+	}
+	if env.GOOS == "darwin" {
+		for _, id := range ids {
+			if slices.Contains(order, id) {
+				continue
+			}
+			for _, a := range features[id].Provides.LaunchAgent {
+				if p.OffAgents == nil {
+					p.OffAgents = map[string]string{}
+				}
+				p.OffAgents[a.Label()] = agentTarget(env.Home, a.Label())
 			}
 		}
 	}
@@ -188,6 +242,51 @@ func expand(f *manifest.Feature, entry string) ([]string, error) {
 		return nil, fmt.Errorf("%w: %s: %s holds no files", ErrPlan, f.ID, entry)
 	}
 	return files, nil
+}
+
+// launchAgent renders a feature's LaunchAgent template for home. The template
+// must be a property list whose Label is its file name without .plist, which
+// is also the installed file's name, so the two can never disagree.
+func launchAgent(f *manifest.Feature, a manifest.LaunchAgent, home string) (LaunchAgent, error) {
+	source := filepath.Join(f.Dir, filepath.FromSlash(a.Plist))
+	template, err := os.ReadFile(source)
+	if err != nil {
+		return LaunchAgent{}, fmt.Errorf("%w: %s: launch_agent: %w", ErrPlan, f.ID, err)
+	}
+	content := bytes.ReplaceAll(template, []byte("$HOME"), []byte(home))
+	job, err := launchd.Read(content)
+	if err != nil {
+		return LaunchAgent{}, fmt.Errorf("%w: %s: %s: %w", ErrPlan, f.ID, a.Plist, err)
+	}
+	if job.Label != a.Label() {
+		return LaunchAgent{}, fmt.Errorf("%w: %s: %s has Label %q; name the file <Label>.plist", ErrPlan, f.ID, a.Plist, job.Label)
+	}
+	def, err := launchd.Definition(content)
+	if err != nil {
+		return LaunchAgent{}, fmt.Errorf("%w: %s: %s: %w", ErrPlan, f.ID, a.Plist, err)
+	}
+	agent := LaunchAgent{Label: job.Label, Target: agentTarget(home, job.Label), Source: source, Content: content,
+		Definition: def, Feature: f.ID, KeepAlive: job.KeepAlive}
+	for _, path := range a.WhenExists {
+		if rest, ok := strings.CutPrefix(path, "~/"); ok {
+			path = filepath.Join(home, filepath.FromSlash(rest))
+		}
+		agent.WhenExists = append(agent.WhenExists, path)
+	}
+	for _, log := range []string{job.StandardOutPath, job.StandardErrorPath} {
+		if log == "" {
+			continue
+		}
+		dir := filepath.Dir(log)
+		if strings.HasPrefix(dir, home+string(filepath.Separator)) && !slices.Contains(agent.LogDirs, dir) {
+			agent.LogDirs = append(agent.LogDirs, dir)
+		}
+	}
+	return agent, nil
+}
+
+func agentTarget(home, label string) string {
+	return filepath.Join(home, "Library", "LaunchAgents", label+".plist")
 }
 
 func underLibrary(rel string) bool {

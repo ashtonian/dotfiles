@@ -1,0 +1,9 @@
+id = "tool.gpg-agent"
+description = "Keeps gpg-agent in the GUI login so SSH sessions can sign (bin/gpg-agent-supervisor)"
+category = "tools"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.gpg-agent.plist"
+# Homebrew's gnupg (brew.base).
+when_exists = ["/opt/homebrew/bin/gpgconf"]

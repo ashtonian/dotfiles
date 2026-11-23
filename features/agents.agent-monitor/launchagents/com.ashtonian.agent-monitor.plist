@@ -3,7 +3,7 @@
 <!--
   Claude Code Agent Monitor: the loopback dashboard for this Mac's Claude Code and
   Codex sessions. Runs through bin/agent-monitor serve (see docs/AGENT-MONITOR.md).
-  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+  dotfiles apply installs it for the agents.agent-monitor feature, with $HOME replaced.
 -->
 <plist version="1.0">
 <dict>

@@ -6,7 +6,7 @@
   SSH sessions and other jobs sign through it. Set GPG_AGENT_SUPERVISOR_SECONDS
   below to change how often it checks. AbandonProcessGroup keeps the agent
   running when the supervisor stops.
-  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+  dotfiles apply installs it for the tool.gpg-agent feature, with $HOME replaced.
 -->
 <plist version="1.0">
 <dict>

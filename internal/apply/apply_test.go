@@ -23,6 +23,8 @@ type machine struct {
 	state                 *State
 	disable               []string
 	tracked               map[string]bool // repository paths git tracks, slash-separated
+	launchd               *fakeLaunchd    // nil: the plan has no LaunchAgents
+	job                   string          // the launchd job the run executes in
 }
 
 func newMachine(t *testing.T) *machine {
@@ -74,8 +76,12 @@ func (m *machine) plan() *plan.Plan {
 
 func (m *machine) run(dryRun bool) *Report {
 	m.t.Helper()
-	report, next, err := Run(context.Background(), m.plan(), m.state, Env{Home: m.home, RepoRoot: m.repo, StowTree: filepath.Join(m.repo, "stow"),
-		Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}, dryRun)
+	env := Env{Home: m.home, RepoRoot: m.repo, StowTree: filepath.Join(m.repo, "stow"),
+		Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }, Job: m.job}
+	if m.launchd != nil {
+		env.Launchd = m.launchd
+	}
+	report, next, err := Run(context.Background(), m.plan(), m.state, env, dryRun)
 	require.NoError(m.t, err)
 	if !dryRun {
 		m.state = next

@@ -162,6 +162,10 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.brew_link]          # a formula's Brewfile `link:` option
 # zoxide = false
 
+[[provides.launch_agent]]     # a launchd job (macOS); one table per agent
+plist       = "launchagents/com.example.zoxide-gc.plist"  # template named <Label>.plist; $HOME is replaced
+when_exists = ["/opt/homebrew/bin/zoxide"]  # absolute or ~/ paths; installed only once all exist
+
 [settings.cd_override]
 type    = "bool"
 default = true
@@ -188,10 +192,32 @@ script: packages are installed, links point at the repo, managed copies match
 their manifest hash, a scheduled job is registered and its last exit was 0, a
 fragment is in the generated output.
 
+### LaunchAgents
+
+A `launch_agent` entry is a launchd job for the user's GUI session. Its template
+lives in the feature (by convention under `launchagents/`) and is named for its
+`Label`; the engine refuses a template whose `Label` is another name, and two
+features declaring one label. apply replaces `$HOME`, installs the result as
+`~/Library/LaunchAgents/<Label>.plist`, creates its log directories under
+`$HOME`, and loads it. A template whose keys or values changed is written and
+the job reloaded (a comment-only change is just written), except while that
+would cut a run short: the job the apply runs in
+(`XPC_SERVICE_NAME`) and a scheduled job in the middle of a run reload at a
+later apply. A service (`KeepAlive`) reloads at once, which restarts it.
+`when_exists` holds an agent back until its program or setup file exists, and
+removes it again when one goes away; `dotfiles doctor` lists what waits. An
+installed plist edited by hand is reported and left loaded. LaunchAgents are
+installed on macOS only; on other platforms the rest of the feature applies.
+[OPERATIONS.md](OPERATIONS.md#launchagents) lists the repository's agents.
+
+`schedules` (rollout step 6) will render one job definition for launchd,
+systemd and Task Scheduler; `launch_agent` is the macOS-only form that runs the
+current jobs until then.
+
 ### Teardown
 
 Disabling a feature reverses each `provides` type: remove its links and
-managed copies, unregister its scheduled jobs (`launchctl bootout`,
+managed copies, unload and remove its LaunchAgents, unregister its scheduled jobs (`launchctl bootout`,
 `systemctl --user disable --now`, `Unregister-ScheduledTask`), drop its
 fragments from the generated outputs, and run its `teardown` hook. Packages
 are not uninstalled automatically, because another tool or the user may rely
@@ -1086,9 +1112,11 @@ Each step is a pull request with its tests and docs.
      home, along with the untracked files still left in the old tree that
      `$HOME` links to); move host-only values into host profiles. The
      machine-local `~/.gitconfig.local`, `~/.ssh/config.local`, `~/.zshrc.local`
-     and `Brewfile.local` stay as they are. `config.sh` and the
-     LaunchAgents move with step 6, which brings the hooks and schedules they
-     need.
+     and `Brewfile.local` stay as they are. `config.sh` moves with step 6,
+     which brings the hooks it needs. The LaunchAgents moved into their
+     features ahead of it (`launch_agent`): only `install.sh` installed them,
+     so a Mac set up another way, or since a new agent landed, ran without
+     them.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
    results, notifications, `doctor --automation` and the status page. Sync's

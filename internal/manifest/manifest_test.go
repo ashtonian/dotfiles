@@ -58,6 +58,9 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a stub keyword that is not one word", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".ssh/config\", line = \"Include x\", before = [\"Host *\"] }]\n", "must be one word"},
 		{"a setting with an unknown type", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"float\"\n", `unknown type "float"`},
 		{"a secret default that is a value", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"secret\"\ndefault = \"hunter2\"\n", "never a value"},
+		{"a launch agent that is not a plist", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"agent.xml\"\n", "must be a .plist file"},
+		{"a launch agent outside the feature", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"../com.example.a.plist\"\n", "leaves the feature directory"},
+		{"a relative when_exists", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"com.example.a.plist\"\nwhen_exists = [\"bin/tool\"]\n", "must be absolute or start with ~/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,6 +71,31 @@ func TestLoadFeaturesRejects(t *testing.T) {
 			assert.Contains(t, err.Error(), tt.want)
 		})
 	}
+}
+
+func TestLoadFeaturesReadsLaunchAgents(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "tool.trim", `
+id = "tool.trim"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.example.trim.plist"
+when_exists = ["/opt/homebrew/bin/go", "~/.config/trim/enabled"]
+`)
+	features, err := LoadFeatures(root)
+	require.NoError(t, err)
+	assert.Equal(t, []LaunchAgent{{Plist: "launchagents/com.example.trim.plist",
+		WhenExists: []string{"/opt/homebrew/bin/go", "~/.config/trim/enabled"}}}, features["tool.trim"].Provides.LaunchAgent)
+}
+
+func TestLoadFeaturesRejectsALaunchAgentDeclaredTwice(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"com.example.job.plist\"\n")
+	writeFeature(t, root, "b", "id = \"b\"\n[[provides.launch_agent]]\nplist = \"launchagents/com.example.job.plist\"\n")
+	_, err := LoadFeatures(root)
+	require.ErrorIs(t, err, ErrInvalid)
+	assert.Contains(t, err.Error(), "LaunchAgent com.example.job is declared by both a and b")
 }
 
 func TestLoadFeaturesRejectsASettingDeclaredTwice(t *testing.T) {

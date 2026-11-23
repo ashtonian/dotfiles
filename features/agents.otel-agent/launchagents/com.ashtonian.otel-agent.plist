@@ -6,7 +6,7 @@
   bin/otel-agent serve (see docs/AGENT-TELEMETRY.md).
   launchd restarts it only while the enrolled host name exists, so a Mac that
   is not enrolled logs serve's refusal once instead of every ThrottleInterval.
-  $HOME is replaced with the actual path by dotfiles-install-launchagents.sh.
+  dotfiles apply installs it for the agents.otel-agent feature, with $HOME replaced.
 -->
 <plist version="1.0">
 <dict>

@@ -40,6 +40,22 @@ def cached_eval_helper():
     return helper[:helper.index('\n}\n') + 3]
 
 
+# launchctl for tests: print, bootstrap, bootout, kickstart and list against
+# $DOTFILES_TEST_LAUNCHD, with launchctl's exit statuses; every call is recorded.
+LAUNCHCTL_STUB = r'''dir=${DOTFILES_TEST_LAUNCHD:?}
+printf '%s\n' "$*" >> "$dir/.audit"
+case $1 in
+print) job=$dir/${2##*/}; [ -f "$job" ] || { echo "Could not find service" >&2; exit 113; }
+       state="not running"; [ ! -e "$job.running" ] || state=running
+       printf '%s = {\n\tstate = %s\n}\n' "$2" "$state" ;;
+bootstrap) job=$dir/$(basename "$3" .plist)
+       [ ! -f "$job" ] || { echo "Bootstrap failed: 5: Input/output error" >&2; exit 5; }; cp "$3" "$job" ;;
+bootout) job=$dir/${2##*/}; [ -f "$job" ] || { echo "Boot-out failed: 3: No such process" >&2; exit 3; }; rm "$job" ;;
+kickstart) [ -f "$dir/${3##*/}" ] || exit 113 ;;
+list) [ -f "$dir/$2" ] || exit 113; [ ! -e "$dir/$2.running" ] || echo '{ "PID" = 42; }' ;;
+esac'''
+
+
 class Fixture(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix='dotfiles-test-')
@@ -59,6 +75,35 @@ class Fixture(unittest.TestCase):
                         PYTHONDONTWRITEBYTECODE='1')
         # No test reaches the real sudo; one that needs root to be available stubs it again.
         self.cli('sudo', 'exit 1')
+        # Nor the real launchd: a GUI domain kept as one file per loaded label,
+        # holding the plist it was bootstrapped from. The engine and the scripts
+        # both run this one.
+        self.launchd = self.path / 'launchd'
+        self.launchd.mkdir()
+        self.cli('launchctl', LAUNCHCTL_STUB)
+        self.env.update(DOTFILES_LAUNCHCTL=str(self.bin / 'launchctl'), DOTFILES_TEST_LAUNCHD=str(self.launchd))
+        self.env.pop('XPC_SERVICE_NAME', None)
+
+    def launchctl_calls(self):
+        audit = self.launchd / '.audit'
+        return audit.read_text().splitlines() if audit.exists() else []
+
+    def loaded(self, label, running=False):
+        """launchd has LABEL loaded, as a run of dotfiles apply left it."""
+        (self.launchd / label).write_text('plist')
+        if running:
+            (self.launchd / f'{label}.running').touch()
+
+    def stub_engine(self, loads=(), unloads=()):
+        """DOTFILES_BIN that records its arguments and, as apply would, loads
+        LOADS and unloads UNLOADS in the stub launchd."""
+        audit = self.path / 'engine-audit'
+        code = f'printf "%s\\n" "$*" >> {audit}\n'
+        code += ''.join(f'printf plist > "$DOTFILES_TEST_LAUNCHD/{label}"\n' for label in loads)
+        code += ''.join(f'rm -f "$DOTFILES_TEST_LAUNCHD/{label}"\n' for label in unloads)
+        self.cli('dotfiles', code)
+        self.env['DOTFILES_BIN'] = str(self.bin / 'dotfiles')
+        return lambda: audit.read_text().splitlines() if audit.exists() else []
 
     def cli(self, name, code):
         file = self.bin / name
@@ -974,6 +1019,55 @@ class RealFeatures(Fixture):
         self.assertIn("PLAYWRIGHT_BROWSERS_PATH='/Volumes/E2TB/cache/ms-playwright'", env)
         self.assertIn("AGENT_MONITOR_DATA_DIR='/Volumes/E2TB/agent-monitor'", env)
 
+    def agent(self, label):
+        return self.home / 'Library/LaunchAgents' / f'{label}.plist'
+
+    def test_every_mac_runs_the_sync_and_update_jobs(self):
+        self.converge('base')
+        for label in ('com.dotfiles.sync', 'com.dotfiles.update', 'com.ashtonian.disk-hygiene'):
+            installed = self.agent(label).read_text()
+            self.assertIn(f'<string>{self.home}/.dotfiles/', installed, '$HOME is this home')
+            self.assertNotIn('$HOME', installed)
+            self.assertEqual((self.launchd / label).read_text(), installed, label + ' is loaded from it')
+        self.assertTrue((self.home / 'Library/Logs/disk-hygiene').is_dir(), 'launchd does not create log directories')
+        self.assertFalse(self.agent('com.ashtonian.codex-remote-control').exists(), 'agents.codex is a dev feature')
+
+    def test_an_agent_waits_for_its_setup_and_goes_with_it(self):
+        self.converge('base,dev,desktop')
+        enrolled = self.home / '.local/share/otel-agent'
+        doctor = self.dotfiles('doctor')
+        self.assertIn(f'waiting     com.ashtonian.otel-agent: installs once {enrolled}/endpoint exists', doctor.stdout)
+        self.assertFalse(self.agent('com.ashtonian.otel-agent').exists())
+
+        enrolled.mkdir(parents=True)
+        for name in ('endpoint', 'token', 'host'):
+            (enrolled / name).write_text('x\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('load        ' + str(self.agent('com.ashtonian.otel-agent')), p.stdout)
+        self.assertTrue((self.launchd / 'com.ashtonian.otel-agent').exists())
+
+        (enrolled / 'host').unlink()
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(self.agent('com.ashtonian.otel-agent').exists())
+        self.assertFalse((self.launchd / 'com.ashtonian.otel-agent').exists(), 'unloaded too')
+
+    def test_apply_takes_over_the_retired_installers_agents(self):
+        stale = '<?xml version="1.0"?>\n<plist version="1.0"><dict><key>Label</key><string>{}</string></dict></plist>\n'
+        self.agent('x').parent.mkdir(parents=True)
+        for label in ('com.dotfiles.sync', 'com.ashtonian.codex-remote-control'):
+            self.agent(label).write_text(stale.format(label))
+            self.loaded(label)
+        p = self.dotfiles('init', '--profiles', 'base')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('<key>StartInterval</key>', self.agent('com.dotfiles.sync').read_text())
+        self.assertIn('<key>StartInterval</key>', (self.launchd / 'com.dotfiles.sync').read_text(), 'reloaded')
+        self.assertFalse(self.agent('com.ashtonian.codex-remote-control').exists(), 'its feature is off here')
+        self.assertFalse((self.launchd / 'com.ashtonian.codex-remote-control').exists())
+
     def test_the_work_machine_gets_dev_apps_and_nothing_personal(self):
         brewfile = self.converge('base,dev,work')
         self.assertIn('cask "iterm2"', brewfile)
@@ -1023,9 +1117,12 @@ class Install(Fixture):
         self.assertIn('Installation complete', p.stdout)
         steps = [line for line in self.audit.read_text().splitlines()
                  if line.startswith(('sync.sh', 'dotfiles'))]
+        # The LaunchAgents load last: the sync job runs at load, and would take
+        # the sync lock from the package steps.
         self.assertEqual(steps, ['sync.sh build',
                                  f'dotfiles init --repo {self.home}/.dotfiles --profiles base,dev',
-                                 'sync.sh apply', 'sync.sh brewfile', 'sync.sh mise'])
+                                 f'dotfiles apply --repo {self.home}/.dotfiles --launch-agents=false',
+                                 'sync.sh brewfile', 'sync.sh mise', 'sync.sh apply'])
         self.assertNotIn('stow', self.audit.read_text())
 
     def test_keeps_an_existing_machine_manifest(self):
@@ -1651,6 +1748,42 @@ class AgentMonitor(AgentMonitorFixture):
         self.assertEqual(json.loads(claude.read_text()), {'model': 'opus', 'hooks': {'PostToolUse': [other]}})
         self.assertEqual(json.loads(codex.read_text()), {'hooks': {}})
 
+    GATE = 'com.ashtonian.agent-monitor-gate'
+
+    def lan(self, action, token=''):
+        return subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), 'lan', action],
+                              cwd=self.path, env=self.env, input=token, capture_output=True, text=True, timeout=20)
+
+    def test_lan_enable_stores_the_token_and_apply_starts_the_gate(self):
+        engine_calls = self.stub_engine(loads=[self.GATE])
+        p = self.lan('enable', 'x' * 40 + '\n')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        token = self.monitor / 'config/gate-token'
+        self.assertEqual(token.read_text(), 'x' * 40)
+        self.assertEqual(stat.S_IMODE(token.stat().st_mode), 0o600)
+        self.assertEqual(engine_calls(), [f'apply --repo {ROOT}'], "the gate's LaunchAgent waits for the token")
+        self.assertTrue((self.launchd / self.GATE).exists())
+
+    def test_lan_enable_restarts_a_running_gate_on_the_new_token(self):
+        engine_calls = self.stub_engine()
+        self.loaded(self.GATE, running=True)
+        p = self.lan('enable', 'y' * 40)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(f'kickstart -k gui/{os.getuid()}/{self.GATE}', self.launchctl_calls())
+        self.assertEqual(engine_calls(), [])
+
+    def test_lan_disable_deletes_the_token_and_apply_stops_the_gate(self):
+        token = self.monitor / 'config/gate-token'
+        token.parent.mkdir(parents=True)
+        token.write_text('x' * 40)
+        self.loaded(self.GATE, running=True)
+        engine_calls = self.stub_engine(unloads=[self.GATE])
+        p = self.lan('disable')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertFalse(token.exists())
+        self.assertEqual(engine_calls(), [f'apply --repo {ROOT}'])
+        self.assertFalse((self.launchd / self.GATE).exists())
+
     def test_lan_enable_rejects_a_short_token(self):
         p = subprocess.run(['/bin/zsh', '-f', str(ROOT / 'bin/agent-monitor'), 'lan', 'enable'],
                            cwd=self.path, env=self.env, input='short\n', capture_output=True, text=True, timeout=20)
@@ -1887,17 +2020,16 @@ class OtelAgent(Fixture):
         self.state = self.home / '.local/state/otel-agent'
         self.libexec = self.home / '.local/libexec/otelcol'
         self.config = self.home / '.config/otel-agent/config.yaml'
-        self.launchctl = self.path / 'launchctl-audit'
-        self.env.update(HOME=str(self.home), OTEL_TEST_LAUNCHCTL=str(self.launchctl))
+        self.curl_audit = self.path / 'curl-audit'
+        self.env.update(HOME=str(self.home), OTEL_TEST_CURL=str(self.curl_audit))
         for name in ('OTEL_AGENT_HOME', 'OTEL_AGENT_STATE', 'OTEL_AGENT_LIBEXEC', 'OTEL_AGENT_CONFIG',
                      'OTEL_AGENT_HOST', 'OTEL_AGENT_KUBE_CONTEXT', 'XDG_STATE_HOME'):
             self.env.pop(name, None)
-        # launchd: `list` succeeds only when the test says the agent is loaded.
-        self.cli('launchctl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_LAUNCHCTL"\n'
-                 'if [ "$1" = list ]; then [ -n "${LAUNCHCTL_LOADED:-}" ] || exit 113; echo \'{ "PID" = 42; }\'; fi\n'
-                 'exit 0')
+        # dotfiles apply loads the collector's LaunchAgent once this Mac is enrolled.
+        self.engine_calls = self.stub_engine(loads=['com.ashtonian.otel-agent'])
+        self.target = f'gui/{os.getuid()}/com.ashtonian.otel-agent'
         # Downloads fail unless a test serves an archive; every URL is recorded.
-        self.cli('curl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_LAUNCHCTL.curl"\n'
+        self.cli('curl', 'printf "%s\\n" "$*" >> "$OTEL_TEST_CURL"\n'
                  'out=; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done\n'
                  '[ -n "${OTEL_TEST_ARCHIVE:-}" ] && [ -n "$out" ] && cp "$OTEL_TEST_ARCHIVE" "$out" && exit 0\n'
                  'exit 7')
@@ -1908,8 +2040,9 @@ class OtelAgent(Fixture):
                               capture_output=True, text=True, timeout=30)
 
     def calls(self, suffix=''):
-        path = Path(str(self.launchctl) + suffix)
-        return path.read_text().splitlines() if path.exists() else []
+        if suffix == '.curl':
+            return self.curl_audit.read_text().splitlines() if self.curl_audit.exists() else []
+        return self.launchctl_calls()
 
     def install_collector(self, directory=None):
         """A stand-in collector that prints what serve handed it."""
@@ -2004,7 +2137,8 @@ class OtelAgent(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertEqual(sorted(d.name for d in self.libexec.iterdir()), [f'{self.VERSION}_{self.PLATFORM}'])
         self.assertIn('otel-agent enroll HOST', p.stdout)
-        self.assertNotIn('load', ' '.join(self.calls()))
+        self.assertEqual(self.engine_calls(), [], 'the LaunchAgent waits for enrollment')
+        self.assertNotIn('kickstart', ' '.join(self.calls()))
 
     def test_configure_stores_gateway_host_and_token_privately_and_starts_the_agent(self):
         self.install_collector()
@@ -2019,10 +2153,34 @@ class OtelAgent(Fixture):
         for name in ('endpoint', 'token', 'host'):
             self.assertEqual(stat.S_IMODE((self.enrolled / name).stat().st_mode), 0o600)
         self.assertNotIn(self.TOKEN, p.stdout + p.stderr)
-        installed = self.home / 'Library/LaunchAgents/com.ashtonian.otel-agent.plist'
-        self.assertIn(f'load {installed}', self.calls())
-        # launchd keeps it alive only while this Mac is enrolled.
-        self.assertIn(f'<key>{self.home}/.local/share/otel-agent/host</key>', installed.read_text())
+        self.assertEqual(self.engine_calls(), [f'apply --repo {ROOT}'], 'apply installs and loads the agent')
+        self.assertTrue((self.launchd / 'com.ashtonian.otel-agent').exists())
+
+    def test_configure_restarts_a_loaded_collector_on_the_new_token(self):
+        self.install_collector()
+        self.enroll()
+        self.loaded('com.ashtonian.otel-agent')
+        p = self.run_agent('configure', 'https://gateway.example', 'mini', input=self.TOKEN + '\n')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(f'kickstart -k {self.target}', self.calls())
+        self.assertEqual(self.engine_calls(), [])
+
+    def test_configure_reports_a_collector_its_feature_does_not_install(self):
+        self.install_collector()
+        self.config.parent.mkdir(parents=True)
+        self.config.write_text('')
+        self.engine_calls = self.stub_engine()
+        p = self.run_agent('configure', 'https://gateway.example', 'mini', input=self.TOKEN + '\n')
+        self.assertEqual(p.returncode, 78, p.stderr)
+        self.assertIn('enable the agents.otel-agent feature', p.stderr)
+
+    def test_the_launchagent_waits_for_enrollment_and_restarts_while_enrolled(self):
+        feature = tomllib.loads((FEATURES / 'agents.otel-agent/feature.toml').read_text())
+        [agent] = feature['provides']['launch_agent']
+        self.assertEqual(agent['when_exists'][-1], '~/.local/share/otel-agent/host',
+                         'configure writes the host file last')
+        template = (FEATURES / 'agents.otel-agent' / agent['plist']).read_text()
+        self.assertIn('<key>$HOME/.local/share/otel-agent/host</key>', template)
 
     def test_configure_rejects_plain_http_short_tokens_and_hostnames(self):
         self.install_collector()
@@ -2081,18 +2239,23 @@ class OtelAgent(Fixture):
         self.install_collector()
         self.enroll()
         self.assertEqual(self.run_agent('serve').returncode, 0)
-        self.env['LAUNCHCTL_LOADED'] = '1'
+        self.loaded('com.ashtonian.otel-agent', running=True)
         p = self.run_agent('converge')
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertEqual([call for call in self.calls() if not call.startswith('list ')], [])
+        self.assertEqual([call for call in self.calls() if not call.startswith('print ')], [])
         # A pull changes the config the running collector started from.
         self.config.write_text('receivers: {otlp: {}}\n')
         p = self.run_agent('converge')
         self.assertEqual(p.returncode, 0, p.stderr)
-        installed = self.home / 'Library/LaunchAgents/com.ashtonian.otel-agent.plist'
-        self.assertIn(f'unload {installed}', self.calls())
-        self.assertIn(f'load {installed}', self.calls())
+        self.assertIn(f'kickstart -k {self.target}', self.calls())
         self.assertIn('restarted the collector', p.stdout)
+
+    def test_converge_reports_a_collector_apply_did_not_load(self):
+        self.install_collector()
+        self.enroll()
+        p = self.run_agent('converge')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('dotfiles apply loads it while the agents.otel-agent feature is on', p.stderr)
 
     def test_converge_reports_a_mac_enrolled_without_a_host(self):
         self.install_collector()
@@ -2102,19 +2265,12 @@ class OtelAgent(Fixture):
         self.assertIn('otel-agent enroll HOST', p.stderr)
         self.assertEqual(self.calls(), [])
 
-    def test_launchagent_installer_waits_for_enrollment(self):
-        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-install-launchagents.sh'), '--otel-agent-only'],
-                           env=dict(self.env, DOTFILES_DIR=str(ROOT)), capture_output=True, text=True, timeout=30)
-        self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn('no gateway configured; run otel-agent enroll HOST; skipping com.ashtonian.otel-agent', p.stdout)
-        self.assertEqual(self.calls(), [])
-
     def test_status_shows_host_queue_and_counters(self):
         self.install_collector()
         self.enroll('mbp')
         (self.state / 'queue').mkdir(parents=True)
         (self.state / 'queue/exporter_otlp_http_logs_logs').write_bytes(b'\0' * (3 << 20))
-        self.env['LAUNCHCTL_LOADED'] = '1'
+        self.loaded('com.ashtonian.otel-agent', running=True)
         metrics = self.path / 'metrics.txt'
         metrics.write_text(
             'otelcol_exporter_queue_size{data_type="logs",exporter="otlp_http/logs"} 1.572864e+06\n'
@@ -2301,12 +2457,12 @@ class DiskHygiene(Fixture):
         self.home = self.path / 'home'
         self.tmp = self.path / 'tmp'
         self.volumes = self.path / 'Volumes'
-        self.agents = self.path / 'installed-agents'
-        for d in (self.home / '.cache', self.tmp, self.volumes, self.agents, self.path / 'launchagents'):
+        self.agents = self.home / 'Library/LaunchAgents'
+        self.apply_state = self.path / 'state/dotfiles/applied.json'
+        for d in (self.home / '.cache', self.tmp, self.volumes, self.agents):
             d.mkdir(parents=True)
         self.env.update(HOME=str(self.home), DISK_HYGIENE_TMP=str(self.tmp),
-                        DISK_HYGIENE_VOLUMES=str(self.volumes),
-                        DISK_HYGIENE_LAUNCH_AGENTS=str(self.agents))
+                        DISK_HYGIENE_VOLUMES=str(self.volumes), XDG_STATE_HOME=str(self.path / 'state'))
         self.env.pop('DISK_HYGIENE_KEEP', None)
 
     def tree(self, root, files=('data',), age=None):
@@ -2388,21 +2544,27 @@ class DiskHygiene(Fixture):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(sorted(f.name for f in index.iterdir()), ['new.idx'])
 
-    def agent(self, label, log):
+    def agent(self, label, log, applied):
+        """An installed LaunchAgent logging to LOG; APPLIED records it as dotfiles apply's."""
         plist = (f'<?xml version="1.0" encoding="UTF-8"?>\n<plist version="1.0"><dict>'
                  f'<key>Label</key><string>{label}</string>'
                  f'<key>StandardOutPath</key><string>{log}</string>'
                  f'<key>StandardErrorPath</key><string>{log}</string></dict></plist>\n')
-        (self.agents / f'{label}.plist').write_text(plist)
-        return self.path / 'launchagents' / f'{label}.plist'
+        installed = self.agents / f'{label}.plist'
+        installed.write_text(plist)
+        if applied:
+            state = json.loads(self.apply_state.read_text()) if self.apply_state.exists() else {'version': 1}
+            state.setdefault('agents', {})[label] = {'path': str(installed), 'sha256': '', 'loaded': ''}
+            self.apply_state.parent.mkdir(parents=True, exist_ok=True)
+            self.apply_state.write_text(json.dumps(state))
 
-    def test_caps_this_checkouts_agent_logs_in_place_from_a_line_boundary(self):
+    def test_caps_the_logs_of_the_agents_apply_installed_in_place_from_a_line_boundary(self):
         ours, theirs = self.path / 'ours.log', self.path / 'theirs.log'
         lines = ''.join(f'line {n:04d}\n' for n in range(400))
         for log in (ours, theirs):
             log.write_text(lines)
-        self.agent('com.example.ours', ours).write_text('defined here')
-        self.agent('com.example.theirs', theirs)
+        self.agent('com.example.ours', ours, applied=True)
+        self.agent('com.example.theirs', theirs, applied=False)
         inode = ours.stat().st_ino
         self.env['DISK_HYGIENE_LOG_MAX_BYTES'] = '1000'
         p = self.run_hygiene()
