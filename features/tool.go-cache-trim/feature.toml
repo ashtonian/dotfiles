@@ -1,5 +1,5 @@
 id = "tool.go-cache-trim"
-description = "Hourly: deletes Go build cache entries unused for 24 hours (bin/go-cache-trim)"
+description = "Hourly: keeps each Go build cache under 400 GiB, entries unused for 24 hours first, then least recently used (bin/go-cache-trim)"
 category = "tools"
 platforms = ["darwin"]
 

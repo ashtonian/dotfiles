@@ -2780,6 +2780,111 @@ class AgentMcp(Fixture):
             self.assertIn(flag, out)
 
 
+@unittest.skipUnless(sys.platform == 'darwin', 'go-cache-trim uses BSD stat and find')
+class GoCacheTrim(Fixture):
+    """bin/go-cache-trim against fake caches whose entries carry the mtime of
+    their last use; a fake go reports the first cache as GOCACHE."""
+
+    README = ('This directory holds cached build artifacts from the Go build system.\n'
+              'Run "go clean -cache" if the directory is getting too large.\n')
+    KIB = 64
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.home.mkdir()
+        self.cache = self.make_cache('cache')
+        self.cli('go', 'echo "$FAKE_GOCACHE"')
+        self.env.update(HOME=str(self.home), FAKE_GOCACHE=str(self.cache), GO_CACHE_TRIM_HOURS='24')
+        for name in ('GO_EXTRA_BUILD_CACHES', 'GO_CACHE_TRIM_MAX_GIB'):
+            self.env.pop(name, None)
+
+    def make_cache(self, name):
+        cache = self.path / name
+        (cache / 'fuzz').mkdir(parents=True)
+        (cache / 'README').write_text(self.README)
+        return cache
+
+    def entry(self, cache, name, hours_since_use):
+        """Writes an entry in hex directory 'ab' and returns its allocated bytes."""
+        path = cache / 'ab' / name
+        path.parent.mkdir(exist_ok=True)
+        path.write_bytes(b'\1' * self.KIB * 1024)
+        used = time.time() - hours_since_use * 3600
+        os.utime(path, (used, used))
+        return path.stat().st_blocks * 512
+
+    def cap(self, allocated_bytes):
+        self.env['GO_CACHE_TRIM_MAX_GIB'] = f'{allocated_bytes / 2**30:.12f}'
+
+    def entries(self, cache):
+        return sorted(p.name for p in (cache / 'ab').iterdir())
+
+    def run_trim(self, *args):
+        return subprocess.run(['/bin/bash', str(ROOT / 'bin/go-cache-trim'), *args],
+                              cwd=self.path, env=self.env, capture_output=True, text=True, timeout=20)
+
+    def test_drops_unused_entries_then_least_recently_used_down_to_the_cap(self):
+        size = self.entry(self.cache, 'unused', 30)
+        for name, hours in (('lru-oldest', 10), ('lru-next', 5), ('recent', 1), ('new', 0)):
+            self.entry(self.cache, name, hours)
+        (self.cache / 'fuzz' / 'corpus').write_text('x')
+        self.cap(2 * size + 4096)
+        p = self.run_trim()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.entries(self.cache), ['new', 'recent'])
+        self.assertTrue((self.cache / 'fuzz' / 'corpus').exists())
+        self.assertTrue((self.cache / 'README').exists())
+        self.assertIn('deleted 3 entries', p.stdout)
+        self.assertIn('listed 1 unused for 24 h and 2 least recently used', p.stdout)
+
+    def test_keeps_entries_used_in_the_last_two_hours_over_the_cap(self):
+        size = self.entry(self.cache, 'older', 3)
+        self.entry(self.cache, 'recent', 1)
+        self.cap(size // 2)
+        p = self.run_trim()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.entries(self.cache), ['recent'])
+        self.assertIn('still over the cap, with entries used in the last 2 h', p.stdout)
+
+    def test_dry_run_deletes_nothing(self):
+        size = self.entry(self.cache, 'unused', 30)
+        self.entry(self.cache, 'lru', 5)
+        self.cap(size + 4096)
+        p = self.run_trim('--dry-run')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(self.entries(self.cache), ['lru', 'unused'])
+        self.assertIn('would delete 1 entries', p.stdout)
+
+    def test_trims_extra_caches_and_refuses_a_directory_that_is_not_a_cache(self):
+        extra = self.make_cache('extra')
+        self.entry(extra, 'unused', 30)
+        stranger = self.path / 'stranger'
+        (stranger / 'ab').mkdir(parents=True)
+        (stranger / 'ab' / 'keep').write_text('x')
+        never_used = self.path / 'never-used'
+        never_used.mkdir()
+        self.env['GO_EXTRA_BUILD_CACHES'] = f'{stranger}:{extra}/:{self.cache}:{never_used}'
+        p = self.run_trim()
+        self.assertEqual(p.returncode, 1)
+        self.assertIn(f'{stranger} is not a Go build cache', p.stderr)
+        self.assertTrue((stranger / 'ab' / 'keep').exists())
+        self.assertFalse((extra / 'ab' / 'unused').exists())
+        self.assertIn(f'cache {never_used} empty', p.stdout)
+        self.assertEqual(p.stdout.count(f'from {self.cache}:'), 1)
+
+    def test_rejects_a_cap_that_is_not_a_positive_number_of_gib(self):
+        for value in ('0', '-5', '400G', ''):
+            self.env['GO_CACHE_TRIM_MAX_GIB'] = value
+            with self.subTest(value=value):
+                p = self.run_trim()
+                if value == '':
+                    self.assertEqual(p.returncode, 0, p.stderr)
+                else:
+                    self.assertEqual(p.returncode, 2)
+                    self.assertIn('want a number of GiB above 0', p.stderr)
+
+
 class DisableAerials(Fixture):
     """bin/disable-aerials against a store laid out as macOS 27 writes it before
     anyone picks a wallpaper: every entry linked to the default aerial."""
