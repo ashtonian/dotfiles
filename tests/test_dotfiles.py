@@ -421,6 +421,89 @@ exit 0""")
         self.assertFalse((self.path / 'sync' / 'mackup').exists())
 
 
+@unittest.skipUnless(Path('/usr/bin/lockf').exists(), 'macOS lockf required')
+class SyncLock(Fixture):
+    """The sync lock sync.sh and dotfiles-update.sh share (lib_sh/sync-lock.sh)."""
+
+    def setUp(self):
+        super().setUp()
+        (self.path / 'logs').mkdir()
+        self.audit = self.path / 'audit'
+        self.env['DOTFILES_TEST_AUDIT'] = str(self.audit)
+
+    def hold_lock(self):
+        """A sync in progress: a process holding the lock until it is killed."""
+        p = subprocess.Popen(['/bin/bash', '-c', 'source "$1"; acquire_lock; echo READY; read -r _',
+                              'test', str(ROOT / 'sync.sh')], env=self.env,
+                             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+        self.addCleanup(lambda: p.poll() is None and (p.kill(), p.communicate(timeout=5)))
+        self.assertEqual(p.stdout.readline().strip(), 'READY')
+        return p
+
+    def update(self, *args, **env):
+        return subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-update.sh'), '--quiet', *args],
+                              env=dict(self.env, **env), capture_output=True, text=True,
+                              timeout=60, start_new_session=True)
+
+    def calls(self):
+        return self.audit.read_text().splitlines() if self.audit.exists() else []
+
+    def test_update_waits_for_a_sync_in_progress_then_gives_up_without_updating(self):
+        self.cli('brew', 'printf "brew %s\\n" "$*" >> "$DOTFILES_TEST_AUDIT"')
+        holder = self.hold_lock()
+        p = self.update('--brew', UPDATE_LOCK_WAIT='1')
+        self.assertEqual(p.returncode, 1, p.stderr)
+        self.assertIn('still held', p.stderr)
+        self.assertIn('waiting up to 1s', (self.path / 'logs/update.log').read_text())
+        self.assertEqual(self.calls(), [], 'no stage runs without the lock')
+        holder.kill()
+        holder.communicate(timeout=5)
+        p = self.update('--brew')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('brew upgrade --formula', self.calls())
+
+    def test_a_malformed_wait_is_refused(self):
+        p = self.update('--brew', UPDATE_LOCK_WAIT='5m')
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('whole number of seconds', p.stderr)
+
+    def test_no_sync_runs_while_the_update_upgrades_packages(self):
+        # Mid-upgrade, brew starts a sync, as the 4-hourly job would.
+        self.cli('brew', f'case "$*" in "upgrade --formula") /bin/bash {ROOT / "sync.sh"} check >> "$DOTFILES_TEST_AUDIT" 2>&1 ;; esac')
+        p = self.update('--brew')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('Another sync or update is already running', self.audit.read_text())
+
+    def test_the_updates_own_sync_runs_inside_its_lock(self):
+        (self.path / '.git').mkdir()
+        sync = self.path / 'sync.sh'
+        sync.write_text(f'#!/bin/sh\nexec /bin/bash {ROOT / "sync.sh"} check\n')
+        sync.chmod(0o755)
+        p = self.update('--sync')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        log = (self.path / 'logs/sync.log').read_text()
+        self.assertIn('Sync lock is available', log)
+        self.assertNotIn('Another sync', log)
+
+    def test_a_daemon_an_update_stage_starts_does_not_keep_the_lock(self):
+        pidfile = self.path / 'daemon.pid'
+        # Like a Homebrew service restarted by an upgrade: started by a stage, outliving the run.
+        self.cli('brew', f'case "$*" in update) sleep 300 </dev/null >/dev/null 2>&1 & echo $! > {pidfile} ;; esac')
+        self.addCleanup(lambda: pidfile.exists() and subprocess.run(['kill', pidfile.read_text().strip()]))
+        p = self.update('--brew')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertTrue(pidfile.exists(), 'the stage started its daemon')
+        q = subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), 'check'], env=self.env,
+                           capture_output=True, text=True, timeout=30)
+        self.assertIn('lock is available', q.stdout, 'the daemon must not hold the sync lock')
+
+    def test_an_unrelated_descriptor_9_is_not_taken_for_the_lock(self):
+        self.hold_lock()
+        p = self.bash('exec 9>/dev/null; sync_lock_take "$1" 0; echo "status $?"',
+                      str(self.path / 'logs'), source='lib_sh/sync-lock.sh')
+        self.assertIn('status 75', p.stdout, p.stderr)
+
+
 class Sync(Fixture):
     def setUp(self):
         super().setUp()

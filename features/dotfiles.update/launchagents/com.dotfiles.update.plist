@@ -18,6 +18,9 @@ WHAT IT DOES (each stage runs whatever the others did; see docs/OPERATIONS.md):
     3. Fast-forwards Zinit core and updates all plugins
     4. Runs sync.sh sync (signed repository sync, dotfiles apply, missing
        packages and mise tools)
+    The whole run holds the sync lock (logs/sync.flock), so no scheduled sync
+    runs while packages upgrade; it waits up to UPDATE_LOCK_WAIT seconds
+    (30 minutes) for a sync in progress.
 
 LOGS:
     - stdout: /tmp/dotfiles-update.out

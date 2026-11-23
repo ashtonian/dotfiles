@@ -7,6 +7,8 @@ umask 077
 source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/rotate-log.sh"
 # shellcheck source=lib_sh/brew-root.sh
 source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/brew-root.sh"
+# shellcheck source=lib_sh/sync-lock.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib_sh/sync-lock.sh"
 
 DOTFILES_DIR=$(cd "${DOTFILES_DIR:-$HOME/.dotfiles}" && pwd -P)
 SYNC_DIR="${SYNC_DIR:-$HOME/.sync}"
@@ -29,18 +31,16 @@ log() { printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" | tee -a "$LOG_FI
 run_logged() { "$@" 2>&1 | tee -a "$LOG_FILE"; }
 stable_host() { scutil --get LocalHostName 2>/dev/null || hostname -s; }
 
+# acquire_lock: take the sync lock without waiting (lib_sh/sync-lock.sh). A
+# scheduled sync that finds a run in progress has nothing to add to it.
 acquire_lock() {
-    exec 9>>"$LOG_DIR/sync.flock" || return
     local status=0
-    /usr/bin/lockf -s -t 0 9 || status=$?
-    if [[ $status -ne 0 ]]; then
-        exec 9>&-
-        if [[ $status -eq 75 ]]; then
-            log "INFO: Another sync is already running"
-        else
-            log "ERROR: Cannot acquire sync lock (exit $status)"
-        fi
-    fi
+    sync_lock_take "$LOG_DIR" 0 || status=$?
+    case $status in
+        0) ;;
+        75) log "INFO: Another sync or update is already running" ;;
+        *) log "ERROR: Cannot acquire sync lock (exit $status)" ;;
+    esac
     return "$status"
 }
 
@@ -451,11 +451,8 @@ main() {
     [[ $status -ne 75 ]] || return 0
     [[ $status -eq 0 ]] || return "$status"
     rotate_log "$LOG_FILE"
-    # The work runs in a subshell without the lock's descriptor, while this
-    # shell holds the lock until it returns. Otherwise a daemon a step starts
-    # (op, gpg-agent, an ssh control master) inherits the descriptor and keeps
-    # the lock after the run, and every later sync finds another one running.
-    ( exec 9>&-; run_mode "$@" ) || status=$?
+    # This shell holds the lock until it returns; the work runs without it.
+    without_sync_lock run_mode "$@" || status=$?
     return "$status"
 }
 

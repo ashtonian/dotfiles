@@ -9,6 +9,9 @@
 #   Each stage runs whatever the others did and reports its own result; the run
 #   fails when any stage failed. Upgrades that need root are left for a
 #   terminal, with a warning, when the run cannot ask for a password.
+#   The whole run holds the sync lock (lib_sh/sync-lock.sh), so no sync runs
+#   while packages upgrade; it waits up to UPDATE_LOCK_WAIT seconds (default
+#   1800) for a sync in progress, and fails without updating anything after.
 #   Designed to run weekly via LaunchAgent or manually.
 #
 # USAGE:
@@ -35,6 +38,8 @@ set -euo pipefail
 source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/rotate-log.sh"
 # shellcheck source=lib_sh/brew-root.sh
 source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/brew-root.sh"
+# shellcheck source=lib_sh/sync-lock.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/sync-lock.sh"
 
 #===============================================================================
 # CONFIGURATION
@@ -42,6 +47,9 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/brew-root.sh"
 DOTFILES_DIR="${DOTFILES_DIR:-$HOME/.dotfiles}"
 LOG_DIR="${DOTFILES_DIR}/logs"
 LOG_FILE="${LOG_DIR}/update.log"
+# Seconds to wait for a sync (or another update) in progress to release the
+# sync lock before failing. A sync rarely takes more than a few minutes.
+UPDATE_LOCK_WAIT="${UPDATE_LOCK_WAIT:-1800}"
 QUIET=false
 # Set by update_brew: the environment of every brew command after `brew
 # update`, and whether this run can ask for a password.
@@ -309,6 +317,7 @@ sync_dotfiles() {
         log_error "Sync script is missing or not executable"
         return 1
     fi
+    # sync.sh inherits this run's sync lock on descriptor 9 and runs inside it.
     if ! run_command "$DOTFILES_DIR/sync.sh" sync; then
         log_error "sync.sh sync failed; see $DOTFILES_DIR/logs/sync.log"
         return 1
@@ -324,9 +333,9 @@ update_all() {
 
     # Each stage runs whatever the others did; the run fails if any did.
     local failed=()
-    update_brew || failed+=(brew)
-    update_go_pin || failed+=(go)
-    update_zinit || failed+=(zinit)
+    without_sync_lock update_brew || failed+=(brew)
+    without_sync_lock update_go_pin || failed+=(go)
+    without_sync_lock update_zinit || failed+=(zinit)
     sync_dotfiles || failed+=(sync)
 
     log "======================================"
@@ -337,6 +346,28 @@ update_all() {
     fi
     log "Full update complete!"
     log "======================================"
+}
+
+# take_sync_lock: hold the sync lock for the rest of this run, waiting up to
+# UPDATE_LOCK_WAIT seconds for a sync or another update in progress.
+take_sync_lock() {
+    if [[ ! "$UPDATE_LOCK_WAIT" =~ ^(0|[1-9][0-9]*)$ ]]; then
+        log_error "UPDATE_LOCK_WAIT must be a whole number of seconds, not '$UPDATE_LOCK_WAIT'"
+        return 1
+    fi
+    local status=0
+    sync_lock_take "$LOG_DIR" 0 || status=$?
+    if [[ $status -eq 75 && $UPDATE_LOCK_WAIT -gt 0 ]]; then
+        log "Another sync or update is running; waiting up to ${UPDATE_LOCK_WAIT}s for it to finish"
+        status=0
+        sync_lock_take "$LOG_DIR" "$UPDATE_LOCK_WAIT" || status=$?
+    fi
+    case $status in
+        0) return 0 ;;
+        75) log_error "Another sync or update still held $LOG_DIR/sync.flock after ${UPDATE_LOCK_WAIT}s; nothing was updated. lsof $LOG_DIR/sync.flock names the holder" ;;
+        *) log_error "Cannot take the sync lock $LOG_DIR/sync.flock (lockf exit $status); nothing was updated" ;;
+    esac
+    return 1
 }
 
 #===============================================================================
@@ -365,11 +396,14 @@ main() {
         esac
     done
 
+    take_sync_lock || return 1
     rotate_log "$LOG_FILE"
+    # This shell holds the lock until the run ends. Stages run without its
+    # descriptor, except sync, which runs inside it.
     case "$action" in
-        brew)   update_brew ;;
-        go)     update_go_pin ;;
-        zinit)  update_zinit ;;
+        brew)   without_sync_lock update_brew ;;
+        go)     without_sync_lock update_go_pin ;;
+        zinit)  without_sync_lock update_zinit ;;
         sync)   sync_dotfiles ;;
         all)    update_all ;;
     esac
