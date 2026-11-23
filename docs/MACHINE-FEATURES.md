@@ -178,6 +178,7 @@ type    = "bool"
 default = true
 doc     = "Replace cd with zoxide's cd in real interactive sessions only"
 env     = ""                  # export the value under this name in the generated env.sh (not for secrets); an inherited value wins
+values  = []                  # string settings only: the values allowed; any other is a resolve error, which `dotfiles check` reports
 
 [hooks]
 apply    = ""                 # idempotent converge script, settings passed as env

@@ -155,6 +155,20 @@ type Setting struct {
 	// Env exports the resolved value under this name in the generated env.sh.
 	// Secrets cannot be exported.
 	Env string `toml:"env"`
+	// Values, for a string setting, are the only values it may take, so a
+	// typo fails resolve instead of the script that reads the setting.
+	Values []string `toml:"values"`
+}
+
+// Check validates a value for this setting: its type, then Values.
+func (s Setting) Check(v any) error {
+	if err := CheckValue(s.Type, v); err != nil {
+		return err
+	}
+	if len(s.Values) > 0 && !slices.Contains(s.Values, v.(string)) {
+		return fmt.Errorf("want one of %s, got %q", strings.Join(s.Values, ", "), v)
+	}
+	return nil
 }
 
 // Profile is a named set of feature decisions and setting values.
@@ -506,8 +520,16 @@ func validateFeature(f *Feature, dirName string) error {
 		if !slices.Contains(SettingTypes, s.Type) {
 			return fmt.Errorf("setting %q has unknown type %q (want one of %s)", name, s.Type, strings.Join(SettingTypes, ", "))
 		}
+		if len(s.Values) > 0 && s.Type != "string" {
+			return fmt.Errorf("setting %q lists values, which only a string setting can", name)
+		}
+		for i, v := range s.Values {
+			if v == "" || slices.Contains(s.Values[:i], v) {
+				return fmt.Errorf("setting %q values must be distinct and not empty", name)
+			}
+		}
 		if s.Default != nil {
-			if err := CheckValue(s.Type, s.Default); err != nil {
+			if err := s.Check(s.Default); err != nil {
 				return fmt.Errorf("setting %q default: %w", name, err)
 			}
 		}
