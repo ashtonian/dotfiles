@@ -62,9 +62,9 @@ where the feature is off.
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
 | `brew.apps` | desktop, work | darwin | Brewfile: 35 cask |
-| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 99 brew |
+| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 97 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
-| `brew.dev-apps` | dev | darwin | Brewfile: 19 cask |
+| `brew.dev-apps` | dev | darwin | Brewfile: 18 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
 | `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 16 mas |
@@ -81,8 +81,6 @@ where the feature is off.
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
-| `tool.neofetch` | desktop | darwin, linux | `~/.config/neofetch` |
-| `tool.taskwarrior` | desktop | darwin, linux | copies `~/.taskrc` |
 
 Edit linked files in place. Add, remove or move files, then run
 `dotfiles apply`; a file in the way is reported, never overwritten. See

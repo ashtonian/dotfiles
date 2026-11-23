@@ -115,6 +115,7 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
     _env_front "$HOMEBREW_PREFIX/opt/python/libexec/bin" # unversioned python, pip
     _env_front "$HOMEBREW_PREFIX/opt/openjdk/bin"
     _env_front "$HOMEBREW_PREFIX/opt/rustup/bin"         # keg-only rustup proxies
+    _env_front "$HOMEBREW_PREFIX/opt/libpq/bin"          # keg-only PostgreSQL client: psql, pg_dump
     for _env_d in "$HOMEBREW_PREFIX"/lib/ruby/gems/*/bin; do
         _env_back "$_env_d"
     done
