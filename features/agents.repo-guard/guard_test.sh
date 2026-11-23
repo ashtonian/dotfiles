@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# Runs repo-guard's guard.sh against throwaway clones: two whose origins are on
+# Runs bin/repo-guard against throwaway clones: two whose origins are on
 # protected lists, one whose name merely starts like a protected one, and one
-# unrelated. HOME is a scratch directory, so the machine's own lists never
-# take part. GUARD_BASH picks the bash that runs the hook (default: bash on
-# PATH); CI runs it with /bin/bash too. Exits non-zero on any unexpected result.
+# unrelated. Each case sends the hook input as Claude Code and as Codex shape
+# it. HOME is a scratch directory, so the machine's own lists never take part.
+# GUARD_BASH picks the bash that runs the hook (default: bash on PATH); the
+# suite runs it with /bin/bash too. Exits non-zero on any unexpected result.
 set -uo pipefail
 
-guard="$(cd "$(dirname "$0")" && pwd)/home/.claude/skills/repo-guard/scripts/guard.sh"
+guard="$(cd "$(dirname "$0")" && pwd)/bin/repo-guard"
 # Absolute paths: some cases run the hook with a PATH that lacks jq.
 guard_bash=$(command -v "${GUARD_BASH:-bash}") || { echo "no ${GUARD_BASH:-bash}" >&2; exit 1; }
 jq=$(command -v jq) || { echo "jq is required" >&2; exit 1; }
@@ -40,26 +41,39 @@ ln -s "$(command -v cat)" "$work/nojq/cat"
 
 pass=0
 fail=0
-# check EXPECTED CWD COMMAND: EXPECTED is deny, allow or error (exit 2). The
-# caller's HOME, REPO_GUARD_LIST and PATH reach the hook.
+# The hook input each harness sends for its shell tool.
+# shellcheck disable=SC2016 # $c and $d are jq variables
+claude_input='{session_id: "s", transcript_path: "/dev/null", cwd: $d, permission_mode: "bypassPermissions",
+  hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: $c, description: "x"}, tool_use_id: "toolu_1"}'
+# shellcheck disable=SC2016
+codex_input='{session_id: "s", turn_id: "t", transcript_path: null, cwd: $d, hook_event_name: "PreToolUse",
+  model: "m", permission_mode: "bypassPermissions", tool_name: "Bash", tool_input: {command: $c}, tool_use_id: "call_1"}'
+
+# check EXPECTED CWD COMMAND: EXPECTED is deny, allow or error (exit 2), for
+# both harnesses' input. The caller's HOME, REPO_GUARD_LIST and PATH reach the hook.
 check() {
-  local input out status got
-  # shellcheck disable=SC2016 # $c and $d are jq variables
-  input=$("$jq" -n --arg c "$3" --arg d "$2" '{hook_event_name: "PreToolUse", tool_name: "Bash", tool_input: {command: $c}, cwd: $d}')
-  out=$("$guard_bash" "$guard" <<<"$input" 2>/dev/null)
-  status=$?
-  case "$status:$out" in
-    0:*'"permissionDecision": "deny"'*) got=deny ;;
-    0:) got=allow ;;
-    2:) got=error ;;
-    *) got="exit $status: $out" ;;
-  esac
-  if [[ $got == "$1" ]]; then
-    pass=$((pass + 1))
-  else
-    fail=$((fail + 1))
-    printf 'FAIL: expected %s, got %s: [%s] %s\n' "$1" "$got" "$2" "$3"
-  fi
+  local harness filter input out status got
+  for harness in claude codex; do
+    case $harness in
+      claude) filter=$claude_input ;;
+      codex) filter=$codex_input ;;
+    esac
+    input=$("$jq" -n --arg c "$3" --arg d "$2" "$filter")
+    out=$("$guard_bash" "$guard" <<<"$input" 2>/dev/null)
+    status=$?
+    case "$status:$out" in
+      0:*'"permissionDecision": "deny"'*) got=deny ;;
+      0:) got=allow ;;
+      2:) got=error ;;
+      *) got="exit $status: $out" ;;
+    esac
+    if [[ $got == "$1" ]]; then
+      pass=$((pass + 1))
+    else
+      fail=$((fail + 1))
+      printf 'FAIL (%s): expected %s, got %s: [%s] %s\n' "$harness" "$1" "$got" "$2" "$3"
+    fi
+  done
 }
 
 P=$work/protected

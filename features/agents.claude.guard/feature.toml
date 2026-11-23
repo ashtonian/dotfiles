@@ -1,9 +1,0 @@
-id = "agents.claude.guard"
-description = "repo-guard: a Claude Code plugin that blocks commits, tags, pushes and GitHub writes to the repositories the overlays protect (README: Repository guard)"
-category = "agents"
-
-[provides]
-# A plugin folder in ~/.claude/skills loads in every session as
-# repo-guard@skills-dir, with no install step. No protected list ships here:
-# each overlay links its own ~/.config/repo-guard/protected.d/<context>.txt.
-link = [".claude/skills/repo-guard"]

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# repo-guard: a Claude Code PreToolUse hook for the Bash tool. It denies a
+# repo-guard: a PreToolUse hook for the shell tool of Claude Code and Codex
+# (both name it Bash and send {cwd, tool_input: {command}}). It denies a
 # command that would change a protected repository (a commit, a tag, a push or
 # a GitHub write) when the command names the repository or runs in, or points
 # git at, a clone of it. Reading, cloning and local builds pass.
@@ -11,9 +12,10 @@
 #                         the context overlays link, one file each
 # With no list, nothing is protected.
 #
-# Output: a deny decision as JSON on stdout, exit 0. Exit 2 blocks the call and
-# shows stderr to Claude: a list is unreadable or has a line that is not
-# owner/name, the hook input is not JSON, or jq is missing.
+# Output: a deny decision as JSON on stdout, exit 0; both harnesses read the
+# same shape. Exit 2 blocks the call and shows stderr to the model: a list is
+# unreadable or has a line that is not owner/name, the hook input is not JSON,
+# or jq is missing.
 # Runs under macOS's bash 3.2 as well as current bash.
 set -uo pipefail
 shopt -s nocasematch # GitHub owner and repository names ignore case

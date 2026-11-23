@@ -336,7 +336,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 5b built the coarser features the later steps split into these: `shell.env`,
 `shell.zsh`, `git`, `git.keychain`, `ssh`, `tool.gh`, `tool.atuin`, `tool.htop`,
 `tool.colorls`, `tool.mise`, `tool.neofetch`, `tool.taskwarrior`,
-`agents.claude`, `agents.claude.guard`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
+`agents.claude`, `agents.delegation`, `agents.repo-guard`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
 `backup.mackup.config`, and the packages `brew.base`, `brew.macos`,
 `brew.apps`, `brew.desktop`, `brew.activity-trackers`, `brew.mas`,
 `brew.mas.personal`, `brew.dev-apps`, `brew.vscode` and `brew.go-tools`.
@@ -345,7 +345,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | --- | --- |
 | shell | `shell.core`, `shell.prompt.dracula`, `shell.plugins.autosuggest`, `shell.plugins.syntax-highlighting`, `shell.plugins.autopair`, `shell.plugins.fzf`, `shell.plugins.you-should-use`, `shell.zoxide`, `shell.atuin`, `shell.direnv`, `shell.mise`, `shell.modern-aliases`, `shell.safety-aliases`, `shell.greeting`, `shell.gitstead` |
 | shell.omz | `shell.omz.git`, `shell.omz.git-auto-fetch`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.node`, `shell.omz.npm`, `shell.omz.ruby`, `shell.omz.rake`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.vscode`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.iterm2`, `shell.omz.gpg-agent` |
-| agents | `agents.claude`, `agents.claude.bash`, `agents.claude.guard`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
+| agents | `agents.claude`, `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.delegation`, `agents.repo-guard`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
 | backup | `backup.mackup`, `backup.mackup.<app>` for each app in Mackup's catalog, including `backup.mackup.macosx` |
@@ -831,9 +831,11 @@ page lists it as a manual step until done.
 | Feature | Mechanism |
 | --- | --- |
 | `agents.claude.bash` | A `dotfiles.json` drop-in in the OS's managed-settings directory (see [Platforms](#platforms)) sets `CLAUDE_CODE_SHELL` to bash on macOS and Linux, and `CLAUDE_CODE_GIT_BASH_PATH` on Windows. It also sets `"attribution": false`, so no commit trailer, PR line or session link is added and no CLAUDE.md or project setting can bring them back. Installed once with admin rights as a copy of the tracked file, which `apply` keeps in sync. Today `bin/dotfiles-agents install` writes it |
-| `agents.claude` | Links the global CLAUDE.md, the `scout` and `reader` user subagents (`~/.claude/agents/`), the delegation policy the launchers append (`~/.claude/claudemix/policy.md`) and the status line script; its `zshrc` fragment defines `claudemore` and `claudemax`, which leave the claude.ai connectors out unless `CLAUDE_CONNECTORS=1` |
-| `agents.claude.guard` | Links repo-guard into `~/.claude/skills/repo-guard/`, where Claude Code loads a plugin folder with no install step. Its `PreToolUse` hook denies commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt`, one list linked by each overlay; the public feature ships none |
-| `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so |
+| `agents.claude` | Links the global CLAUDE.md and the status line script, and `claude-subagent-economics`; its `zshrc` fragment defines `claudemore` and `claudemax`, which append the delegation policy and leave the claude.ai connectors out unless `CLAUDE_CONNECTORS=1`. Requires `agents.delegation` |
+| `agents.codex` | The `com.ashtonian.codex-remote-control` LaunchAgent runs `bin/codex-app-server`, which gives every session the delegation policy as developer instructions; its `zshrc` fragment defines `gptmore` and `gptmax`, which pass `--disable apps` unless `CODEX_CONNECTORS=1`. macOS only. Requires `agents.delegation` |
+| `agents.delegation` | Links the delegation policy (`~/.config/agent-delegation/policy.md`) and the `scout` and `reader` subagents twice: as Claude Code user subagents (`~/.claude/agents/*.md`) and as Codex roles (`~/.codex/agents/*.toml`) with the same descriptions and instructions |
+| `agents.repo-guard` | Links the hook `~/.local/bin/repo-guard` and its Claude Code plugin `~/.claude/skills/repo-guard/`, where Claude Code loads a plugin folder with no install step; `bin/dotfiles-agents` registers the same script as a managed Codex hook in `/etc/codex/config.toml`. The hook denies commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt`, one list linked by each overlay; the public feature ships none |
+| `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so. The same file registers repo-guard. Codex 0.171 has no local setting for commit and PR attribution, so there is no counterpart to `agents.claude.bash`'s `"attribution": false`: the ChatGPT account's commit attribution setting decides it |
 | `shell.core` | Interactive-only behaviour (zoxide `cd`, aliases, `AUTO_CD`) loads only in real terminal sessions |
 | `shell.core` | `env.sh` applies PATH once per process tree; nested shells keep entries the parent added |
 

@@ -1,0 +1,12 @@
+id = "agents.repo-guard"
+description = "repo-guard: a PreToolUse hook for Claude Code and Codex that blocks commits, tags, pushes and GitHub writes to the repositories the overlays protect (README: Repository guard)"
+category = "agents"
+
+[provides]
+# The hook, one script for both harnesses. Claude Code runs it through the
+# plugin below; Codex through the system config bin/dotfiles-agents writes.
+bin = ["bin/repo-guard"]
+# A plugin folder in ~/.claude/skills loads in every session as
+# repo-guard@skills-dir, with no install step. No protected list ships here:
+# each overlay links its own ~/.config/repo-guard/protected.d/<context>.txt.
+link = [".claude/skills/repo-guard"]

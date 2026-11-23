@@ -1,7 +1,9 @@
 id = "agents.codex"
-description = "Codex: the local app-server with remote control (bin/codex-daemon) and the gptmore and gptmax launchers that connect to it"
+description = "Codex: the local app-server with remote control (bin/codex-app-server) and the gptmore and gptmax launchers that connect to it"
 category = "agents"
 platforms = ["darwin"]
+# The app-server serves its delegation policy; its roles serve the sessions.
+requires = ["agents.delegation"]
 
 [provides]
 zshrc = "zshrc.zsh" # gptmore, gptmax

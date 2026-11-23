@@ -78,9 +78,9 @@ print(mx)
   _claude_drive_env /Volumes
   session_env+=("${reply[@]}")
 
-  # The claudemix delegation policy, linked by agents.claude. A resumed session
-  # keeps the system prompt it recorded until its next compaction.
-  local policy=$HOME/.claude/claudemix/policy.md
+  # The delegation policy, linked by agents.delegation. A resumed session keeps
+  # the system prompt it recorded until its next compaction.
+  local policy=$HOME/.config/agent-delegation/policy.md
   local -a policy_args=()
   if [[ -r $policy ]]; then
     policy_args=(--append-system-prompt-file "$policy")

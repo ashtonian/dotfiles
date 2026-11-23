@@ -6,8 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "bash",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/scripts/guard.sh"],
+            "command": "bash \"$HOME/.local/bin/repo-guard\"",
             "timeout": 10,
             "onFailure": "block"
           }

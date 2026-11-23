@@ -1138,14 +1138,13 @@ class RealFeatures(Fixture):
 
     def test_a_dev_machine_gets_the_agent_launchers_subagents_and_guard(self):
         self.converge('base,dev')
-        claude = self.home / '.claude'
-        for rel in ('agents/scout.md', 'agents/reader.md', 'claudemix/policy.md', 'statusline-p10k.sh',
-                    'skills/repo-guard/.claude-plugin/plugin.json', 'skills/repo-guard/hooks/hooks.json',
-                    'skills/repo-guard/scripts/guard.sh', 'mcp/github-headers.sh'):
-            self.assertTrue((claude / rel).is_symlink(), rel)
-        self.assertFalse((claude / 'skills/repo-guard').is_symlink(), 'linked file by file')
+        for rel in ('.claude/agents/scout.md', '.claude/agents/reader.md', '.codex/agents/scout.toml',
+                    '.codex/agents/reader.toml', '.config/agent-delegation/policy.md', '.claude/statusline-p10k.sh',
+                    '.claude/skills/repo-guard/.claude-plugin/plugin.json', '.claude/skills/repo-guard/hooks/hooks.json',
+                    '.claude/mcp/github-headers.sh', '.local/bin/repo-guard', '.local/bin/claude-subagent-economics'):
+            self.assertTrue((self.home / rel).is_symlink(), rel)
+        self.assertFalse((self.home / '.claude/skills/repo-guard').is_symlink(), 'linked file by file')
         self.assertFalse((self.home / '.config/repo-guard').exists(), 'the protected lists come from overlays')
-        self.assertTrue((self.home / '.local/bin/claude-subagent-economics').is_symlink())
         launchers = 'claudemore claudemax' + (' gptmore gptmax' if sys.platform == 'darwin' else '')
         p = subprocess.run(['/bin/zsh', '-fc', f'source {self.home}/.config/dotfiles/generated/zshrc.zsh; whence -w {launchers}'],
                            env={'HOME': str(self.home), 'PATH': '/usr/bin:/bin'}, capture_output=True, text=True, timeout=20)
@@ -1764,9 +1763,14 @@ class DotfilesAgents(Fixture):
         self.assertIs(claude['attribution'], False, 'no Co-Authored-By trailer, PR line or session link')
         shell = claude['env']['CLAUDE_CODE_SHELL']
         self.assertEqual(subprocess.run([shell, '-c', '(( BASH_VERSINFO[0] >= 4 ))']).returncode, 0)
-        codex = self.codex.read_text()
-        self.assertIn('shell_snapshot = false', codex)
-        self.assertIn('AGENT_SHELL = "codex"', codex)
+        codex = tomllib.loads(self.codex.read_text())
+        self.assertIs(codex['features']['shell_snapshot'], False)
+        self.assertEqual(codex['shell_environment_policy']['set'], {'AGENT_SHELL': 'codex'})
+        [group] = codex['hooks']['PreToolUse']
+        self.assertEqual(group['matcher'], 'Bash', 'the shell tool, as Codex names it for hooks')
+        [hook] = group['hooks']
+        self.assertEqual((hook['type'], hook['timeout']), ('command', 10))
+        self.assertIn('$HOME/.local/bin/repo-guard', hook['command'])
         self.assertEqual(stat.S_IMODE(self.codex.stat().st_mode), 0o644)
         self.assertEqual(self.agents('check').returncode, 0)
 
@@ -1801,7 +1805,7 @@ class ClaudeLaunchers(Fixture):
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        self.policy = self.home / '.claude/claudemix/policy.md'
+        self.policy = self.home / '.config/agent-delegation/policy.md'
         self.policy.parent.mkdir(parents=True)
         self.policy.write_text('# policy\n')
         self.work = self.path / 'work/repo'
@@ -1843,19 +1847,172 @@ class ClaudeLaunchers(Fixture):
         self.assertIn('policy.md is missing', p.stderr)
 
 
-class RepoGuard(unittest.TestCase):
-    """The repo-guard hook's own cases, under current bash and macOS's bash 3.2."""
+class CodexLaunchers(Fixture):
+    """gptmore and gptmax from the agents.codex fragment, with a stub codex."""
 
-    def test_guard_cases_pass(self):
+    def setUp(self):
+        super().setUp()
+        self.work = self.path / 'work'
+        self.work.mkdir()
+        self.cli('codex', f'printf "%s\\n" "$@" > {self.path}/argv')
+        self.env.pop('CODEX_CONNECTORS', None)
+
+    def launch(self, launcher, *args, **env):
+        p = subprocess.run(['/bin/zsh', '-fc', f'source {FEATURES / "agents.codex/zshrc.zsh"}; "$@"', 'test',
+                            launcher, *args], cwd=self.work, env=dict(self.env, **env),
+                           capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        return (self.path / 'argv').read_text().splitlines()
+
+    def test_sessions_attach_to_the_local_server_without_connectors(self):
+        argv = self.launch('gptmore', 'resume', '--last')
+        self.assertEqual(argv[:4], ['--remote', 'unix://', '-C', str(self.work.resolve())])
+        self.assertEqual(argv[argv.index('--model') + 1], 'gpt-6.1-sol')
+        self.assertIn('model_reasoning_effort=xhigh', argv)
+        self.assertEqual(argv[argv.index('--disable') + 1], 'apps', 'no ChatGPT connectors')
+        self.assertEqual(argv[-3:], ['--yolo', 'resume', '--last'])
+        argv = self.launch('gptmax')
+        self.assertEqual(argv[argv.index('--model') + 1], 'gpt-6-astra')
+        self.assertIn('model_reasoning_effort=max', argv)
+
+    def test_connectors_are_opt_in_per_launch(self):
+        self.assertNotIn('--disable', self.launch('gptmore', CODEX_CONNECTORS='1'))
+
+
+class CodexAppServer(Fixture):
+    """bin/codex-app-server, run beside a stub stable-exec that records its arguments."""
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.policy = self.home / '.config/agent-delegation/policy.md'
+        self.policy.parent.mkdir(parents=True)
+        shutil.copy(ROOT / 'bin/codex-app-server', self.bin)
+        self.cli('stable-exec', f'for a in "$@"; do printf "%s\\0" "$a"; done > {self.path}/argv')
+
+    def serve(self):
+        p = subprocess.run([str(self.bin / 'codex-app-server')], env=dict(self.env, HOME=str(self.home)),
+                           capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return p, (self.path / 'argv').read_text().split('\0')[:-1]
+
+    def test_every_session_gets_the_policy_verbatim(self):
+        text = '# Policy\n\nQuote "this", a \\ backslash,\ta tab and `code`.\n'
+        self.policy.write_text(text)
+        _, argv = self.serve()
+        self.assertEqual(argv[:5], ['codex', 'app-server', '--remote-control', '--listen', 'unix://'])
+        key, value = argv[argv.index('-c') + 1].split('=', 1)
+        self.assertEqual(key, 'developer_instructions')
+        self.assertEqual(tomllib.loads(f'v = {value}')['v'], text.rstrip('\n'), 'codex parses -c values as TOML')
+
+    def test_the_repository_policy_survives_quoting(self):
+        self.policy.symlink_to(FEATURES / 'agents.delegation/home/.config/agent-delegation/policy.md')
+        _, argv = self.serve()
+        value = argv[argv.index('-c') + 1].split('=', 1)[1]
+        self.assertEqual(tomllib.loads(f'v = {value}')['v'], self.policy.read_text().rstrip('\n'))
+
+    def test_a_missing_policy_is_reported_and_left_out(self):
+        p, argv = self.serve()
+        self.assertNotIn('-c', argv)
+        self.assertIn('policy.md is missing', p.stderr)
+
+
+class Delegation(unittest.TestCase):
+    """The scout and reader subagents are one definition in two encodings."""
+
+    HOME = FEATURES / 'agents.delegation/home'
+
+    def test_codex_roles_match_the_claude_subagents(self):
+        for name in ('scout', 'reader'):
+            with self.subTest(name):
+                _, front, body = (self.HOME / f'.claude/agents/{name}.md').read_text().split('---\n', 2)
+                claude = dict(line.split(': ', 1) for line in front.strip().splitlines())
+                role = tomllib.loads((self.HOME / f'.codex/agents/{name}.toml').read_text())
+                self.assertEqual((claude['name'], role['name']), (name, name))
+                # Codex states a role's model in its description itself.
+                self.assertEqual(role['description'], re.sub(r' Runs on \w+\.$', '', json.loads(claude['description'])))
+                self.assertEqual(role['developer_instructions'].strip(), body.strip())
+                self.assertEqual(role['features'], {'apps': False, 'plugins': False})
+                self.assertTrue(role['model'] and role['model_reasoning_effort'])
+
+
+class RepoGuard(Fixture):
+    """repo-guard: its own cases under current bash and macOS's bash 3.2, and the
+    command each harness registers for it reaching the same script."""
+
+    FEATURE = FEATURES / 'agents.repo-guard'
+
+    def setUp(self):
+        super().setUp()
         if not shutil.which('jq'):
             self.skipTest('jq required by the hook')
-        script = FEATURES / 'agents.claude.guard/guard_test.sh'
+
+    def test_guard_cases_pass(self):
         for shell in dict.fromkeys(filter(None, [current_bash(), '/bin/bash' if Path('/bin/bash').exists() else None])):
             with self.subTest(bash=shell):
-                p = subprocess.run([shell, str(script)], env=dict(os.environ, GUARD_BASH=shell),
-                                   capture_output=True, text=True, timeout=120)
+                p = subprocess.run([shell, str(self.FEATURE / 'guard_test.sh')], env=dict(os.environ, GUARD_BASH=shell),
+                                   capture_output=True, text=True, timeout=240)
                 self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
                 self.assertIn('fail=0', p.stdout)
+
+    def registrations(self):
+        """The hook command of the Claude Code plugin and of the Codex system config."""
+        claude = json.loads((self.FEATURE / 'home/.claude/skills/repo-guard/hooks/hooks.json').read_text())
+        [claude_group] = claude['hooks']['PreToolUse']
+        [claude_hook] = claude_group['hooks']
+        self.assertEqual((claude_group['matcher'], claude_hook['onFailure']), ('Bash', 'block'))
+        root = self.path / 'root'
+        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-agents'), 'install'], cwd=self.path,
+                           env=dict(self.env, DOTFILES_SYSTEM_ROOT=str(root)), capture_output=True, text=True, timeout=20)
+        if p.returncode == 69:
+            self.skipTest('bash 4 or later required by dotfiles-agents')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        [codex_group] = tomllib.loads((root / 'etc/codex/config.toml').read_text())['hooks']['PreToolUse']
+        return {'claude': claude_hook['command'], 'codex': codex_group['hooks'][0]['command']}
+
+    def run_hook(self, command, home, cwd, shell='/bin/sh'):
+        payload = {'hook_event_name': 'PreToolUse', 'tool_name': 'Bash', 'cwd': str(cwd),
+                   'tool_input': {'command': 'git push origin main'}}
+        env = {'HOME': str(home), 'PATH': os.path.dirname(shutil.which('jq')) + ':/usr/bin:/bin'}
+        return subprocess.run([shell, '-c', command], input=json.dumps(payload), env=env, cwd=cwd,
+                              capture_output=True, text=True, timeout=30)
+
+    def test_both_harnesses_run_the_one_guard(self):
+        home = self.path / 'home'
+        (home / '.local/bin').mkdir(parents=True)
+        (home / '.local/bin/repo-guard').symlink_to(self.FEATURE / 'bin/repo-guard')
+        (home / '.config/repo-guard/protected.d').mkdir(parents=True)
+        (home / '.config/repo-guard/protected.d/a.txt').write_text('example-owner/protected-repo\n')
+        clone = self.path / 'clone'
+        subprocess.run(['git', 'init', '-q', str(clone)], check=True)
+        subprocess.run(['git', '-C', str(clone), 'remote', 'add', 'origin', 'git@github.com:example-owner/protected-repo.git'],
+                       check=True)
+        for harness, command in self.registrations().items():
+            # Codex runs a hook through the session's shell; Claude Code through its own.
+            for shell in ('/bin/sh', '/bin/zsh') if harness == 'codex' else ('/bin/sh',):
+                with self.subTest(harness=harness, shell=shell):
+                    p = self.run_hook(command, home, clone, shell)
+                    self.assertEqual(p.returncode, 0, p.stderr)
+                    self.assertEqual(json.loads(p.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
+
+    def test_codex_passes_without_the_feature_and_blocks_when_the_guard_breaks(self):
+        command = self.registrations()['codex']
+        clone = self.path / 'clone'
+        clone.mkdir()
+        p = self.run_hook(command, self.path / 'no-feature', clone)
+        self.assertEqual((p.returncode, p.stdout), (0, ''), p.stderr)
+        for name, guard in (('crashes', '#!/bin/sh\nexit 1\n'), ('is a dangling link', None)):
+            with self.subTest(name):
+                home = self.path / name.replace(' ', '-')
+                (home / '.local/bin').mkdir(parents=True)
+                link = home / '.local/bin/repo-guard'
+                if guard is None:
+                    link.symlink_to(self.path / 'missing')
+                else:
+                    link.write_text(guard)
+                p = self.run_hook(command, home, clone)
+                self.assertEqual(p.returncode, 2, 'Codex blocks only on exit 2')
+                self.assertIn('repo-guard: exited', p.stderr)
 
 
 class SubagentEconomics(Fixture):

@@ -1,0 +1,16 @@
+id = "agents.delegation"
+description = "The delegation policy and the scout and reader subagents, for Claude Code and Codex (README: Subagents and the delegation policy)"
+category = "agents"
+
+[provides]
+link = [
+  # claudemore and claudemax append it to the system prompt; the Codex
+  # app-server (bin/codex-app-server) gives it to every session it serves.
+  ".config/agent-delegation/policy.md",
+  # User subagents reach every Claude Code session: launched, bare and -p.
+  ".claude/agents/scout.md",
+  ".claude/agents/reader.md",
+  # Codex roles for spawn_agent's agent_type, the same two subagents.
+  ".codex/agents/scout.toml",
+  ".codex/agents/reader.toml",
+]
