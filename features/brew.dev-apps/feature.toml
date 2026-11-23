@@ -11,7 +11,6 @@ cask = [
   "bruno",
   "claude-code",
   "codex",
-  "codex-app",
   "cursor",
   "cyberduck",
   "dash",

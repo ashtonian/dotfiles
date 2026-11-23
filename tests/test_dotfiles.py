@@ -869,7 +869,6 @@ class RealFeatures(Fixture):
             self.assertNotIn(personal, brewfile)
         for home_cluster in ('.config/opencode/opencode.jsonc', '.config/otel-agent/config.yaml'):
             self.assertFalse((self.home / home_cluster).exists(), home_cluster)
-        self.assertFalse((self.home / '.config/neofetch').exists())
         self.assertFalse((self.home / '.mackup.cfg').exists())
         self.assertTrue((self.home / '.claude/CLAUDE.md').is_symlink(), 'dev features are on')
 

@@ -947,7 +947,7 @@ and its status. Decided entries record who decided.
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,
-`.zshrc.omz-backup`, the neofetch package and `lib_sh/requirers.sh` duplicate
+`.zshrc.omz-backup` and `lib_sh/requirers.sh` duplicate
 or contradict current sources.
 Recommendation: delete; the generated feature catalog replaces them.
 Status: open.

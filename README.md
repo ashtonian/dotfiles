@@ -273,7 +273,7 @@ Override one feature or setting for one machine in `machine.toml`:
 profiles = ["base", "dev", "desktop", "server"]
 
 [features]
-disable = ["tool.taskwarrior"]
+disable = ["tool.colorls"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
