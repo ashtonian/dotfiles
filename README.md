@@ -499,6 +499,21 @@ spotlight-exclusions check    # exit 1 if a folder on the list is not excluded
 The list, the commands and troubleshooting:
 [docs/SPOTLIGHT.md](docs/SPOTLIGHT.md).
 
+## Passkeys off
+
+Feature `browser.passkeys-off` (desktop profile) stops websites, browsers and 1Password from
+offering, creating or auto-filling passkeys; passwords and security keys keep working. It
+installs the Passkeys Off extension for Brave and Chrome and the `passkeys-off` command. Once
+per Mac:
+
+```sh
+passkeys-off apply    # Firefox prefs in every profile's user.js; restart Firefox
+passkeys-off check    # exit 1 until each browser profile has the extension loaded
+```
+
+Loading the extension, the 1Password and Passwords app settings, and troubleshooting:
+[docs/PASSKEYS.md](docs/PASSKEYS.md).
+
 ## Multi-Machine Setup
 
 This repo is designed to sync across multiple machines via LaunchAgent (every 4 hours). Each machine converges on the features its profiles enable and installs their missing packages; app settings backup returns with rollout step 8 (see [Mackup](#mackup-app-config-backup)).

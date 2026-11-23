@@ -1,0 +1,16 @@
+{
+  "manifest_version": 3,
+  "name": "Passkeys Off",
+  "version": "1.0.0",
+  "description": "Stops websites from offering, creating or auto-filling passkeys. A sign-in the page explicitly asks for, such as a security key, still works.",
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["passkeys-off.js"],
+      "run_at": "document_start",
+      "all_frames": true,
+      "match_origin_as_fallback": true,
+      "world": "MAIN"
+    }
+  ]
+}
