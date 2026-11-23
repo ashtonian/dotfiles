@@ -30,6 +30,7 @@ This file maps the checked-in implementation.
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── docs/PASSKEYS.md         # Passkey prompts off (browser.passkeys-off)
+├── docs/KARABINER.md       # Mouse buttons through Karabiner-Elements (tool.karabiner)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -61,15 +62,15 @@ where the feature is off.
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
-| `brew.apps` | desktop, work | darwin | Brewfile: 33 cask |
+| `brew.apps` | desktop, work | darwin | Brewfile: 32 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 7 tap, 97 brew |
-| `brew.desktop` | desktop | darwin | Brewfile: 13 cask (personal) |
+| `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 10 cask (personal) |
 | `brew.dev-apps` | dev | darwin | Brewfile: 18 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
-| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 16 mas |
-| `brew.mas.personal` | desktop | darwin | Brewfile: 9 mas |
-| `brew.vscode` | dev | darwin | Brewfile: 67 vscode |
+| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 15 mas |
+| `brew.mas.personal` | desktop | darwin | Brewfile: 6 mas |
+| `brew.vscode` | dev | darwin | Brewfile: 66 vscode |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
 | `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
@@ -80,6 +81,7 @@ where the feature is off.
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
+| `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
 
 Edit linked files in place. Add, remove or move files, then run
