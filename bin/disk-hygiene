@@ -1,0 +1,276 @@
+#!/usr/bin/env bash
+#===============================================================================
+# disk-hygiene - delete unused agent scratch and caches; cap LaunchAgent logs
+#===============================================================================
+#
+# USAGE:
+#   disk-hygiene            delete and cap
+#   disk-hygiene --dry-run  report what a run would delete or cap, change nothing
+#
+# Agent sessions leave scratch directories, repository scripts leave
+# per-branch caches, and LaunchAgents append to their logs; nothing else
+# removes any of them. The LaunchAgent com.ashtonian.disk-hygiene runs this
+# daily over:
+#
+#   <tmp>/claude-<uid>/<project>/<session>  a session's scratch, unused for DISK_HYGIENE_SCRATCH_DAYS (7)
+#   <cache>/<tool>                          a tool's whole cache, unused for DISK_HYGIENE_CACHE_DAYS (14),
+#                                           unless DISK_HYGIENE_KEEP names it
+#   <cache>/<name>/<key>                    one key of a DISK_HYGIENE_KEYED cache (jobcrm estavelle)
+#   ~/Library/Caches/{goimports,pnpm}       each file unused for DISK_HYGIENE_CACHE_DAYS
+#   ~/Library/pnpm/store, <drive>/.pnpm-store   `pnpm store prune`
+#   each LaunchAgent dotfiles apply installed (its state file under
+#   XDG_STATE_HOME), its stdout and stderr log, cut to its newest half
+#                                           once over DISK_HYGIENE_LOG_MAX_BYTES (1 MiB)
+#
+# <tmp> is DISK_HYGIENE_TMP (/private/tmp) and <drive>/tmp; <cache> is ~/.cache
+# and <drive>/cache/xdg, where claudemore keeps a session that works on a drive
+# (CLAUDE_CODE_TMPDIR, DOTFILES_CACHE_HOME). The drives are the directories in
+# DISK_HYGIENE_VOLUMES (/Volumes).
+#
+# Unused means nothing inside was read or written in the window; these volumes
+# update access times, so a cache that is only read stays. A tool's cache goes
+# whole, because its entries can depend on each other; a keyed cache, one
+# directory per branch or tool version, goes a key at a time.
+set -euo pipefail
+
+scratch_days=${DISK_HYGIENE_SCRATCH_DAYS:-7}
+cache_days=${DISK_HYGIENE_CACHE_DAYS:-14}
+keyed=${DISK_HYGIENE_KEYED-jobcrm estavelle}
+keep=${DISK_HYGIENE_KEEP-}
+tmp_root=${DISK_HYGIENE_TMP:-/private/tmp}
+volumes=${DISK_HYGIENE_VOLUMES:-/Volumes}
+log_max_bytes=${DISK_HYGIENE_LOG_MAX_BYTES:-1048576}
+apply_state=${XDG_STATE_HOME:-$HOME/.local/state}/dotfiles/applied.json
+
+dry_run=false
+case "${1:-}" in
+    --dry-run) dry_run=true ;;
+    "") ;;
+    *) echo "usage: disk-hygiene [--dry-run]" >&2; exit 2 ;;
+esac
+for setting in DISK_HYGIENE_SCRATCH_DAYS:$scratch_days DISK_HYGIENE_CACHE_DAYS:$cache_days \
+    DISK_HYGIENE_LOG_MAX_BYTES:$log_max_bytes; do
+    if [[ ! ${setting#*:} =~ ^[0-9]+$ ]] || (( ${setting#*:} < 1 )); then
+        echo "disk-hygiene: ${setting%%:*}=${setting#*:}: want a whole number, at least 1" >&2
+        exit 2
+    fi
+done
+
+now() { date -u +%FT%TZ; }
+removed=0
+freed_kb=0
+failures=0
+
+# used_within DAYS PATH: something under PATH was read or written in the last
+# DAYS days: a file's access or modification time, or a directory's
+# modification time (an entry added or removed). A directory's access time does
+# not count, because walking it, as this does, sets it. A socket is a live
+# daemon's endpoint, whose timestamps say nothing about use. PATH counts as used
+# when find could not read all of it.
+used_within() {
+    local hit
+    hit=$(find "$2" \( -type s -o \( -type d -mtime -"$1" \) -o \
+        \( ! -type d \( -atime -"$1" -o -mtime -"$1" \) \) \) -print -quit 2>/dev/null) || return 0
+    [[ -n $hit ]]
+}
+
+remove() {
+    local path=$1 what=$2 kb
+    kb=$(du -sk "$path" 2>/dev/null | cut -f1) || true
+    kb=${kb:-0}
+    if $dry_run; then
+        echo "$(now) would remove $what $path ($(( kb / 1024 )) MiB)"
+    else
+        # Go's module cache, wherever a cache embeds one, is read-only.
+        if ! rm -rf -- "$path" 2>/dev/null; then
+            chmod -R u+w -- "$path" 2>/dev/null || true
+            if ! rm -rf -- "$path"; then
+                echo "$(now) could not remove $what $path"
+                failures=$(( failures + 1 ))
+                return 0
+            fi
+        fi
+        echo "$(now) removed $what $path ($(( kb / 1024 )) MiB)"
+    fi
+    removed=$(( removed + 1 ))
+    freed_kb=$(( freed_kb + kb ))
+}
+
+# in_list NAME LIST: NAME is one of the space-separated words of LIST.
+in_list() {
+    local name
+    for name in $2; do
+        [[ $1 == "$name" ]] && return 0
+    done
+    return 1
+}
+
+# drives prints each mounted volume once; the boot volume's /Volumes entry is a
+# symlink to / and is skipped.
+drives() {
+    local drive
+    for drive in "$volumes"/*; do
+        if [[ -d $drive && ! -L $drive ]]; then printf '%s\n' "$drive"; fi
+    done
+}
+
+# prune_scratch TMP: Claude Code keeps a session's scratch at
+# TMP/claude-<uid>/<project>/<session id>, the project named after its absolute
+# path with each / turned into -. Anything else there (bundled skills, files
+# agents wrote straight into TMP) belongs to something else and stays.
+prune_scratch() {
+    local base session project
+    base="$1/claude-$(id -u)"
+    local uuid='^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'
+    [[ -d $base && ! -L $base ]] || return 0
+    for session in "$base"/-*/*; do
+        [[ -d $session && ! -L $session && ${session##*/} =~ $uuid ]] || continue
+        used_within "$scratch_days" "$session" || remove "$session" scratch
+    done
+    $dry_run && return 0
+    for project in "$base"/-*; do
+        if [[ -d $project && ! -L $project ]]; then rmdir "$project" 2>/dev/null || true; fi
+    done
+}
+
+prune_cache() {
+    local root=$1 entry key
+    [[ -d $root && ! -L $root ]] || return 0
+    for entry in "$root"/* "$root"/.[!.]*; do
+        # A symlink points at data kept elsewhere (models on another drive).
+        [[ -e $entry && ! -L $entry ]] || continue
+        in_list "${entry##*/}" "$keep" && continue
+        if [[ -d $entry ]] && in_list "${entry##*/}" "$keyed"; then
+            for key in "$entry"/* "$entry"/.[!.]*; do
+                [[ -e $key && ! -L $key ]] || continue
+                used_within "$cache_days" "$key" || remove "$key" "cache key"
+            done
+        else
+            used_within "$cache_days" "$entry" || remove "$entry" cache
+        fi
+    done
+}
+
+# prune_files DIR: a cache whose files are independent entries, pruned one by one.
+prune_files() {
+    local dir=$1 count kb
+    [[ -d $dir && ! -L $dir ]] || return 0
+    count=$(find "$dir" -type f ! -atime -"$cache_days" ! -mtime -"$cache_days" 2>/dev/null | wc -l | tr -d ' ') || true
+    (( ${count:-0} > 0 )) || return 0
+    kb=$(find "$dir" -type f ! -atime -"$cache_days" ! -mtime -"$cache_days" -print0 2>/dev/null |
+        xargs -0 du -k 2>/dev/null | awk '{ s += $1 } END { print s + 0 }') || true
+    kb=${kb:-0}
+    if $dry_run; then
+        echo "$(now) would remove $count files ($(( kb / 1024 )) MiB) from $dir"
+    elif find "$dir" -type f ! -atime -"$cache_days" ! -mtime -"$cache_days" -delete; then
+        echo "$(now) removed $count files ($(( kb / 1024 )) MiB) from $dir"
+    else
+        echo "$(now) could not remove every unused file from $dir"
+        failures=$(( failures + 1 ))
+    fi
+    removed=$(( removed + count ))
+    freed_kb=$(( freed_kb + kb ))
+}
+
+# find_pnpm prints a pnpm that runs: the one on PATH, else the newest corepack
+# has cached. A version-manager shim on PATH can exist and still fail outside a
+# project, so each candidate has to answer --version.
+find_pnpm() {
+    local root candidate
+    while IFS= read -r candidate; do
+        if [[ -n $candidate ]] && (cd / && "$candidate" --version) >/dev/null 2>&1; then
+            printf '%s\n' "$candidate"
+            return 0
+        fi
+    done < <(
+        command -v pnpm || true
+        for root in "$HOME/.cache" $(drives | sed 's|$|/cache/xdg|'); do
+            for candidate in "$root"/node/corepack/v1/pnpm/*/pnpm; do
+                if [[ -x $candidate ]]; then printf '%s\n' "$candidate"; fi
+            done
+        done | sort -rV
+    )
+    return 1
+}
+
+prune_pnpm_stores() {
+    local pnpm store out stores=()
+    for store in "$HOME/Library/pnpm/store" $(drives | sed 's|$|/.pnpm-store|'); do
+        if [[ -d $store && ! -L $store ]]; then stores+=("$store"); fi
+    done
+    (( ${#stores[@]} > 0 )) || return 0
+    if ! pnpm=$(find_pnpm); then
+        echo "$(now) no pnpm on PATH or in a corepack cache; skipping ${stores[*]}"
+        return 0
+    fi
+    # A prune can remove a package an install is linking at that moment.
+    if pgrep -qf pnpm; then
+        echo "$(now) pnpm is running; skipping pnpm stores until the next run"
+        return 0
+    fi
+    for store in "${stores[@]}"; do
+        if $dry_run; then
+            echo "$(now) would run $pnpm store prune on $store"
+        elif out=$(cd / && "$pnpm" store prune --store-dir "$store" 2>&1); then
+            echo "$(now) pnpm store prune $store: $(grep -E '^Removed [0-9]+ (files|packages)' <<<"$out" | paste -sd ' ' -)"
+        else
+            echo "$(now) pnpm store prune $store failed: $(tail -n 1 <<<"$out")"
+            failures=$(( failures + 1 ))
+        fi
+    done
+}
+
+# agent_logs prints the stdout and stderr paths of each LaunchAgent dotfiles
+# apply installed, from the plist launchd reads. Before the first apply there
+# are none.
+agent_logs() {
+    local installed key value
+    [[ -f $apply_state ]] || return 0
+    jq -r '(.agents // {})[].path' "$apply_state" | while IFS= read -r installed; do
+        [[ -f $installed ]] || continue
+        for key in StandardOutPath StandardErrorPath; do
+            if value=$(plutil -extract "$key" raw -o - "$installed" 2>/dev/null); then
+                printf '%s\n' "$value"
+            fi
+        done
+    done | sort -u
+}
+
+# cap_log FILE: cut a log over the limit to its newest half, from a line
+# boundary. launchd keeps the file open for appending, so it is rewritten in
+# place; moved aside, the agent would go on writing to the moved file.
+cap_log() {
+    local file=$1 size tmp
+    [[ -f $file && ! -L $file ]] || return 0
+    size=$(wc -c <"$file" | tr -d ' ')
+    (( size > log_max_bytes )) || return 0
+    if $dry_run; then
+        echo "$(now) would cap log $file ($(( size / 1024 )) KiB)"
+        return 0
+    fi
+    if tmp=$(mktemp "$file.XXXXXX") &&
+        tail -c $(( log_max_bytes / 2 )) "$file" | tail -n +2 >"$tmp" &&
+        cat "$tmp" >"$file"; then
+        echo "$(now) capped log $file ($(( size / 1024 )) KiB to $(( $(wc -c <"$file") / 1024 )) KiB)"
+    else
+        echo "$(now) could not cap log $file"
+        failures=$(( failures + 1 ))
+    fi
+    rm -f -- "${tmp:-}"
+}
+
+# Stores first: the pnpm that prunes them may live in a cache pruned below.
+prune_pnpm_stores
+prune_scratch "$tmp_root"
+while IFS= read -r drive; do prune_scratch "$drive/tmp"; done < <(drives)
+prune_cache "$HOME/.cache"
+while IFS= read -r drive; do prune_cache "$drive/cache/xdg"; done < <(drives)
+prune_files "$HOME/Library/Caches/goimports"
+prune_files "$HOME/Library/Caches/pnpm"
+while IFS= read -r log; do cap_log "$log"; done < <(agent_logs)
+
+verb=removed
+$dry_run && verb="would remove"
+printf '%s %s %d items (%.1f GiB): scratch unused %d days, caches unused %d days; %d failures\n' \
+    "$(now)" "$verb" "$removed" "$(bc <<<"scale=1; $freed_kb / 1048576")" "$scratch_days" "$cache_days" "$failures"
+(( failures == 0 ))

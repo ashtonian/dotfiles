@@ -42,7 +42,7 @@ of them, so the service runs on the defaults.
 
 | Variable | Type | Default | Description |
 | ---------- | ------ | --------- | ------------- |
-| `AGENT_MONITOR_HOME` | Directory path | `~/.local/share/agent-monitor` | Release checkout (`app/`), settings (`config/.env`) and the data link (`data`). The LaunchAgent template and installer assume the default |
+| `AGENT_MONITOR_HOME` | Directory path | `~/.local/share/agent-monitor` | Release checkout (`app/`), settings (`config/.env`) and the data link (`data`). The LaunchAgent templates and their `when_exists` paths assume the default |
 | `AGENT_MONITOR_DATA_DIR` | Directory path | unset (`<home>/store`); studio: `/Volumes/E2TB/agent-monitor` | Where `install` points the data link when `--data-dir` is not given. Setting `paths.agent_monitor_data` (feature `shell.env`), exported by the generated `env.sh` |
 | `AGENT_MONITOR_PORT` | Port | `4820` | Dashboard port. Hooks find a non-default port through `~/.claude/.agent-dashboard.json` while the server runs |
 | `AGENT_MONITOR_GATE_HOST` | Address | `0.0.0.0` | LAN gate bind address; set it to one interface's address to keep the gate off the others |
@@ -112,20 +112,21 @@ because the dashboard watches its rollout files.
 ## Build, run and test
 
 ```sh
-~/.dotfiles/bin/agent-monitor install    # install or update; idempotent
+~/.dotfiles/bin/agent-monitor install    # install or update; idempotent; (re)starts the service
 ~/.dotfiles/bin/agent-monitor status     # release, data link, service, health, hooks
 open http://127.0.0.1:4820
 
-# Service only (after an install)
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --agent-monitor-only
+# The service's LaunchAgent belongs to the agents.agent-monitor feature (dev profile):
+# dotfiles apply loads it once install has put the release in place.
+dotfiles doctor | grep agent-monitor     # "waiting" until then
 
 # Remove the hooks (the service and data stay)
 ~/.dotfiles/bin/agent-monitor uninstall-hooks
 
-# LAN access: hand over the cluster-generated token (installs and starts the gate)
+# LAN access: hand over the cluster-generated token (apply installs and starts the gate)
 kubectl -n dev get secret agent-monitor-gate -o jsonpath='{.data.token}' | base64 -d \
   | ~/.dotfiles/bin/agent-monitor lan enable
-~/.dotfiles/bin/agent-monitor lan disable   # stop the gate, delete the token
+~/.dotfiles/bin/agent-monitor lan disable   # delete the token; apply stops and removes the gate
 
 # Tests (no network)
 python3 -B -m unittest tests.test_dotfiles.AgentMonitor tests.test_dotfiles.AgentMonitorGate -v
@@ -148,7 +149,7 @@ tail -50 ~/Library/Logs/agent-monitor/server.stderr.log
 
 The service runs only while `<home>/data` resolves. With the data volume
 unmounted it stays stopped, and launchd starts it again when the volume returns.
-Upgrades replace the checkout in place, so restart the service afterwards.
+Upgrades replace the checkout in place; `install` restarts the service afterwards.
 
 Troubleshooting:
 
@@ -162,6 +163,10 @@ Troubleshooting:
   Removable Volumes.
 - **Exit status 78 in `launchctl print`.** Node.js or the checkout is missing:
   rerun `install`.
+- **`install` ends with `com.ashtonian.agent-monitor is not loaded`.** The
+  `agents.agent-monitor` feature is off on this Mac (it is in the dev profile):
+  enable it in `~/.config/dotfiles/machine.toml` and rerun `install`, or see
+  `dotfiles doctor`.
 - **`install` aborts: tag resolved to an unexpected commit.** Upstream moved the
   tag. Verify the new commit before updating `CCAM_COMMIT`.
 - **`better-sqlite3 does not load`.** The native driver does not match Node.js:
@@ -169,7 +174,7 @@ Troubleshooting:
 - **A session is missing.** Check `status` for hooks. Sessions started before
   the hooks were installed appear through history import, not live events.
 - **Port in use.** `lsof -nP -iTCP:4820 -sTCP:LISTEN`, then stop the other process
-  or set `AGENT_MONITOR_PORT` for `install` and in the installed plist.
+  or set `AGENT_MONITOR_PORT` for `install` and in the feature's plist template.
 - **The LAN URL returns 502.** The gate is down, or the macOS firewall blocks it.
   Check `status`, `gate.stderr.log`, and System Settings → Network → Firewall →
   Options, where `node` must be allowed incoming connections.
@@ -201,7 +206,8 @@ needs `DASHBOARD_TOKEN`.
 | ------ | ------ |
 | `bin/agent-monitor` | Install/update, `serve` and `gate` entry points, `lan enable/disable`, status, hook removal |
 | `bin/agent-monitor-gate.mjs` | LAN gate: token check, hook-route refusal, HTTP and WebSocket relay to loopback |
-| `launchagents/com.ashtonian.agent-monitor-gate.plist` | Gate service; installed only once a token exists |
-| `launchagents/com.ashtonian.agent-monitor.plist` | Service template: loopback, PATH for Run, waits on the data link |
-| `bin/dotfiles-install-launchagents.sh` | `--agent-monitor-only`; included in the full install once installed |
-| `tests/test_dotfiles.py` (`AgentMonitor`, `AgentMonitorGate`) | Loopback env, errors, hook removal, short-token refusal; gate token, Host rewrite, hook refusal, WebSocket relay |
+| `features/agents.agent-monitor/feature.toml` | The two LaunchAgents and the files each waits for (`when_exists`) |
+| `features/agents.agent-monitor/launchagents/com.ashtonian.agent-monitor-gate.plist` | Gate service; installed only while a token exists |
+| `features/agents.agent-monitor/launchagents/com.ashtonian.agent-monitor.plist` | Service template: loopback, PATH for Run, waits on the data link |
+| `lib_sh/launch-agent.sh` | `install` and `lan enable` restart a loaded agent, or run `dotfiles apply` to install it |
+| `tests/test_dotfiles.py` (`AgentMonitor`, `AgentMonitorGate`) | Loopback env, errors, hook removal, short-token refusal, LAN enable and disable through apply; gate token, Host rewrite, hook refusal, WebSocket relay |

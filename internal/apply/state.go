@@ -28,6 +28,18 @@ type State struct {
 	// Prefs maps each app setting apply owns, by plan.Pref.ID, to what it set
 	// and what it replaced.
 	Prefs map[string]PrefRecord `json:"prefs"`
+	// Agents maps each LaunchAgent label apply installed to its plist.
+	Agents map[string]AgentRecord `json:"agents"`
+}
+
+// AgentRecord is an installed LaunchAgent: its plist, the hash apply wrote it
+// with, and the launchd.Definition of the plist launchd last loaded, empty
+// when unknown (a load failed). The definition differs from the plist's while
+// a reload waits for a later apply.
+type AgentRecord struct {
+	Path   string `json:"path"`
+	SHA256 string `json:"sha256"`
+	Loaded string `json:"loaded"`
 }
 
 // CopyRecord is a managed copy's source and content hash at write time.
@@ -54,6 +66,7 @@ func newState() *State {
 		Generated: map[string]string{},
 		Stubs:     map[string]bool{},
 		Prefs:     map[string]PrefRecord{},
+		Agents:    map[string]AgentRecord{},
 	}
 }
 
@@ -64,6 +77,7 @@ func (s *State) clone() *State {
 	maps.Copy(c.Generated, s.Generated)
 	maps.Copy(c.Stubs, s.Stubs)
 	maps.Copy(c.Prefs, s.Prefs)
+	maps.Copy(c.Agents, s.Agents)
 	return c
 }
 

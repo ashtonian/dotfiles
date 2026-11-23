@@ -11,7 +11,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ashtonian/dotfiles/internal/manifest"
+	"github.com/ashtonian/dotfiles/internal/plan"
 	"github.com/ashtonian/dotfiles/internal/prefs"
+	"github.com/ashtonian/dotfiles/internal/resolve"
 )
 
 // memoryStore is one app's settings in memory, with a failure to act out.
@@ -124,18 +127,35 @@ func TestPrefsFollowTheRepositoryUntilChangedHere(t *testing.T) {
 
 func TestPrefsTeardownPutsBackWhatWasThere(t *testing.T) {
 	m, muxy := prefsMachine(t)
+	muxy.values["terminal.font_families"] = []any{"Menlo", "Monaco"}
 	m.run(false)
+	// Through the state file, as between two runs.
+	path := filepath.Join(t.TempDir(), "applied.json")
+	require.NoError(t, m.state.Save(path))
+	loaded, err := LoadState(path)
+	require.NoError(t, err)
+	m.state = loaded
 	m.disable = []string{"app"}
 
 	report := m.run(false)
 	assert.Empty(t, report.Problems)
 	assert.Equal(t, map[string]string{
 		"muxy:appearance.dark_theme":  `"Muxy"`,
-		"muxy:terminal.font_families": "no value",
-	}, details(report, "restore-pref"))
-	assert.Equal(t, map[string]any{"appearance.dark_theme": "Muxy", "appearance.layout": "project_focused"}, muxy.values)
+		"muxy:terminal.font_families": `["Menlo","Monaco"]`,
+	}, details(report, "restore-pref"), "one line each, as the state file's indentation is not the value's")
+	assert.Equal(t, map[string]any{"appearance.dark_theme": "Muxy", "appearance.layout": "project_focused",
+		"terminal.font_families": []any{"Menlo", "Monaco"}}, muxy.values)
 	assert.Empty(t, m.state.Prefs)
 	assert.Empty(t, m.run(false).Actions)
+}
+
+func TestPrefsTeardownUnsetsASettingThatHadNoValue(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+	m.disable = []string{"app"}
+	report := m.run(false)
+	assert.Equal(t, "no value", details(report, "restore-pref")["muxy:terminal.font_families"])
+	assert.NotContains(t, muxy.values, "terminal.font_families")
 }
 
 func TestPrefsTeardownLeavesAChangedSettingAlone(t *testing.T) {
@@ -204,4 +224,53 @@ func TestAdoptRefusesASettingWithNoValueHere(t *testing.T) {
 	assert.ErrorContains(t, err, "has no value here")
 	_, _, err = Adopt(context.Background(), m.plan(), m.state, []string{"muxy:appearance.layout"}, m.stores)
 	assert.ErrorIs(t, err, ErrNotManaged, "a key no feature owns")
+}
+
+// An overlay's feature owns app settings as one of the repository's does:
+// adopt writes into the overlay's prefs file, and a machine that leaves the
+// context gets back the values the overlay's settings replaced.
+func TestOverlayPrefsAreOwnedAdoptedAndPutBack(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.withOverlay()
+	overlayOwn := `"appearance.light_theme" = "Dracula"` + "\n"
+	m.writeOverlay("features/personal.muxy/feature.toml", "id = \"personal.muxy\"\ndefault = true\n[provides.prefs]\nmuxy = \"muxy.toml\"\n")
+	m.writeOverlay("features/personal.muxy/muxy.toml", overlayOwn)
+	muxy.values["appearance.light_theme"] = "Muxy Light"
+
+	first := m.run(false)
+	assert.Empty(t, first.Problems)
+	assert.Equal(t, `"Dracula" (was "Muxy Light")`, details(first, "pref")["muxy:appearance.light_theme"])
+	assert.Equal(t, "Dracula", muxy.values["appearance.light_theme"])
+
+	muxy.values["appearance.light_theme"] = "Solarized Light"
+	report, next, err := Adopt(context.Background(), m.plan(), m.state, []string{"muxy:appearance.light_theme"}, m.stores)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(m.overlay, "features/personal.muxy/muxy.toml"), details(report, "adopt")["muxy:appearance.light_theme"],
+		"the value goes to the overlay that owns it, never the public repository")
+	m.state = next
+	source, err := os.ReadFile(filepath.Join(m.overlay, "features/personal.muxy/muxy.toml"))
+	require.NoError(t, err)
+	assert.Equal(t, `"appearance.light_theme" = "Solarized Light"`+"\n", string(source))
+	assert.Empty(t, m.run(false).Actions, "adopted: in step")
+
+	m.overlay = ""
+	left := m.run(false)
+	assert.Empty(t, left.Problems)
+	assert.Equal(t, `"Muxy Light"`, details(left, "restore-pref")["muxy:appearance.light_theme"])
+	assert.Equal(t, "Muxy Light", muxy.values["appearance.light_theme"])
+	assert.Equal(t, "Dracula", muxy.values["appearance.dark_theme"], "the repository's own settings stay")
+}
+
+func TestAnOverlayAndTheRepositoryCannotOwnOneSetting(t *testing.T) {
+	m, _ := prefsMachine(t)
+	m.withOverlay()
+	m.writeOverlay("features/personal.muxy/feature.toml", "id = \"personal.muxy\"\ndefault = true\n[provides.prefs]\nmuxy = \"muxy.toml\"\n")
+	m.writeOverlay("features/personal.muxy/muxy.toml", `"appearance.dark_theme" = "Nord"`+"\n")
+	features, err := manifest.LoadFeatures(manifest.Root{Dir: m.repo}, manifest.Root{Dir: m.overlay, Overlay: "personal"})
+	require.NoError(t, err)
+	res, err := resolve.Resolve(features, nil, &manifest.Machine{}, m.goos)
+	require.NoError(t, err)
+	_, err = plan.Build(features, res.Runnable(features), res.Values(), plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
+	require.ErrorIs(t, err, plan.ErrPlan)
+	assert.Contains(t, err.Error(), "app and personal.muxy both install muxy:appearance.dark_theme")
 }

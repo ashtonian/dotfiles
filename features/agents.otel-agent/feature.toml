@@ -10,3 +10,13 @@ retire = [
 
 [provides]
 link = [".config/otel-agent"]
+
+# The collector waits for enrollment (bin/otel-agent enroll), which writes the
+# host file last.
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.otel-agent.plist"
+when_exists = [
+  "~/.local/share/otel-agent/endpoint",
+  "~/.local/share/otel-agent/token",
+  "~/.local/share/otel-agent/host",
+]

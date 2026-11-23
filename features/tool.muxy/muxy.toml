@@ -3,6 +3,12 @@
 # (recent projects, remote servers, layouts) stays this machine's own.
 # `muxy config list` shows every key; quote dotted keys. `dotfiles adopt
 # muxy:<key>` keeps a value changed in Muxy.
+"appearance.agent_sessions_visible" = true
 "appearance.dark_theme" = "Dracula"
+"appearance.light_theme" = "Dracula"
+"appearance.tips_visible" = false
+"composer.font_family" = "FiraCode Nerd Font"
 # The Mono variant keeps Nerd Font icons one cell wide, as terminal programs expect.
 "terminal.font_families" = ["FiraCode Nerd Font Mono"]
+"terminal.font_size" = 13.0
+"terminal.options.copy_on_select" = true

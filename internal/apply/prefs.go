@@ -1,6 +1,7 @@
 package apply
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -139,7 +140,7 @@ func (r *runner) teardownPrefs(p *plan.Plan) error {
 		}
 		detail := "no value"
 		if rec.HadPrevious {
-			detail = string(rec.Previous)
+			detail = oneLine(rec.Previous)
 		}
 		if !r.dryRun {
 			if err := restore(r.ctx, store, key, rec); err != nil && !errors.Is(err, prefs.ErrNotApplied) {
@@ -165,6 +166,16 @@ func restore(ctx context.Context, store PrefStore, key string, rec PrefRecord) e
 		return fmt.Errorf("reading the recorded value: %w", err)
 	}
 	return store.Set(ctx, key, previous)
+}
+
+// oneLine renders a value the state recorded on one line: the state file is
+// indented, and so is every value read back from it.
+func oneLine(recorded json.RawMessage) string {
+	var b bytes.Buffer
+	if err := json.Compact(&b, recorded); err != nil {
+		return string(recorded)
+	}
+	return b.String()
 }
 
 // rawEqual compares a live value with one the state recorded.

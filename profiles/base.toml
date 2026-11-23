@@ -14,6 +14,14 @@ enable = [
   "tool.mise",
   "brew.base",
   "brew.macos",
+  "macos.spotlight",
+  # The LaunchAgents every Mac runs: this repository's sync and weekly update,
+  # disk pruning, the Go cache trim, and gpg-agent for signing over SSH.
+  "dotfiles.sync",
+  "dotfiles.update",
+  "macos.disk-hygiene",
+  "tool.go-cache-trim",
+  "tool.gpg-agent",
 ]
 
 [settings]

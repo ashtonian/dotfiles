@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"slices"
@@ -26,6 +27,8 @@ var SettingTypes = []string{"bool", "int", "string", "path", "secret"}
 
 var (
 	idPattern = regexp.MustCompile(`^[a-z0-9]+(?:[.-][a-z0-9]+)*$`)
+	// An overlay's name is the first word of every ID in it, so it has no dot.
+	overlayPattern = regexp.MustCompile(`^[a-z0-9]+(?:-[a-z0-9]+)*$`)
 	// Package names end up inside generated Ruby (the Brewfile), so only the
 	// characters real formula, cask, tap and flatpak names use are allowed.
 	packagePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9@._+/-]*$`)
@@ -40,7 +43,21 @@ var (
 	// profile applies, so apply would remove everything the profiles install;
 	// callers refuse to run instead.
 	ErrNoMachine = errors.New("no machine manifest")
+	// ErrNoOverlay means the machine manifest lists an overlay that is not
+	// cloned. Applying without it would remove what its features install.
+	ErrNoOverlay = errors.New("overlay not cloned")
 )
+
+// Root is a tree of features and profiles: the dotfiles repository, or an
+// overlay, which is one context's private checkout (personal work, or one
+// client). Each feature ID and profile name belongs to the root its first
+// word names: an overlay's all start with the overlay's name, and the
+// repository's never start with an overlay's. So every ID says which context
+// it comes from, and no root can shadow another's.
+type Root struct {
+	Dir     string
+	Overlay string // the overlay's name; empty for the dotfiles repository
+}
 
 // Feature is one toggleable capability: features/<id>/feature.toml plus the
 // files beside it.
@@ -86,6 +103,26 @@ type Provides struct {
 	// Prefs maps a store from prefs.Stores to a file of the settings this
 	// feature owns in that app, set key by key; see package prefs.
 	Prefs map[string]string `toml:"prefs"`
+	// LaunchAgent lists launchd jobs for the user's GUI session. They are
+	// installed on macOS only; elsewhere the rest of the feature applies.
+	LaunchAgent []LaunchAgent `toml:"launch_agent"`
+}
+
+// LaunchAgent is a launchd job that apply installs into ~/Library/LaunchAgents
+// and loads. Its plist is a template: every $HOME in it becomes the home
+// directory. The template is named <Label>.plist, and so is the installed file.
+type LaunchAgent struct {
+	Plist string `toml:"plist"` // relative to the feature's directory
+	// WhenExists lists paths, absolute or starting with ~/, that must all
+	// exist before the agent is installed: the program it runs, or a file a
+	// person creates during setup. Until then apply leaves the agent out, and
+	// removes it if it had installed it.
+	WhenExists []string `toml:"when_exists"`
+}
+
+// Label is the launchd label the template's file name declares.
+func (a LaunchAgent) Label() string {
+	return strings.TrimSuffix(path.Base(a.Plist), ".plist")
 }
 
 // MasApp is a Mac App Store app.
@@ -134,9 +171,11 @@ type Selection struct {
 	Disable []string `toml:"disable"`
 }
 
-// Machine is this machine's untracked manifest: its profiles in order, then
-// single-feature and setting overrides.
+// Machine is this machine's untracked manifest: the overlays of the contexts
+// it belongs to, its profiles in order, then single-feature and setting
+// overrides.
 type Machine struct {
+	Overlays []string       `toml:"overlays"`
 	Profiles []string       `toml:"profiles"`
 	Features Selection      `toml:"features"`
 	Settings map[string]any `toml:"settings"`
@@ -147,14 +186,97 @@ func (f *Feature) Supports(goos string) bool {
 	return len(f.Platforms) == 0 || slices.Contains(f.Platforms, goos)
 }
 
-// LoadFeatures reads features/*/feature.toml under root, keyed by ID.
-func LoadFeatures(root string) (map[string]*Feature, error) {
-	paths, err := filepath.Glob(filepath.Join(root, "features", "*", "feature.toml"))
+// checkOverlayNames rejects an overlay name that is not one lowercase word
+// group, or that is listed twice.
+func checkOverlayNames(names []string) error {
+	seen := map[string]bool{}
+	for _, name := range names {
+		if !overlayPattern.MatchString(name) {
+			return fmt.Errorf("%w: overlay name %q must be lowercase words joined by -", ErrInvalid, name)
+		}
+		if seen[name] {
+			return fmt.Errorf("%w: overlay %s is listed twice", ErrInvalid, name)
+		}
+		seen[name] = true
+	}
+	return nil
+}
+
+// OverlayRoots returns the roots of the overlays named, each the directory
+// of that name under dir. An overlay that is not a directory there is
+// ErrNoOverlay.
+func OverlayRoots(dir string, names []string) ([]Root, error) {
+	if err := checkOverlayNames(names); err != nil {
+		return nil, err
+	}
+	roots := make([]Root, 0, len(names))
+	for _, name := range names {
+		root := Root{Dir: filepath.Join(dir, name), Overlay: name}
+		info, err := os.Stat(root.Dir)
+		if errors.Is(err, os.ErrNotExist) || (err == nil && !info.IsDir()) {
+			return nil, fmt.Errorf("%w: %s is not at %s; clone its repository there, or remove it from machine.toml", ErrNoOverlay, name, root.Dir)
+		}
+		if err != nil {
+			return nil, fmt.Errorf("overlay %s: %w", name, err)
+		}
+		roots = append(roots, root)
+	}
+	return roots, nil
+}
+
+// overlayOwners returns the set of the roots' overlay names.
+func overlayOwners(roots []Root) (map[string]bool, error) {
+	var names []string
+	for _, r := range roots {
+		if r.Overlay != "" {
+			names = append(names, r.Overlay)
+		}
+	}
+	if err := checkOverlayNames(names); err != nil {
+		return nil, err
+	}
+	owners := make(map[string]bool, len(names))
+	for _, name := range names {
+		owners[name] = true
+	}
+	return owners, nil
+}
+
+// checkOwner reports a feature ID or profile name that is in the wrong root:
+// an overlay's must start with the overlay's name, and the repository's must
+// not start with any overlay's.
+func checkOwner(kind, name string, root Root, overlays map[string]bool) error {
+	first, _, _ := strings.Cut(name, ".")
+	switch {
+	case root.Overlay != "" && first != root.Overlay:
+		return fmt.Errorf("%s %q is in overlay %s, so its name must be %q or start with %q", kind, name, root.Overlay, root.Overlay, root.Overlay+".")
+	case root.Overlay == "" && overlays[first]:
+		return fmt.Errorf("%s %q in the repository starts with the name of overlay %s; rename one of them", kind, name, first)
+	}
+	return nil
+}
+
+// LoadFeatures reads features/*/feature.toml under each root, keyed by ID.
+func LoadFeatures(roots ...Root) (map[string]*Feature, error) {
+	overlays, err := overlayOwners(roots)
 	if err != nil {
-		return nil, fmt.Errorf("list features: %w", err)
+		return nil, err
+	}
+	var paths []string
+	rootOf := map[string]Root{}
+	for _, root := range roots {
+		found, err := filepath.Glob(filepath.Join(root.Dir, "features", "*", "feature.toml"))
+		if err != nil {
+			return nil, fmt.Errorf("list features in %s: %w", root.Dir, err)
+		}
+		for _, path := range found {
+			rootOf[path] = root
+		}
+		paths = append(paths, found...)
 	}
 	features := make(map[string]*Feature, len(paths))
 	settingOwner := map[string]string{}
+	agentOwner := map[string]string{}
 	for _, path := range paths {
 		var f Feature
 		if err := decodeStrict(path, &f, settingDefault); err != nil {
@@ -164,34 +286,52 @@ func LoadFeatures(root string) (map[string]*Feature, error) {
 		if err := validateFeature(&f, filepath.Base(f.Dir)); err != nil {
 			return nil, fmt.Errorf("%w: %s: %w", ErrInvalid, path, err)
 		}
+		if err := checkOwner("feature", f.ID, rootOf[path], overlays); err != nil {
+			return nil, fmt.Errorf("%w: %s: %w", ErrInvalid, path, err)
+		}
 		for name := range f.Settings {
 			if owner, taken := settingOwner[name]; taken {
 				return nil, fmt.Errorf("%w: setting %q is declared by both %s and %s", ErrInvalid, name, owner, f.ID)
 			}
 			settingOwner[name] = f.ID
 		}
+		for _, a := range f.Provides.LaunchAgent {
+			if owner, taken := agentOwner[a.Label()]; taken {
+				return nil, fmt.Errorf("%w: LaunchAgent %s is declared by both %s and %s", ErrInvalid, a.Label(), owner, f.ID)
+			}
+			agentOwner[a.Label()] = f.ID
+		}
 		features[f.ID] = &f
 	}
 	return features, nil
 }
 
-// LoadProfiles reads profiles/*.toml under root, keyed by file name.
-func LoadProfiles(root string) (map[string]*Profile, error) {
-	paths, err := filepath.Glob(filepath.Join(root, "profiles", "*.toml"))
+// LoadProfiles reads profiles/*.toml under each root, keyed by file name.
+func LoadProfiles(roots ...Root) (map[string]*Profile, error) {
+	overlays, err := overlayOwners(roots)
 	if err != nil {
-		return nil, fmt.Errorf("list profiles: %w", err)
+		return nil, err
 	}
-	profiles := make(map[string]*Profile, len(paths))
-	for _, path := range paths {
-		var p Profile
-		if err := decodeStrict(path, &p, settingValue); err != nil {
-			return nil, err
+	profiles := map[string]*Profile{}
+	for _, root := range roots {
+		paths, err := filepath.Glob(filepath.Join(root.Dir, "profiles", "*.toml"))
+		if err != nil {
+			return nil, fmt.Errorf("list profiles in %s: %w", root.Dir, err)
 		}
-		p.Name = strings.TrimSuffix(filepath.Base(path), ".toml")
-		if !idPattern.MatchString(p.Name) {
-			return nil, fmt.Errorf("%w: %s: profile name %q must be lowercase words joined by - or .", ErrInvalid, path, p.Name)
+		for _, path := range paths {
+			var p Profile
+			if err := decodeStrict(path, &p, settingValue); err != nil {
+				return nil, err
+			}
+			p.Name = strings.TrimSuffix(filepath.Base(path), ".toml")
+			if !idPattern.MatchString(p.Name) {
+				return nil, fmt.Errorf("%w: %s: profile name %q must be lowercase words joined by - or .", ErrInvalid, path, p.Name)
+			}
+			if err := checkOwner("profile", p.Name, root, overlays); err != nil {
+				return nil, fmt.Errorf("%w: %s: %w", ErrInvalid, path, err)
+			}
+			profiles[p.Name] = &p
 		}
-		profiles[p.Name] = &p
 	}
 	return profiles, nil
 }
@@ -205,24 +345,37 @@ func LoadMachine(path string) (*Machine, error) {
 		}
 		return nil, err
 	}
+	if err := checkOverlayNames(m.Overlays); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
 	return &m, nil
 }
 
-// MachineFile renders a new machine manifest that lists profiles. Profile
-// names are validated by LoadProfiles, so they need no escaping.
-func MachineFile(profiles []string) []byte {
+// MachineFile renders a new machine manifest that lists overlays and
+// profiles. Their names are validated before this is called, so they need no
+// escaping.
+func MachineFile(overlays, profiles []string) []byte {
 	var b strings.Builder
-	b.WriteString("# This machine's profiles, feature overrides and setting overrides.\n")
+	b.WriteString("# This machine's overlays, profiles, feature overrides and setting overrides.\n")
 	b.WriteString("# Written by `dotfiles init`; see docs/MACHINE-FEATURES.md.\n")
-	b.WriteString("profiles = [")
-	for i, p := range profiles {
+	if len(overlays) > 0 {
+		b.WriteString("overlays = ")
+		writeList(&b, overlays)
+	}
+	b.WriteString("profiles = ")
+	writeList(&b, profiles)
+	return []byte(b.String())
+}
+
+func writeList(b *strings.Builder, items []string) {
+	b.WriteString("[")
+	for i, item := range items {
 		if i > 0 {
 			b.WriteString(", ")
 		}
-		fmt.Fprintf(&b, "%q", p)
+		fmt.Fprintf(b, "%q", item)
 	}
 	b.WriteString("]\n")
-	return []byte(b.String())
 }
 
 // Setting values decode into `any`, and the decoder reports the keys inside
@@ -310,6 +463,19 @@ func validateFeature(f *Feature, dirName string) error {
 	for _, p := range f.Retire {
 		if err := checkRelative(p); err != nil {
 			return err
+		}
+	}
+	for _, a := range f.Provides.LaunchAgent {
+		if err := checkRelative(a.Plist); err != nil {
+			return err
+		}
+		if !strings.HasSuffix(a.Plist, ".plist") {
+			return fmt.Errorf("launch_agent %q must be a .plist file named for its Label", a.Plist)
+		}
+		for _, w := range a.WhenExists {
+			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
+				return fmt.Errorf("launch_agent %s: when_exists %q must be absolute or start with ~/", a.Plist, w)
+			}
 		}
 	}
 	for _, list := range [][]string{f.Provides.Tap, f.Provides.Brew, f.Provides.Cask, f.Provides.Flatpak, f.Provides.Vscode, f.Provides.Go} {

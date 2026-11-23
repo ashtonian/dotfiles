@@ -63,6 +63,16 @@ export GOPATH="${GOPATH:-$HOME/go}"
 export PAGER="${PAGER:-less}"      # plain less; bat as PAGER mangles man pages
 export LANG="${LANG:-en_US.UTF-8}" # LANG only; never force LC_ALL
 export DOTFILES="${DOTFILES:-$HOME/.dotfiles}"
+# A claudemore session working on an external drive sets DOTFILES_CACHE_HOME to
+# that drive's cache directory, so the commands it runs cache beside their work
+# instead of on the internal disk. It reaches only the session's shells: claude
+# resolves its own cache, update staging included, from XDG_CACHE_HOME.
+# gitstead keeps its workspace records in its cache directory, so it stays on
+# the one every other shell uses.
+if [ -n "${DOTFILES_CACHE_HOME:-}" ] && [ -d "$DOTFILES_CACHE_HOME" ]; then
+    export GITSTEAD_CACHE="${GITSTEAD_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/gitstead}"
+    export XDG_CACHE_HOME="$DOTFILES_CACHE_HOME"
+fi
 # zoxide's init-position check always warns (its plugin loads mid-.zshrc), and
 # the warning prints in every non-interactive zsh.
 export _ZO_DOCTOR=0
@@ -105,6 +115,7 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
     _env_front "$HOMEBREW_PREFIX/opt/python/libexec/bin" # unversioned python, pip
     _env_front "$HOMEBREW_PREFIX/opt/openjdk/bin"
     _env_front "$HOMEBREW_PREFIX/opt/rustup/bin"         # keg-only rustup proxies
+    _env_front "$HOMEBREW_PREFIX/opt/libpq/bin"          # keg-only PostgreSQL client: psql, pg_dump
     for _env_d in "$HOMEBREW_PREFIX"/lib/ruby/gems/*/bin; do
         _env_back "$_env_d"
     done

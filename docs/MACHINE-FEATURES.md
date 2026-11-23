@@ -77,7 +77,8 @@ in the repository, and the emptied directories there are removed.
 | --- | --- | --- | --- |
 | Feature | `features/<id>/feature.toml` plus payload files | yes | The unit of toggling: what to install, link, schedule and check |
 | Profile | `profiles/<name>.toml` | yes | A named set of feature decisions and setting values (`base`, `dev`, `desktop`, `server`, `work`, `studio`) |
-| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's profiles, feature overrides and setting overrides |
+| Overlay | `~/.dotfiles-overlays/<context>`, a private repository per context | in its own repository | One context's features and profiles (personal work, or one client), loaded after the repository's when `machine.toml` lists it; its IDs all start with its name |
+| Machine manifest | `~/.config/dotfiles/machine.toml` | no | This machine's overlays, profiles, feature overrides and setting overrides |
 | Setting | declared by a feature, valued by profiles and the machine manifest | values may be either | Typed configuration a feature consumes, such as `paths.playwright_browsers` |
 | Secret | The OS secret store (see [Platforms](#platforms)), seeded from 1Password | never | Referenced by name in a feature; the value never appears in a manifest, the environment or a log |
 | Generated output | `~/.config/dotfiles/generated/` (`%LOCALAPPDATA%\\dotfiles\\generated\\` on Windows) | no | Files `apply` renders from the enabled features: Brewfile, WinGet configuration, shell fragments, git and ssh includes |
@@ -102,7 +103,8 @@ only and shows on the status page.
 
 ```toml
 # ~/.config/dotfiles/machine.toml
-profiles = ["base", "dev", "desktop", "server"]
+overlays = ["personal"]
+profiles = ["base", "dev", "desktop", "server", "personal"]
 
 [features]
 enable  = ["tool.toggl-focus", "browser.firefox.bypass-paywalls"]
@@ -113,7 +115,9 @@ disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
 ```
 
 `dotfiles init --profiles base,dev,...` writes this file (`install.sh` runs it
-from `--profiles`). `apply` and `doctor` refuse to run without it: with no
+from `--profiles`); `--overlays` adds the contexts the machine works in, each
+of which must be cloned first. Overlays are described in the README's
+[Overlays](../README.md#overlays) section. `apply` and `doctor` refuse to run without it: with no
 profiles, nothing would be enabled, and `apply` would remove everything the
 profiles install. `dotfiles feature enable|disable <id>` edits this file and
 runs `apply` for that feature.
@@ -165,6 +169,10 @@ schedules = []                # job definitions, rendered per OS scheduler
 [provides.prefs]              # app settings owned key by key: store = prefs file (see App settings)
 # muxy = "muxy.toml"
 
+[[provides.launch_agent]]     # a launchd job (macOS); one table per agent
+plist       = "launchagents/com.example.zoxide-gc.plist"  # template named <Label>.plist; $HOME is replaced
+when_exists = ["/opt/homebrew/bin/zoxide"]  # absolute or ~/ paths; installed only once all exist
+
 [settings.cd_override]
 type    = "bool"
 default = true
@@ -191,10 +199,32 @@ script: packages are installed, links point at the repo, managed copies match
 their manifest hash, a scheduled job is registered and its last exit was 0, a
 fragment is in the generated output.
 
+### LaunchAgents
+
+A `launch_agent` entry is a launchd job for the user's GUI session. Its template
+lives in the feature (by convention under `launchagents/`) and is named for its
+`Label`; the engine refuses a template whose `Label` is another name, and two
+features declaring one label. apply replaces `$HOME`, installs the result as
+`~/Library/LaunchAgents/<Label>.plist`, creates its log directories under
+`$HOME`, and loads it. A template whose keys or values changed is written and
+the job reloaded (a comment-only change is just written), except while that
+would cut a run short: the job the apply runs in
+(`XPC_SERVICE_NAME`) and a scheduled job in the middle of a run reload at a
+later apply. A service (`KeepAlive`) reloads at once, which restarts it.
+`when_exists` holds an agent back until its program or setup file exists, and
+removes it again when one goes away; `dotfiles doctor` lists what waits. An
+installed plist edited by hand is reported and left loaded. LaunchAgents are
+installed on macOS only; on other platforms the rest of the feature applies.
+[OPERATIONS.md](OPERATIONS.md#launchagents) lists the repository's agents.
+
+`schedules` (rollout step 6) will render one job definition for launchd,
+systemd and Task Scheduler; `launch_agent` is the macOS-only form that runs the
+current jobs until then.
+
 ### Teardown
 
 Disabling a feature reverses each `provides` type: remove its links and
-managed copies, put back the app settings it set, unregister its scheduled jobs (`launchctl bootout`,
+managed copies, put back the app settings it set, unload and remove its LaunchAgents, unregister its scheduled jobs (`launchctl bootout`,
 `systemctl --user disable --now`, `Unregister-ScheduledTask`), drop its
 fragments from the generated outputs, and run its `teardown` hook. Packages
 are not uninstalled automatically, because another tool or the user may rely
@@ -222,6 +252,7 @@ muxy = "muxy.toml"
 # features/tool.muxy/muxy.toml: one top-level `key = value` per line
 "appearance.dark_theme" = "Dracula"
 "terminal.font_families" = ["FiraCode Nerd Font Mono"]
+"terminal.font_size" = 13.0
 ```
 
 `apply` sets each key through the app's own interface, a store, and leaves
@@ -229,7 +260,7 @@ every other key alone:
 
 | Store | Talks to | Keys |
 | --- | --- | --- |
-| `muxy` | `muxy config get/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`), which validates each value and has the running app apply it. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
+| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`), which validates each value and has the running app apply it. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
 | `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from | top-level keys; a value may be an object, which replaces that whole key |
 
 An app setting always has some value, so there is no "nothing there yet" that
@@ -246,8 +277,14 @@ the state file. From then on:
 - a store that cannot be reached (the app is not installed) is a problem for
   its keys only; the rest of apply converges, and the next run tries again.
 
-`dotfiles check` parses every prefs file, so a malformed one never merges; it
-reads no app.
+A feature in an overlay owns settings the same way: `dotfiles adopt` writes
+the value into the overlay's prefs file, and a machine that drops the overlay
+from `machine.toml` gets back the values its settings replaced. One key has
+one owner across the repository and every listed overlay; a second is a plan
+error, as for two features linking one file.
+
+`dotfiles check` parses every prefs file, overlays' included, so a malformed
+one never merges; it reads no app.
 
 ## Generated outputs
 
@@ -374,7 +411,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
-| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.aws-profile`, `tool.gpg-signing` |
+| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner` |
 | security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
 
 ## Mackup
@@ -488,9 +525,9 @@ engine wraps every call:
 
 ### Store: per machine, with a shared common set
 
-Decision D27 (recommended): one private repository per context, so a work
-machine never holds personal data and a personal machine never holds work
-data. Each profile names its context's store (`mackup.store`). Inside it:
+Decision D27: one private repository per context (the context's overlay), so
+a client's machine never holds personal data and a personal machine holds a
+client's only when it is worked from there. Each profile names its context's store (`mackup.store`). Inside it:
 
 ```text
 mackup-personal/
@@ -993,13 +1030,14 @@ and its status. Decided entries record who decided.
 | D22 | The Mac mini's signing key is registered on GitHub; `tool.gpg-signing` still imports the account's other keys and the web-flow key | done |
 | D3 | Codex gets bash through system config, not `chsh`: `/etc/codex/config.toml` turns shell snapshots off and marks command shells with `AGENT_SHELL`, and `zlogin.zsh` hands a marked `zsh -lc` command to Homebrew bash (`zshenv.zsh` a plain `zsh -c` one); `$SHELL` stays zsh for tmux, ssh and editors | owner; built in rollout step 2 |
 | D6 | The feature engine is Go (`cmd/dotfiles`): typed manifests, dependency resolution, `html/template`, table-driven tests, one static binary per OS | owner; built in rollout step 4 |
+| D27 | One private repository per context (personal work, and each client), cloned as an overlay at `~/.dotfiles-overlays/<context>`. It holds the context's features and profiles. A machine lists only its own contexts in `machine.toml`, so a client's machine never holds personal data or another client's, and a personal machine holds a client's only when it is worked from there | owner, 2026-11-23 |
 | D32 | Settings in a file that mixes shared values with one machine's state, and that the app rewrites (Muxy, Claude Code's `settings.json`), are owned key by key through prefs files and set through the app's own interface (see [App settings](#app-settings)); whole-file links and copies stay for files that are entirely shared | owner |
 
 ### Open
 
 **D5. Delete stale inventories?**
 `software_list.md`, `Software.md`, `chrome_extensions.md`, `win10/`,
-`.zshrc.omz-backup`, the neofetch package and `lib_sh/requirers.sh` duplicate
+`.zshrc.omz-backup` and `lib_sh/requirers.sh` duplicate
 or contradict current sources.
 Recommendation: delete; the generated feature catalog replaces them.
 Status: open.
@@ -1075,14 +1113,6 @@ API path requires an SSO session. The change lands in the home cluster
 repository, not here.
 Status: needed before PR 9.
 
-**D27. Mackup store per context?**
-Work and personal machines must not exchange app settings.
-Options: one private repository per context (personal, work), with `common/`
-and one directory per machine inside it; or one shared repository with
-`personal/...` and `work/...`. Trade-off: a shared repository gives every machine read access
-to the other context's data.
-Recommendation: one repository per context. Status: open.
-
 **D28. Windows app settings?**
 Mackup does not run on Windows.
 Options: declarative features only (settings files the repo owns, such as
@@ -1138,12 +1168,16 @@ Each step is a pull request with its tests and docs.
      home, along with the untracked files still left in the old tree that
      `$HOME` links to); move host-only values into host profiles. The
      machine-local `~/.gitconfig.local`, `~/.ssh/config.local`, `~/.zshrc.local`
-     and `Brewfile.local` stay as they are. `config.sh` and the
-     LaunchAgents move with step 6, which brings the hooks and schedules they
-     need.
+     and `Brewfile.local` stay as they are. `config.sh` moves with step 6,
+     which brings the hooks it needs. The LaunchAgents moved into their
+     features ahead of it (`launch_agent`): only `install.sh` installed them,
+     so a Mac set up another way, or since a new agent landed, ran without
+     them.
 6. **Automation and status.** The scheduler, which replaces `sync.sh sync` and
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
-   results, notifications, `doctor --automation` and the status page.
+   results, notifications, `doctor --automation` and the status page. Sync's
+   `otel-agent converge` step becomes the `agents.otel-agent` feature's
+   `apply` hook.
 7. **Windows.** The symlink test and managed-copy fallback, Task Scheduler,
    WinGet configuration, Credential Manager, the PowerShell profile stub, the
    Claude Code and Codex configs, `install.ps1`, and the Windows CI job.

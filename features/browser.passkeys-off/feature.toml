@@ -1,0 +1,10 @@
+id = "browser.passkeys-off"
+description = "Stop websites, browsers and 1Password from offering, creating or auto-filling passkeys (docs/PASSKEYS.md)"
+category = "browser"
+platforms = ["darwin"]
+
+[provides]
+# Chromium ignores an unpacked extension's content script when its files are symlinks, so the
+# extension is a managed copy.
+copy = [".local/share/browser-extensions/passkeys-off"]
+link = [".local/bin/passkeys-off"]

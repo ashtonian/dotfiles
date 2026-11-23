@@ -1,0 +1,7 @@
+id = "dotfiles.update"
+description = "Fridays 09:00: Homebrew upgrades, the Go pin on the canary, Zinit, then a sync (bin/dotfiles-update.sh)"
+category = "dotfiles"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.dotfiles.update.plist"

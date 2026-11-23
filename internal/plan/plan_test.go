@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 )
 
@@ -153,4 +154,97 @@ func TestSettingExports(t *testing.T) {
 	assert.Contains(t, env, `[ -n "${TOOL_LABEL:-}" ] || TOOL_LABEL='a'\''b $HOME'; export TOOL_LABEL # tool.label`)
 	assert.Contains(t, env, `[ -n "${TOOL_JOBS:-}" ] || TOOL_JOBS='4'; export TOOL_JOBS # tool.jobs`)
 	assert.NotContains(t, env, "tool.quiet", "a setting without an env name is not exported")
+}
+
+const agentTemplate = `<?xml version="1.0" encoding="UTF-8"?>
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.trim</string>
+    <key>ProgramArguments</key>
+    <array><string>$HOME/.dotfiles/bin/trim</string></array>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/trim/trim.log</string>
+    <key>StandardErrorPath</key>
+    <string>/tmp/trim.err</string>
+</dict>
+</plist>
+`
+
+func TestLaunchAgentsRenderForTheHome(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	trim := feature(t, root, manifest.Feature{ID: "trim", Platforms: []string{"darwin"}, Provides: manifest.Provides{
+		LaunchAgent: []manifest.LaunchAgent{{Plist: "launchagents/com.example.trim.plist",
+			WhenExists: []string{"/opt/homebrew/bin/go", "~/.config/trim/on"}}},
+	}}, map[string]string{"launchagents/com.example.trim.plist": agentTemplate})
+
+	p, err := Build(map[string]*manifest.Feature{"trim": trim}, []string{"trim"}, nil, Env{Home: home, GeneratedDir: filepath.Join(home, "gen"), GOOS: "darwin"})
+	require.NoError(t, err)
+	require.Len(t, p.LaunchAgents, 1)
+	a := p.LaunchAgents[0]
+	assert.Equal(t, "com.example.trim", a.Label)
+	assert.Equal(t, filepath.Join(home, "Library/LaunchAgents/com.example.trim.plist"), a.Target)
+	assert.Equal(t, filepath.Join(trim.Dir, "launchagents/com.example.trim.plist"), a.Source)
+	assert.Contains(t, string(a.Content), "<string>"+home+"/.dotfiles/bin/trim</string>")
+	assert.NotContains(t, string(a.Content), "$HOME")
+	assert.Equal(t, []string{"/opt/homebrew/bin/go", filepath.Join(home, ".config/trim/on")}, a.WhenExists)
+	assert.Equal(t, []string{filepath.Join(home, "Library/Logs/trim")}, a.LogDirs, "only log directories under home are created")
+	assert.False(t, a.KeepAlive)
+	def, err := launchd.Definition(a.Content)
+	require.NoError(t, err)
+	assert.Equal(t, def, a.Definition)
+}
+
+func TestLaunchAgentsOfFeaturesOffHereAreListedForRemoval(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	features := map[string]*manifest.Feature{}
+	for _, id := range []string{"on", "off"} {
+		label := "com.example." + id
+		features[id] = feature(t, root, manifest.Feature{ID: id, Provides: manifest.Provides{
+			LaunchAgent: []manifest.LaunchAgent{{Plist: label + ".plist"}},
+		}}, map[string]string{label + ".plist": strings.ReplaceAll(agentTemplate, "com.example.trim", label)})
+	}
+
+	p, err := Build(features, []string{"on"}, nil, Env{Home: home, GOOS: "darwin"})
+	require.NoError(t, err)
+	require.Len(t, p.LaunchAgents, 1)
+	assert.Equal(t, "com.example.on", p.LaunchAgents[0].Label)
+	assert.Equal(t, map[string]string{"com.example.off": filepath.Join(home, "Library/LaunchAgents/com.example.off.plist")}, p.OffAgents)
+
+	p, err = Build(features, []string{"on"}, nil, Env{Home: home, GOOS: "linux"})
+	require.NoError(t, err)
+	assert.Empty(t, p.LaunchAgents, "launchd is macOS's")
+	assert.Empty(t, p.OffAgents)
+}
+
+func TestLaunchAgentsRefuseATemplateNamedForAnotherLabel(t *testing.T) {
+	root := t.TempDir()
+	tests := map[string]string{
+		"another label": strings.Replace(agentTemplate, "com.example.trim</string>", "com.example.other</string>", 1),
+		"not a plist":   "Label = com.example.trim\n",
+	}
+	for name, template := range tests {
+		t.Run(name, func(t *testing.T) {
+			f := feature(t, root, manifest.Feature{ID: "trim", Platforms: []string{"darwin"}, Provides: manifest.Provides{
+				LaunchAgent: []manifest.LaunchAgent{{Plist: "com.example.trim.plist"}},
+			}}, map[string]string{"com.example.trim.plist": template})
+			_, err := Build(map[string]*manifest.Feature{"trim": f}, []string{"trim"}, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
+			require.ErrorIs(t, err, ErrPlan)
+		})
+	}
+}
+
+func TestTwoFeaturesCannotInstallOneLaunchAgent(t *testing.T) {
+	root := t.TempDir()
+	features := map[string]*manifest.Feature{}
+	for _, id := range []string{"one", "two"} {
+		features[id] = feature(t, root, manifest.Feature{ID: id, Platforms: []string{"darwin"}, Provides: manifest.Provides{
+			LaunchAgent: []manifest.LaunchAgent{{Plist: "com.example.trim.plist"}},
+		}}, map[string]string{"com.example.trim.plist": agentTemplate})
+	}
+	_, err := Build(features, []string{"one", "two"}, nil, Env{Home: filepath.Join(root, "home"), GOOS: "darwin"})
+	require.ErrorIs(t, err, ErrPlan)
+	assert.Contains(t, err.Error(), "both install")
 }

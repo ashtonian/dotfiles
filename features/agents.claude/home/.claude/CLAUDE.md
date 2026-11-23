@@ -7,12 +7,13 @@
 - This bites hardest on claims that sound settled — "X is just a stub," "Y isn't built yet," "Z already handles this." Those are exactly the ones another agent quietly ships out from under you. Re-read before you say it, especially when a decision (what to build, bench, or recommend) rides on it.
 - A summary or prior-session note describes the past, not the present. Treat it as a lead to verify, not a fact to repeat. When you catch yourself about to assert state confidently, that's the trigger to go check.
 
-## Check long-running work every 10 minutes
+## Check long-running work every 10 minutes, for up to an hour
 
 - **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
 - Run it in the background, and set a 10-minute tick beside it (e.g. a background `sleep 600`, or a Monitor). On each tick, read its progress — log tail, lock holder/queue, container state, CI status — and give the user a one-line status. Act as soon as it goes wrong: a hang, an error in the log, no progress since the last tick.
 - A queued job counts too: check what is ahead of it and whether that holder is still making progress.
 - **Subagents and forks you are waiting on: never let 30 minutes pass without checking each one.** A hung agent never sends its completion notice, so waiting for it is how a session stalls. Check how recently its output file changed, following the symlink (`stat -L -f %m <file>` on macOS; without `-L` you read the link's own time), not its contents, or message it for a one-line status. If it has not moved since the last check, ask what it is blocked on; if it stays stuck, stop it and take the work back.
+- **Stop polling after an hour.** Each wait gets at most six ticks: an hour of checking the same CI run, deploy, queue or subagent. If it is still running then, tell the user its state, what it is waiting on and how to check it, and end the ticks. Resume only when the user asks or the work reports back. Every tick costs tokens, and an open-ended loop across many parallel waits can spend a week's budget in an afternoon.
 
 ## Analyze the profiles — never hand-wave a performance conclusion
 
@@ -127,6 +128,22 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
 - Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
 
+## Personal and client boundaries
+
+- My personal work and each client are separate contexts. A machine belongs to the contexts its uncommitted `~/.config/dotfiles/machine.toml` lists, and a client's own machine belongs to that client alone. Nothing crosses between contexts unless I ask.
+- Public repositories reach every machine and anyone on the internet. They name no client, organization, private repository, internal host or project: not in code, config, docs, examples, tests or commit messages, this file included.
+- A context's facts live in its private overlay: repo lists, gitstead config and manifest, workspace and agent counts, Muxy servers, and agent rules and MCP settings that name projects. A machine gets only its own contexts' overlays and credentials; a client's machine holds nothing that reaches my personal repositories or another client's.
+- Before changing anything that reaches several machines (a dotfiles feature, profile or default; an overlay; gitstead config or manifest; shell history or app settings that sync), trace where it lands, including data a machine syncs back. If it would leave its context, change the design.
+- A name found in a public repository moves to its overlay in the same change that removes it, so whatever relied on it keeps working.
+- When it's unclear which context something belongs to, ask before writing it anywhere shared.
+
+## Bounded growth, built for scale — hard rule
+
+- **Everything that persists records has a growth bound from its first commit.** That covers receipts, logs, ledgers, history and state files, lock records, caches, queues and CI artifacts. The bound is a retention period, a count or size cap, rotation or compaction, and the code that enforces it ships in the same change as the code that writes. "It's small for now" is not a bound. No one-file-per-event directory that nothing prunes, and no append-only file that nothing trims.
+- **Choose the data structure for the access pattern at full scale.** Hot-path lookups are O(1) or O(log n) by key: name the file by its key, keep an index, use a map or a database index. Never scan every record to find one. A scan whose cost grows with history is a bug even while n is small, and doubly so under a lock or on every call.
+- **Build for tier-1 production scale from the start.** Assume many concurrent agents in sustained use: thousands of events a day and months of history. Work out each operation's cost at that volume before writing it. State the bound (complexity, retention, maximum size) in the README or config table.
+- **The structural lever beats the hack.** Get the right key, index, layout or batching. Don't ship a workaround that holds only until the data grows. When existing code violates this, fix the structure, prune what has accumulated, and add the bound.
+
 ## Graceful Shutdown (services and long-running processes)
 
 - Handle `SIGTERM` and `SIGINT`. Stop accepting new work, drain in-flight work, close pools, flush logs/metrics, cancel goroutines via context.
@@ -135,10 +152,11 @@ When opening an issue or commenting on a project I don't own, write the way an e
 ## Shared development host — one gate lock
 
 - Local work takes the host gate lock through `gate-lock` on PATH or the repository's `gate-lock.sh` shim; both run the version host-gate installed (https://github.com/ashtonian/host-gate). `GATE_LOCK_WAIT=1` queues. Pick the lane by what the work needs:
-  - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. The focused pool (half the host) runs beside heavy work and never waits for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
-  - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (same pool, `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
-  - Heavy work: `gate-lock run <label> -- ...` holds the host's default share (a third of the host, with `GOMAXPROCS` set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`; heavy runs share the host while their cores fit. One module's build or suite, or a few packages' race tests, take the default share or declare what they use.
-  - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks: `run-exclusive`.
+  - Lint, vet-style analyzers, doc and report checks: `gate-lock run-check <label> -- <command>`. Checks run in the focused pool beside heavy work, at full speed, and never wait for it; 2 cores unless `GATE_LOCK_CORES=<n>`, granted as `GOMAXPROCS`.
+  - A Go test of named packages: `gate-lock run-focused <label> -- go test ...` (the focused pool, half the host's CPUs; `GOMAXPROCS<=2`, `-p=1`, `-parallel<=2`).
+  - Heavy work: `gate-lock run <label> -- ...` holds the default share (a third of the heavy lane, which is the host's performance cores; `GOMAXPROCS` is set to it) unless it declares `GATE_LOCK_CORES=<n>` or `all`. The lane admits against what holders measurably use, not what they declared: a new run counts at its grant until its first sample (10 s), then at its busiest 10-second interval of the last 30 s, so heavy runs share the host while their use fits; grants together are capped at twice the lane. One module's build or suite, or a few packages' race tests, take the default share or declare what they use. Declare the cores the work actually uses: an inflated grant only delays your own admission.
+  - Full gates and suites, workspace builds, generation, containers, browsers and anything else `GOMAXPROCS` cannot bound: `GATE_LOCK_CORES=all gate-lock run <label> -- ...`. `all` is the largest grant, not exclusivity: it is granted the whole lane (`GOMAXPROCS` and go's `-p` left at the lane's) but admitted once the holders measurably leave a default share free; after its first sample it counts by use, so later runs join it as far as its use leaves room, and a waiting `all` is passed by runs that fit for at most 300 s before the lane drains for it. Repository make goals and scripts that need the whole host declare it themselves. Benchmarks, suites whose timing needs a quiet host, and anything that must run alone: `run-exclusive`.
+  - The watchdog ends a run whose process tree makes no CPU progress for 30 minutes (exit 122), and a heavy run past 4 h or a focused run past 2 h (exit 124). A run that legitimately waits that long (a remote job, a long download) sets `GATE_LOCK_IDLE_OK=1` or `GATE_LOCK_HANG_AFTER=<seconds>`. While a run drives docker, orb, ssh or another outside-work client, it counts at its grant and is never idled.
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in host-gate and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; host-gate's README covers operations.
 
