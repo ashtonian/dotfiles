@@ -128,6 +128,15 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
 - Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
 
+## Machine and client boundaries — hard rule
+
+- These dotfiles run on personal machines and on client-owned machines (the `work` profile), one or more per client. The personal side and each client are separate boundaries, and nothing crosses between them unless the user asked for it.
+- **This repository is public and reaches every machine.** Nothing in it names a client, an organization, a private repository, an internal host or a project that identifies who the work is for: not in code, config, docs, examples, tests or commit messages. That includes this file.
+- **Facts that belong to a boundary live in that boundary's private store**: repo lists, gitstead config and manifests, workspace and agent counts, Muxy server lists, MCP settings and agent rules that name projects. A machine chooses its boundaries in its own uncommitted `~/.config/dotfiles/machine.toml`, never through a name in this repository.
+- **A machine gets only the boundaries it belongs to.** A client's machine gets that client's store and nothing else: no personal repo list, no other client's names, no credential that reaches personal or another client's repos. A personal machine holds a client's repos only where the user asked, and keeps them in that client's store, not the personal one.
+- **Before changing anything that reaches more than one machine, trace where it lands**: a dotfiles feature, profile or default, a `~/.sync` repo, gitstead's config or manifest, app settings that sync. Data written on one machine and synced on counts too, such as an auto-committed manifest entry or a recent-projects list. If it would leave its boundary, change the design, not the rule.
+- When it's unclear which boundary something belongs to, ask before writing it anywhere shared.
+
 ## Bounded growth, built for scale — hard rule
 
 - **Everything that persists records has a growth bound from its first commit.** That covers receipts, logs, ledgers, history and state files, lock records, caches, queues and CI artifacts. The bound is a retention period, a count or size cap, rotation or compaction, and the code that enforces it ships in the same change as the code that writes. "It's small for now" is not a bound. No one-file-per-event directory that nothing prunes, and no append-only file that nothing trims.
