@@ -10,7 +10,7 @@ This file maps the checked-in implementation.
 ~/.dotfiles/
 ├── install.sh               # Bootstrap: Go, engine build, machine manifest, apply, packages, LaunchAgents
 ├── config.sh                # Optional system/app preferences
-├── sync.sh                  # Signed Git publication, engine build and apply, packages
+├── sync.sh                  # Signed Git publication, engine build and apply, packages, native Claude Code
 ├── go.mod                   # The feature engine's Go module
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests from the repository and overlays; strict parsing and validation
@@ -59,7 +59,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
-| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation` |
+| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation`; sync installs Claude Code natively where it is on |
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
@@ -72,7 +72,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `brew.apps` | desktop, work | darwin | Brewfile: 26 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 6 tap, 97 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 7 cask (personal) |
-| `brew.dev-apps` | dev | darwin | Brewfile: 12 cask |
+| `brew.dev-apps` | dev | darwin | Brewfile: 11 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
 | `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 8 mas |

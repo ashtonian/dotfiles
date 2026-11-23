@@ -127,6 +127,7 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
 | The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
 | Missing packages | brew bundle install `--no-upgrade` | Every sync; under the LaunchAgent, casks that install as root and App Store apps wait for a terminal, named in a `WARN` line |
+| Claude Code | Anthropic's native installer, when `~/.local/bin/claude` is missing; Claude Code then updates itself | Every sync, on machines with `agents.claude` |
 
 Sync publishes edits to files the repository already tracks. A new file is
 never published until you commit it yourself. A repository with a Git index
@@ -159,6 +160,7 @@ them.
 ~/.dotfiles/sync.sh build     # Rebuild ~/.local/bin/dotfiles if its sources changed
 ~/.dotfiles/sync.sh apply     # Build if needed, then dotfiles apply
 ~/.dotfiles/sync.sh otel-agent  # Install the pinned telemetry collector; restart it if it changed
+~/.dotfiles/sync.sh claude-code  # Install Claude Code natively if agents.claude is on and ~/.local/bin/claude is missing
 ~/.dotfiles/sync.sh all       # Same as sync
 ~/.dotfiles/sync.sh check     # Lock availability without syncing
 ```
@@ -439,6 +441,14 @@ Interactive launchers from the generated zshrc fragment of the dev features
 `agents.claude` (`features/agents.claude/zshrc.zsh`) and `agents.codex`
 (`features/agents.codex/zshrc.zsh`, macOS only). `~/.zshrc.local` loads after
 them, so a local definition replaces one.
+
+Claude Code itself comes from Anthropic's native installer, never Homebrew,
+whose cask trails the releases. On a machine with `agents.claude`, sync runs
+the installer when `~/.local/bin/claude` is missing (it checks the binary's
+SHA-256 against the release manifest), and from then on Claude Code's own
+auto-updater keeps it current; `claude doctor` shows the install method, the
+update channel and the last update. A `claude` in `/opt/homebrew/bin` is a
+leftover cask: `brew uninstall --cask claude-code`.
 
 | Command | Model | Effort | Behavior |
 | --------- | ------- | -------- | ---------- |

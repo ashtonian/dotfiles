@@ -9,7 +9,6 @@ cask = [
   "ashtonian/tap/gitstead",
   "beyond-compare",
   "bruno",
-  "claude-code",
   "codex",
   "dash",
   "font-fira-code-nerd-font",
