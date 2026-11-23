@@ -671,7 +671,7 @@ repository.
 - **Publishing**: Gitleaks scans staged dotfiles and outgoing commits with redacted output; auxiliary repos are not scanned. Missing tools, scan failures, signing failures and merge failures stop publication. GitHub verification is checked after the push and does not undo publication on failure; bad_email requires correcting the signing identity.
 - **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync and during the weekly update, so packages never upgrade while a sync runs `brew bundle` or `dotfiles apply` (`lib_sh/sync-lock.sh`). A sync that finds the lock held skips its run; the update waits up to `UPDATE_LOCK_WAIT` seconds (30 minutes) and runs its own sync inside its lock. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
 - **Failures**: Sync returns a nonzero status when an operation fails and records the failure in `logs/sync.log`.
-- **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` and `Brewfile.local` are never tracked.
+- **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local`, `Brewfile.local` and `~/.config/spotlight/exclusions.local` are never tracked.
 
 ## Mackup: App Config Backup
 
