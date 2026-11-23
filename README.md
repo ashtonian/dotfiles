@@ -437,7 +437,7 @@ both harnesses the same two read-only subagents and the policy for using them:
 | Subagent | Claude Code (`~/.claude/agents/`) | Codex role (`~/.codex/agents/`) | Role |
 | -------- | --------------------------------- | ------------------------------- | ---- |
 | `scout` | Haiku, `medium`; Read, Glob, Grep, Bash | GPT-6 Luna, `medium` | Finds and quotes files, symbols, call sites, config keys and log lines; never judges |
-| `reader` | Sonnet, `xhigh`; Read, Glob, Grep, Bash, WebFetch | GPT-6.1 Terra, `xhigh` | Answers one bounded question about named files or output, tagging each claim VERIFIED (cited) or INFERRED |
+| `reader` | Sonnet, `xhigh`; Read, Glob, Grep, Bash, WebFetch | GPT-6.2 Sol, `xhigh` | Answers one bounded question about named files or output, tagging each claim VERIFIED (cited) or INFERRED |
 
 Claude Code loads user subagents in every session, a bare `claude` and
 `claude -p` included; Codex offers user roles to `spawn_agent` as its
