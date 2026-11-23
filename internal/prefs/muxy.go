@@ -13,8 +13,8 @@ import (
 	"time"
 )
 
-// muxyInBundle is where the app keeps its command line tool.
-const muxyInBundle = "Muxy.app/Contents/MacOS/muxy"
+// toolInApp is where a Muxy app bundle keeps its command line tool.
+const toolInApp = "Contents/MacOS/muxy"
 
 // Muxy reads and writes Muxy's app settings through `muxy config`, which
 // validates each change, saves it, and has the running app apply it. It runs
@@ -26,12 +26,16 @@ type Muxy struct {
 	timeout  time.Duration
 }
 
-// MuxyCommands lists where an installed Muxy keeps its tool, a per-user
-// install first: <home>/Applications, then /Applications.
-func MuxyCommands(home string) []string {
+// MuxyCommands lists where an installed Muxy keeps its tool: inside app when
+// it is set (DOTFILES_MUXY_APP, which tool.muxy's wrapper also reads), else a
+// per-user install first, <home>/Applications, then /Applications.
+func MuxyCommands(home, app string) []string {
+	if app != "" {
+		return []string{filepath.Join(app, toolInApp)}
+	}
 	return []string{
-		filepath.Join(home, "Applications", muxyInBundle),
-		filepath.Join("/Applications", muxyInBundle),
+		filepath.Join(home, "Applications", "Muxy.app", toolInApp),
+		filepath.Join("/Applications", "Muxy.app", toolInApp),
 	}
 }
 

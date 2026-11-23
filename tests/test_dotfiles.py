@@ -1107,6 +1107,8 @@ class RealFeatures(Fixture):
         self.home.mkdir()
         self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_STATE_HOME=str(self.home / '.local/state'))
+        # The stand-in Muxy is found in the fresh home's ~/Applications.
+        self.env.pop('DOTFILES_MUXY_APP', None)
         self.muxy_settings = self.path / 'muxy-settings.json'
 
     def install_muxy(self):

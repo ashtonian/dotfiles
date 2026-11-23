@@ -53,7 +53,7 @@ recognize `/usr/local` Homebrew installations.
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
-| Muxy 2.5 or later in `/Applications` or `~/Applications` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
+| Muxy 2.5 or later in `/Applications` or `~/Applications`, or at `DOTFILES_MUXY_APP` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
 Claude Code, gitstead, and gateway credentials need separate setup when those

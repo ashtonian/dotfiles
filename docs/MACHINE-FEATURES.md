@@ -265,7 +265,7 @@ every other key alone:
 
 | Store | Talks to | Keys |
 | --- | --- | --- |
-| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`). `set` and `unset` save a value only if the app can start with it, then ask a running desktop app to read its settings again (`settings.reload` on the profile's `app.sock`); they never start the app and never contact `muxy-server`, where terminals run. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
+| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`DOTFILES_MUXY_APP` when set, else `~/Applications`, then `/Applications`). `set` and `unset` save a value only if the app can start with it, then ask a running desktop app to read its settings again (`settings.reload` on the profile's `app.sock`); they never start the app and never contact `muxy-server`, where terminals run. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
 | `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from. A `settings.json` that links elsewhere is written through the link | top-level keys only; a value may be an object, which replaces that whole key. A key inside an object, such as `permissions.defaultMode`, is refused: the object holds the machine's own rules |
 
 Every key is written on its own line. An unquoted dotted key such as

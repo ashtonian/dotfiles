@@ -84,10 +84,10 @@ type applyOptions struct {
 }
 
 // prefStores builds the store for each app in prefs.Stores.
-func prefStores(home string, appTimeout time.Duration) map[string]apply.PrefStore {
+func prefStores(home, muxyApp string, appTimeout time.Duration) map[string]apply.PrefStore {
 	return map[string]apply.PrefStore{
 		"claude": prefs.NewClaude(home),
-		"muxy":   prefs.NewMuxy(prefs.MuxyCommands(home), appTimeout),
+		"muxy":   prefs.NewMuxy(prefs.MuxyCommands(home, muxyApp), appTimeout),
 	}
 }
 
@@ -144,7 +144,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		p.machine = filepath.Join(config, "dotfiles", "machine.toml")
 	}
 
-	stores := prefStores(p.home, *appTimeout)
+	stores := prefStores(p.home, os.Getenv("DOTFILES_MUXY_APP"), *appTimeout)
 	opts := applyOptions{dryRun: *dryRun, lockWait: *lockWait, gitTimeout: *gitTimeout,
 		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents,
 		stores: stores}

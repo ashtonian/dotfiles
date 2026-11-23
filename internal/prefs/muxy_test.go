@@ -29,7 +29,7 @@ func fakeMuxy(t *testing.T, mode string, settings map[string]any) (home, state s
 	require.NoError(t, os.WriteFile(state, data, 0o600))
 	self, err := os.Executable()
 	require.NoError(t, err)
-	cli := filepath.Join(home, "Applications", muxyInBundle)
+	cli := filepath.Join(home, "Applications", "Muxy.app", toolInApp)
 	require.NoError(t, os.MkdirAll(filepath.Dir(cli), 0o755))
 	script := fmt.Sprintf("#!/bin/sh\nexec %q -test.run='^TestFakeMuxy$' -- \"$@\"\n", self)
 	require.NoError(t, os.WriteFile(cli, []byte(script), 0o755))
@@ -116,7 +116,7 @@ func TestFakeMuxy(t *testing.T) {
 func TestMuxyRoundTripsThroughTheAppsTool(t *testing.T) {
 	ctx := context.Background()
 	home, state := fakeMuxy(t, "", map[string]any{"appearance.dark_theme": "Muxy", "terminal.font_size": 13.0})
-	m := NewMuxy(MuxyCommands(home), 10*time.Second)
+	m := NewMuxy(MuxyCommands(home, ""), 10*time.Second)
 
 	v, ok, err := m.Get(ctx, "appearance.dark_theme")
 	require.NoError(t, err)
@@ -151,7 +151,7 @@ func TestMuxyRoundTripsThroughTheAppsTool(t *testing.T) {
 func TestMuxyReportsWhatTheAppRefused(t *testing.T) {
 	ctx := context.Background()
 	home, _ := fakeMuxy(t, "", map[string]any{})
-	err := NewMuxy(MuxyCommands(home), 10*time.Second).Set(ctx, "terminal.font_size", "big")
+	err := NewMuxy(MuxyCommands(home, ""), 10*time.Second).Set(ctx, "terminal.font_size", "big")
 	assert.EqualError(t, err, "muxy config set: terminal.font_size: invalid type: string, expected f32")
 	assert.False(t, errors.Is(err, ErrNotApplied))
 }
@@ -159,7 +159,7 @@ func TestMuxyReportsWhatTheAppRefused(t *testing.T) {
 func TestMuxyTellsASavedButUnappliedChangeApart(t *testing.T) {
 	ctx := context.Background()
 	home, _ := fakeMuxy(t, "not-applied", map[string]any{"terminal.font_size": 14.0})
-	m := NewMuxy(MuxyCommands(home), 10*time.Second)
+	m := NewMuxy(MuxyCommands(home, ""), 10*time.Second)
 
 	err := m.Set(ctx, "terminal.font_families", []any{"Menlo"})
 	assert.ErrorIs(t, err, ErrNotApplied)
@@ -178,20 +178,22 @@ func TestMuxyTellsASavedButUnappliedChangeApart(t *testing.T) {
 func TestMuxyGivesUpOnAToolThatDoesNotAnswer(t *testing.T) {
 	home, _ := fakeMuxy(t, "hang", map[string]any{})
 	start := time.Now()
-	_, _, err := NewMuxy(MuxyCommands(home), 200*time.Millisecond).Get(context.Background(), "appearance.dark_theme")
+	_, _, err := NewMuxy(MuxyCommands(home, ""), 200*time.Millisecond).Get(context.Background(), "appearance.dark_theme")
 	assert.EqualError(t, err, "muxy config list: no answer within 200ms")
 	assert.Less(t, time.Since(start), 10*time.Second)
 }
 
 func TestMuxyWithoutTheAppIsUnavailable(t *testing.T) {
 	home := t.TempDir()
-	m := NewMuxy([]string{filepath.Join(home, "Applications", muxyInBundle)}, time.Second)
+	m := NewMuxy([]string{filepath.Join(home, "Applications", "Muxy.app", toolInApp)}, time.Second)
 	_, _, err := m.Get(context.Background(), "appearance.dark_theme")
 	assert.ErrorIs(t, err, ErrUnavailable)
 	assert.ErrorContains(t, err, "Muxy is not installed")
 }
 
 func TestMuxyCommandsPreferAPerUserInstall(t *testing.T) {
-	assert.Equal(t, []string{"/Users/me/Applications/" + muxyInBundle, "/Applications/" + muxyInBundle},
-		MuxyCommands("/Users/me"))
+	assert.Equal(t, []string{"/Users/me/Applications/Muxy.app/Contents/MacOS/muxy", "/Applications/Muxy.app/Contents/MacOS/muxy"},
+		MuxyCommands("/Users/me", ""))
+	assert.Equal(t, []string{"/opt/Muxy Beta.app/Contents/MacOS/muxy"}, MuxyCommands("/Users/me", "/opt/Muxy Beta.app"),
+		"DOTFILES_MUXY_APP, when set, is the only app")
 }
