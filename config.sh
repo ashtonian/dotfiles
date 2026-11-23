@@ -824,11 +824,10 @@ ok
 # add apps
 running "Add apps to dock."
 dockutil --add '/System/Applications/System Settings.app' --allhomes --no-restart
-dockutil --add '/Applications/iTerm.app' --allhomes --no-restart
+dockutil --add '/Applications/Muxy.app' --allhomes --no-restart
 dockutil --add '/Applications/Visual Studio Code.app' --allhomes --no-restart
 dockutil --add '/Applications/Brave Browser.app' --allhomes --no-restart
 dockutil --add '/Applications/Notion.app' --allhomes --no-restart
-dockutil --add '/Applications/Todoist.app' --allhomes --no-restart
 dockutil --add '/System/Applications/Calendar.app' --allhomes --no-restart
 dockutil --add '/System/Applications/Contacts.app' --allhomes --no-restart
 dockutil --add '/Applications/Signal.app' --allhomes --no-restart
@@ -1304,30 +1303,6 @@ ok
 # ok
 
 #######################################################################################################################################
-bot "Configuring Google Chrome & Google Chrome Canary"                                        #
-#######################################################################################################################################
-
-running "Disable the all too sensitive backswipe on trackpads."
-defaults write com.google.Chrome AppleEnableSwipeNavigateWithScrolls -bool false
-defaults write com.google.Chrome.canary AppleEnableSwipeNavigateWithScrolls -bool false
-ok
-
-running "Disable the all too sensitive backswipe on Magic Mouse."
-defaults write com.google.Chrome AppleEnableMouseSwipeNavigateWithScrolls -bool false
-defaults write com.google.Chrome.canary AppleEnableMouseSwipeNavigateWithScrolls -bool false
-ok
-
-running "Use the system-native print preview dialog."
-defaults write com.google.Chrome DisablePrintPreview -bool true
-defaults write com.google.Chrome.canary DisablePrintPreview -bool true
-ok
-
-running "Expand the print dialog by default."
-defaults write com.google.Chrome PMPrintingExpandedStateForPrint2 -bool true
-defaults write com.google.Chrome.canary PMPrintingExpandedStateForPrint2 -bool true
-ok
-
-#######################################################################################################################################
 bot "Configuring Security."
 #######################################################################################################################################
 # Based on:
@@ -1438,74 +1413,6 @@ running "Empty Trash securely by default."
 defaults write com.apple.finder EmptyTrashSecurely -bool true
 ok
 
-###############################################################################
-# Monolingual                                                                 #
-###############################################################################
-
-running "Monolingual settings"
-defaults write net.sourceforge.Monolingual SUAutomaticallyUpdate -bool true
-defaults write net.sourceforge.Monolingual SUEnableAutomaticChecks -bool true
-defaults write net.sourceforge.Monolingual SUSendProfileInfo -bool false
-defaults write net.sourceforge.Monolingual Strip -bool true
-ok
-
-
-# ###############################################################################
-# # iTerm 2                                                                     #
-# ###############################################################################
-
-# # TODO: Need to set the keyboard overrides for "back/forward 1 word" AND "Jobs to Ignore"
-# running "iTerm2 settings"
-#  defaults write com.googlecode.iterm2 AllowClipboardAccess -bool true
-# oklecode.iterm2 AppleAntiAliasingThreshold -bool true
-#  defaults write com.googlecode.iterm2 AppleScrollAnimationEnabled -bool false
-#  defaults write com.googlecode.iterm2 AppleSmoothFixedFontsSizeThreshold -bool true
-#  defaults write com.googlecode.iterm2 AppleWindowTabbingMode -string "manual"
-#  defaults write com.googlecode.iterm2 AutoCommandHistory -bool false
-#  defaults write com.googlecode.iterm2 CheckTestRelease -bool true
-#  defaults write com.googlecode.iterm2 DimBackgroundWindows -bool true
-#  defaults write com.googlecode.iterm2 HideTab -bool false
-#  defaults write com.googlecode.iterm2 HotkeyMigratedFromSingleToMulti -bool true
-#  defaults write com.googlecode.iterm2 IRMemory -int 4
-#  defaults write com.googlecode.iterm2 NSFontPanelAttributes -string "1, 0"
-#  defaults write com.googlecode.iterm2 NSNavLastRootDirectory -string "${HOME}/Desktop"
-#  defaults write com.googlecode.iterm2 NSQuotedKeystrokeBinding -string ""
-#  defaults write com.googlecode.iterm2 NSScrollAnimationEnabled -bool false
-#  defaults write com.googlecode.iterm2 NSScrollViewShouldScrollUnderTitlebar -bool false
-#  defaults write com.googlecode.iterm2 NoSyncCommandHistoryHasEverBeenUsed -bool true
-#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste -bool true
-#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforeMultilinePaste_selection -bool false
-#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt -bool true
-#  defaults write com.googlecode.iterm2 NoSyncDoNotWarnBeforePastingOneLineEndingInNewlineAtShellPrompt_selection -bool true
-#  defaults write com.googlecode.iterm2 NoSyncHaveRequestedFullDiskAccess -bool true
-#  defaults write com.googlecode.iterm2 NoSyncHaveWarnedAboutPasteConfirmationChange -bool true
-#  defaults write com.googlecode.iterm2 NoSyncPermissionToShowTip -bool true
-#  defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning -bool true
-#  defaults write com.googlecode.iterm2 NoSyncSuppressBroadcastInputWarning_selection -bool false
-#  defaults write com.googlecode.iterm2 OnlyWhenMoreTabs -bool false
-#  defaults write com.googlecode.iterm2 OpenArrangementAtStartup -bool false
-#  defaults write com.googlecode.iterm2 OpenNoWindowsAtStartup -bool false
-#  defaults write com.googlecode.iterm2 PromptOnQuit -bool false
-#  defaults write com.googlecode.iterm2 SUAutomaticallyUpdate -bool true
-#  defaults write com.googlecode.iterm2 SUEnableAutomaticChecks -bool true
-#  defaults write com.googlecode.iterm2 SUFeedAlternateAppNameKey -string iTerm;
-#  defaults write com.googlecode.iterm2 SUFeedURL -string "https://iterm2.com/appcasts/final.xml?shard=69"
-#  defaults write com.googlecode.iterm2 SUHasLaunchedBefore -bool true
-#  defaults write com.googlecode.iterm2 SUUpdateRelaunchingMarker -bool false
-#  defaults write com.googlecode.iterm2 SavePasteHistory -bool false
-#  defaults write com.googlecode.iterm2 ShowBookmarkName -bool false
-#  defaults write com.googlecode.iterm2 SplitPaneDimmingAmount -string "0.4070612980769232"
-#  defaults write com.googlecode.iterm2 StatusBarPosition -integer 1
-#  defaults write com.googlecode.iterm2 SuppressRestartAnnouncement -bool true
-#  defaults write com.googlecode.iterm2 TabStyleWithAutomaticOption -integer 4
-#  defaults write com.googlecode.iterm2 TraditionalVisualBell -bool true
-#  defaults write com.googlecode.iterm2 UseBorder -bool true
-#  defaults write com.googlecode.iterm2 WordCharacters -string "/-+\\\\~-integer."
-#  defaults write com.googlecode.iterm2 findMode_iTerm -bool false
-#  defaults write com.googlecode.iterm2 kCPKSelectionViewPreferredModeKey -bool false
-#  defaults write com.googlecode.iterm2 kCPKSelectionViewShowHSBTextFieldsKey -bool false
-
-
 
 
 #######################################################################################################################################
@@ -1518,7 +1425,6 @@ for app in "Activity Monitor" \
 	"Contacts" \
 	"Dock" \
 	"Finder" \
-	"Google Chrome" \
 	"Mail" \
 	"Photos" \
 	"Safari" \

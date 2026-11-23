@@ -142,9 +142,7 @@ setup_sync_dir() {
 
     # Clone themes and resources
     local repos=(
-        "dracula/iterm.git:dracula-iterm"
         "dracula/colorls.git:colorls"
-        "dracula/alfred:alfred-dracula"
     )
 
     for repo_spec in "${repos[@]}"; do
