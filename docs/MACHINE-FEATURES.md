@@ -491,7 +491,7 @@ Sections:
 The target catalog, grouped by category; each row is one toggle. Rollout step
 5b built the coarser features the later steps split into these: `shell.env`,
 `shell.zsh`, `git`, `git.keychain`, `ssh`, `tool.gh`, `tool.atuin`, `tool.htop`,
-`tool.colorls`, `tool.mise`, `tool.neofetch`, `tool.taskwarrior`,
+`tool.colorls`, `tool.mise`,
 `agents.claude`, `agents.opencode`, `agents.otel-agent`, `agents.agent-mcp`,
 `backup.mackup.config`, and the packages `brew.base`, `brew.macos`,
 `brew.apps`, `brew.desktop`, `brew.activity-trackers`, `brew.mas`,

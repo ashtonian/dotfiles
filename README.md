@@ -263,7 +263,7 @@ removed.
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14), its command line tool and the other Macs as its remote servers |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, passkey prompts turned off (`browser.passkeys-off`), the Karabiner mouse mapping (`tool.karabiner`), Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14), its command line tool and the other Macs as its remote servers |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
