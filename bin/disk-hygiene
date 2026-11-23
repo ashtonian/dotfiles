@@ -19,6 +19,10 @@
 #                                           disk_hygiene.keyed; none unless a profile names them)
 #   ~/Library/Caches/{goimports,pnpm}       each file unused for DISK_HYGIENE_CACHE_DAYS
 #   ~/Library/pnpm/store, <drive>/.pnpm-store   `pnpm store prune`
+#   each cache in DISK_HYGIENE_RELOCATE        moved to <cache drive>/cache/xdg/<name> and
+#                                           linked from its usual place, while the drive named
+#                                           by DISK_HYGIENE_CACHE_DRIVE (setting
+#                                           disk_hygiene.cache_drive) is mounted
 #   each LaunchAgent dotfiles apply installed (its state file under
 #   XDG_STATE_HOME), its stdout and stderr log, cut to its newest half
 #                                           once over DISK_HYGIENE_LOG_MAX_BYTES (1 MiB)
@@ -41,6 +45,14 @@ scratch_days=${DISK_HYGIENE_SCRATCH_DAYS:-7}
 cache_days=${DISK_HYGIENE_CACHE_DAYS:-14}
 keyed=${DISK_HYGIENE_KEYED-$(machine_setting DISK_HYGIENE_KEYED)}
 keep=${DISK_HYGIENE_KEEP-}
+cache_drive=${DISK_HYGIENE_CACHE_DRIVE-$(machine_setting DISK_HYGIENE_CACHE_DRIVE)}
+cache_drive=${cache_drive%/}
+# Developer-tool caches that rebuild on their own, as <path under HOME>[=<name>].
+# Go tools ignore XDG_CACHE_HOME on macOS, so a link is the one way to move theirs.
+relocate=${DISK_HYGIENE_RELOCATE-"Library/Caches/go-build Library/Caches/gopls
+    Library/Caches/goimports Library/Caches/golangci-lint Library/Caches/staticcheck
+    Library/Caches/grype Library/Caches/mise .cache/uv .cache/puppeteer .cache/zig
+    .cache/codebase-memory-mcp .npm/_cacache=npm .terraform.d/plugin-cache=terraform-plugin-cache"}
 tmp_root=${DISK_HYGIENE_TMP:-/private/tmp}
 volumes=${DISK_HYGIENE_VOLUMES:-/Volumes}
 log_max_bytes=${DISK_HYGIENE_LOG_MAX_BYTES:-1048576}
@@ -122,6 +134,75 @@ drives() {
 # TMP/claude-<uid>/<project>/<session id>, the project named after its absolute
 # path with each / turned into -. Anything else there (bundled skills, files
 # agents wrote straight into TMP) belongs to something else and stays.
+# relocate_caches: keep each cache in DISK_HYGIENE_RELOCATE on the cache drive
+# at <drive>/cache/xdg/<name>, beside the caches of sessions that work on that
+# drive, so prune_cache covers it, with a link in its usual place. Only while
+# the drive is mounted. A cache found as a real directory (never moved, or its
+# tool deleted the link and started over) gives way to the link and is deleted,
+# not copied: a cache rebuilds, and a copy of one a tool is writing can be
+# torn. A link it made whose directory prune_cache removed gets the directory
+# back; any other link stays as it is.
+relocate_caches() {
+    local entry rel name src dst aside
+    [[ -n $cache_drive ]] || return 0
+    if ! drives | grep -qxF -- "$cache_drive"; then
+        echo "$(now) cache drive $cache_drive is not mounted; caches stay where they are"
+        return 0
+    fi
+    for entry in $relocate; do
+        rel=${entry%%=*}
+        name=${rel##*/}
+        if [[ $entry == *=* ]]; then name=${entry#*=}; fi
+        if [[ -z $rel || $rel == /* || $rel == *..* || -z $name || $name == */* ]]; then
+            echo "$(now) DISK_HYGIENE_RELOCATE entry $entry: want <path under HOME>[=<name>]"
+            failures=$(( failures + 1 ))
+            continue
+        fi
+        src=$HOME/$rel
+        dst=$cache_drive/cache/xdg/$name
+        if [[ -L $src ]]; then
+            if [[ $(readlink -- "$src") == "$dst" && ! -d $dst ]]; then
+                if $dry_run; then
+                    echo "$(now) would recreate $dst for the link $src"
+                elif mkdir -p -- "$dst"; then
+                    echo "$(now) recreated $dst for the link $src"
+                else
+                    echo "$(now) could not recreate $dst for the link $src"
+                    failures=$(( failures + 1 ))
+                fi
+            fi
+            continue
+        fi
+        # Not there: the tool has not run on this machine, or it is not a directory.
+        [[ -d $src ]] || continue
+        if $dry_run; then
+            echo "$(now) would move cache $src to $dst"
+            continue
+        fi
+        if ! mkdir -p -- "$dst"; then
+            echo "$(now) could not create $dst; cache $src stays"
+            failures=$(( failures + 1 ))
+            continue
+        fi
+        # Renamed aside first: a tool writing there carries on in the aside copy,
+        # and the next file it opens is on the drive.
+        aside=$src.disk-hygiene-$$
+        if ! mv -- "$src" "$aside"; then
+            echo "$(now) could not move cache $src aside; it stays"
+            failures=$(( failures + 1 ))
+            continue
+        fi
+        if ! ln -s -- "$dst" "$src"; then
+            mv -- "$aside" "$src" || true
+            echo "$(now) could not link $src to $dst; the cache stays where it was"
+            failures=$(( failures + 1 ))
+            continue
+        fi
+        echo "$(now) moved cache $src to $dst"
+        remove "$aside" "internal copy of cache"
+    done
+}
+
 prune_scratch() {
     local base session project
     base="$1/claude-$(id -u)"
@@ -157,8 +238,9 @@ prune_cache() {
 
 # prune_files DIR: a cache whose files are independent entries, pruned one by one.
 prune_files() {
-    local dir=$1 count kb
-    [[ -d $dir && ! -L $dir ]] || return 0
+    local dir count kb
+    # Followed through a link, such as one relocate_caches made.
+    dir=$(cd -P -- "$1" 2>/dev/null && pwd) || return 0
     count=$(find "$dir" -type f ! -atime -"$cache_days" ! -mtime -"$cache_days" 2>/dev/null | wc -l | tr -d ' ') || true
     (( ${count:-0} > 0 )) || return 0
     kb=$(find "$dir" -type f ! -atime -"$cache_days" ! -mtime -"$cache_days" -print0 2>/dev/null |
@@ -269,6 +351,9 @@ prune_scratch "$tmp_root"
 while IFS= read -r drive; do prune_scratch "$drive/tmp"; done < <(drives)
 prune_cache "$HOME/.cache"
 while IFS= read -r drive; do prune_cache "$drive/cache/xdg"; done < <(drives)
+# After the drives' pruning, so a relocated cache pruned whole there has its
+# directory back before a tool follows the link.
+relocate_caches
 prune_files "$HOME/Library/Caches/goimports"
 prune_files "$HOME/Library/Caches/pnpm"
 while IFS= read -r log; do cap_log "$log"; done < <(agent_logs)

@@ -3485,6 +3485,8 @@ class DiskHygiene(Fixture):
                         DISK_HYGIENE_VOLUMES=str(self.volumes), XDG_STATE_HOME=str(self.path / 'state'))
         self.env.pop('DISK_HYGIENE_KEEP', None)
         self.env.pop('DISK_HYGIENE_KEYED', None)
+        self.env.pop('DISK_HYGIENE_CACHE_DRIVE', None)
+        self.env.pop('DISK_HYGIENE_RELOCATE', None)
 
     def tree(self, root, files=('data',), age=None):
         """A directory holding FILES; with AGE, every entry was last used that long ago."""
@@ -3567,6 +3569,81 @@ class DiskHygiene(Fixture):
         p = self.run_hygiene()
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(sorted(f.name for f in index.iterdir()), ['new.idx'])
+
+    def cache_drive(self, relocate):
+        """A mounted drive D named as the cache drive, relocating RELOCATE."""
+        drive = self.volumes / 'D'
+        drive.mkdir()
+        self.env.update(DISK_HYGIENE_CACHE_DRIVE=str(drive), DISK_HYGIENE_RELOCATE=relocate)
+        return drive
+
+    def test_caches_move_to_the_cache_drive_and_their_internal_copies_go(self):
+        drive = self.cache_drive('Library/Caches/gopls .cache/uv Library/Caches/staticcheck '
+                                 'Library/Caches/absent .npm/_cacache=npm')
+        caches = self.home / 'Library/Caches'
+        gopls = self.tree(caches / 'gopls', ('index/a',))
+        uv = self.tree(self.home / '.cache/uv', ('wheels/b',))
+        elsewhere = self.tree(self.path / 'elsewhere')
+        (caches / 'staticcheck').symlink_to(elsewhere)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        for src, name in ((gopls, 'gopls'), (uv, 'uv')):
+            with self.subTest(name):
+                self.assertTrue(src.is_symlink(), src)
+                self.assertEqual(os.readlink(src), str(drive / 'cache/xdg' / name))
+                self.assertEqual(list((drive / 'cache/xdg' / name).iterdir()), [], 'a moved cache starts over')
+                self.assertIn(f'moved cache {src} to {drive}/cache/xdg/{name}', p.stdout)
+        self.assertEqual(os.readlink(caches / 'staticcheck'), str(elsewhere), 'a link it did not make stays')
+        self.assertFalse(os.path.lexists(caches / 'absent'), 'a cache its tool never made is not linked')
+        self.assertFalse((self.home / '.npm').exists())
+        self.assertEqual(list(self.home.rglob('*.disk-hygiene-*')), [], 'the internal copy is deleted')
+
+    def test_a_relocated_cache_pruned_whole_on_the_drive_gets_its_directory_back(self):
+        drive = self.cache_drive('Library/Caches/gopls')
+        target = self.tree(drive / 'cache/xdg/gopls', ('old',), self.OLD)
+        (self.home / 'Library/Caches').mkdir(parents=True)
+        (self.home / 'Library/Caches/gopls').symlink_to(target)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(target.is_dir(), 'a tool would find its link dangling')
+        self.assertFalse((target / 'old').exists())
+        self.assertIn(f'recreated {target}', p.stdout)
+
+    def test_a_relocated_file_cache_still_loses_only_its_unused_files(self):
+        drive = self.cache_drive('Library/Caches/goimports')
+        target = self.tree(drive / 'cache/xdg/goimports', ('old.idx',), self.OLD)
+        (target / 'new.idx').write_text('x')
+        (self.home / 'Library/Caches').mkdir(parents=True)
+        (self.home / 'Library/Caches/goimports').symlink_to(target)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(sorted(f.name for f in target.iterdir()), ['new.idx'])
+
+    def test_caches_stay_while_the_cache_drive_is_not_mounted(self):
+        self.env.update(DISK_HYGIENE_CACHE_DRIVE=str(self.volumes / 'Gone'), DISK_HYGIENE_RELOCATE='Library/Caches/gopls')
+        gopls = self.tree(self.home / 'Library/Caches/gopls')
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(gopls.is_symlink())
+        self.assertTrue((gopls / 'data').exists())
+        self.assertIn('is not mounted', p.stdout)
+
+    def test_dry_run_moves_no_cache(self):
+        drive = self.cache_drive('Library/Caches/gopls')
+        gopls = self.tree(self.home / 'Library/Caches/gopls')
+        p = self.run_hygiene('--dry-run')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(gopls.is_symlink())
+        self.assertFalse((drive / 'cache').exists())
+        self.assertIn(f'would move cache {gopls} to {drive}/cache/xdg/gopls', p.stdout)
+
+    def test_rejects_relocate_entries_outside_home(self):
+        drive = self.cache_drive('/etc/x Library/../../up Library/Caches/ok=a/b')
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        for entry in ('/etc/x', 'Library/../../up', 'Library/Caches/ok=a/b'):
+            self.assertIn(f'DISK_HYGIENE_RELOCATE entry {entry}: want', p.stdout)
+        self.assertFalse((drive / 'cache').exists())
 
     def agent(self, label, log, applied):
         """An installed LaunchAgent logging to LOG; APPLIED records it as dotfiles apply's."""
