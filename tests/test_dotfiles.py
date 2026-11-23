@@ -2849,9 +2849,59 @@ class DisableAerials(Fixture):
         after_first = self.store.read_bytes()
         p = self.run_script()
         self.assertEqual(p.returncode, 0, p.stderr)
-        self.assertIn('already uses', p.stdout)
+        self.assertIn('has no aerial', p.stdout)
         self.assertEqual(self.store.read_bytes(), after_first)
         self.assertEqual(len(self.backups()), 1)
+
+    @staticmethod
+    def slot(provider, configuration):
+        return {'Content': {'Choices': [{'Configuration': plistlib.dumps(configuration, fmt=plistlib.FMT_BINARY),
+                                         'Files': [], 'Provider': provider}],
+                            'EncodedOptionValues': '$null', 'Shuffle': '$null'}}
+
+    def chosen_picture(self):
+        return self.slot('com.apple.wallpaper.choice.image',
+                         {'type': 'imageFolder', 'url': {'relative': 'file:///Users/someone/Wallpapers/'}})
+
+    def chosen_saver(self):
+        return self.slot('com.apple.wallpaper.choice.screen-saver',
+                         {'module': {'relative': 'file:///System/Library/Screen%20Savers/Hello.saver/'}})
+
+    def test_chosen_pictures_and_savers_are_left_alone(self):
+        # As a Mac whose owner picked a picture folder per display: nothing is an aerial.
+        self.write_store({'AllSpacesAndDisplays': {'Type': 'individual', 'Idle': self.chosen_saver()},
+                          'SystemDefault': {'Type': 'individual', 'Desktop': self.chosen_picture(),
+                                            'Idle': self.chosen_saver()},
+                          'Displays': {'32F6F12E': {'Type': 'individual', 'Desktop': self.chosen_picture(),
+                                                    'Idle': self.chosen_saver()}},
+                          'Spaces': {}})
+        before = self.store.read_bytes()
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('has no aerial', p.stdout)
+        self.assertEqual(self.store.read_bytes(), before)
+        self.assertEqual(self.backups(), [])
+
+    def test_only_the_aerial_slot_of_an_entry_is_replaced(self):
+        self.write_store({'AllSpacesAndDisplays': {'Type': 'individual', 'Desktop': self.chosen_picture(),
+                                                   'Idle': self.slot('com.apple.wallpaper.choice.aerials', {})},
+                          'SystemDefault': {'Type': 'linked',
+                                            'Linked': self.slot('com.apple.wallpaper.choice.dynamic', {})}})
+        p = self.run_script()
+        self.assertEqual(p.returncode, 0, p.stderr)
+        store = plistlib.loads(self.store.read_bytes())
+        entry = store['AllSpacesAndDisplays']
+        self.assertEqual(self.choice(entry, 'Desktop'),
+                         ('com.apple.wallpaper.choice.image',
+                          {'type': 'imageFolder', 'url': {'relative': 'file:///Users/someone/Wallpapers/'}}))
+        self.assertEqual(self.choice(entry, 'Idle'),
+                         ('com.apple.wallpaper.choice.screen-saver',
+                          {'module': {'relative': self.saver.resolve().as_uri() + '/'}}))
+        self.assertEqual(store['SystemDefault']['Type'], 'linked')
+        self.assertEqual(store['SystemDefault']['Linked']['Content']['Choices'][0]['Provider'],
+                         'com.apple.wallpaper.choice.dynamic')
+        self.assertIn('/AllSpacesAndDisplays', p.stdout)
+        self.assertNotIn('/SystemDefault', p.stdout)
 
     def test_dry_run_writes_nothing(self):
         self.write_store({'AllSpacesAndDisplays': self.linked()})

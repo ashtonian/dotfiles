@@ -11,10 +11,12 @@ swaps. It plays whenever the screen saver starts (idle with display sleep held
 off) and whenever the lock screen shows, which includes every Screen Sharing
 connection.
 
-This rewrites every entry in the wallpaper store (all spaces and displays, the
-system default, and any per-display or per-space entry) to a still desktop
-picture and a non-aerial screen saver. The screen saver stays on, because on a
-Mac whose display never sleeps it is what locks the screen. The store is backed
+This replaces every aerial in the wallpaper store (all spaces and displays, the
+system default, and any per-display or per-space entry): an aerial desktop gets
+a still picture, an aerial screen saver a non-aerial one. A picture, colour,
+dynamic wallpaper or screen saver someone chose is left as it is. The screen
+saver stays on, because on a Mac whose display never sleeps it is what locks the
+screen. The store is backed
 up under $XDG_STATE_HOME/dotfiles/wallpaper/ before it is written. When the
 store is the live one, WallpaperAgent is restarted to load it and the aerial
 extension is stopped, which also ends its decoder.
@@ -38,6 +40,10 @@ DEFAULT_SAVER = Path('/System/Library/Screen Savers/FloatingMessage.saver')
 IMAGE_PROVIDER = 'com.apple.wallpaper.choice.image'
 SAVER_PROVIDER = 'com.apple.wallpaper.choice.screen-saver'
 ENTRY_KEYS = {'Linked', 'Desktop', 'Idle'}
+SLOTS = ('Desktop', 'Idle')
+# A linked entry with no choice of its own shows the system default, which is an
+# aerial on macOS 14 and later.
+DEFAULT_PROVIDER = 'default'
 ENTRY_TYPES = {'linked', 'individual'}
 # WallpaperAgent may rewrite the store's LastUse stamps when it restarts; give
 # it this long to settle before checking that the choices survived.
@@ -101,9 +107,24 @@ def skeleton():
             'SystemDefault': {'Type': 'linked'}}
 
 
-def matches(entry, wanted):
-    return entry['Type'] == 'individual' and all(current_choice(entry, slot) == want
-                                                 for slot, want in wanted.items())
+def provider(slot):
+    try:
+        return slot['Content']['Choices'][0]['Provider']
+    except (KeyError, IndexError, TypeError):
+        return None
+
+
+def is_aerial(name):
+    return name == DEFAULT_PROVIDER or 'aerial' in name
+
+
+def aerial_slots(entry):
+    """The slots of entry that show an aerial. A linked entry is one choice for
+    every slot; a missing choice there is the system default."""
+    if entry['Type'] == 'linked':
+        linked = provider(entry.get('Linked'))
+        return set(SLOTS) if linked is None or is_aerial(linked) else set()
+    return {slot for slot in SLOTS if slot in entry and is_aerial(provider(entry[slot]) or '')}
 
 
 def utc_now():
@@ -112,18 +133,22 @@ def utc_now():
 
 
 def plan(store, picture, saver):
-    """Rewrite store in place; return the paths of the entries that changed."""
+    """Replace each aerial in store in place; return the paths of the entries that changed."""
     wanted = wanted_choices(picture, saver)
     now = utc_now()
     changed = []
     # list() finds every entry, and refuses an unknown one, before any is changed.
     for where, entry in list(entries(store)):
-        if matches(entry, wanted):
+        slots = aerial_slots(entry)
+        if not slots:
             continue
-        entry.pop('Linked', None)
-        for slot, (provider, configuration) in wanted.items():
-            entry[slot] = {'Content': content(provider, configuration), 'LastSet': now, 'LastUse': now}
-        entry['Type'] = 'individual'
+        if entry['Type'] == 'linked':
+            entry.pop('Linked', None)
+            entry['Type'] = 'individual'
+        for slot in SLOTS:
+            if slot in slots:
+                choice, configuration = wanted[slot]
+                entry[slot] = {'Content': content(choice, configuration), 'LastSet': now, 'LastUse': now}
         changed.append(where)
     return changed
 
@@ -162,17 +187,16 @@ def write(path, store):
         raise
 
 
-def restart_agent(path, picture, saver):
+def restart_agent(path):
     """Load the new store and stop the aerial, then confirm the agent kept it."""
     for process in ('WallpaperAgent', 'WallpaperAerialsExtension'):
         # Exit 1 means it was not running; launchd starts the agent again on demand.
         subprocess.run(['/usr/bin/killall', process], capture_output=True, timeout=10)
-    wanted = wanted_choices(picture, saver)
     deadline = time.monotonic() + SETTLE_SECONDS
     while True:
         time.sleep(1)
         found = list(entries(load(path)))
-        reverted = [where for where, entry in found if not matches(entry, wanted)]
+        reverted = [where for where, entry in found if aerial_slots(entry)]
         if found and not reverted:
             return
         if time.monotonic() > deadline:
@@ -215,7 +239,7 @@ def main(argv):
     store = load(args.store)
     changed = plan(store, args.picture, args.saver)
     if not changed:
-        print(f'{name()}: {args.store} already uses {args.picture.name} and {args.saver.name}')
+        print(f'{name()}: {args.store} has no aerial wallpaper or screen saver')
         return 0
     print(f'{name()}: desktop {args.picture}, screen saver {args.saver}: {", ".join(changed)}')
     if args.dry_run:
@@ -226,7 +250,7 @@ def main(argv):
     write(args.store, store)
     print(f'{name()}: wrote {args.store}')
     if args.live:
-        restart_agent(args.store, args.picture, args.saver)
+        restart_agent(args.store)
         print(f'{name()}: restarted WallpaperAgent and stopped WallpaperAerialsExtension')
     return 0
 

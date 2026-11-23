@@ -572,20 +572,25 @@ saver starts, which on a Mac kept awake (Caffeine, `caffeinate`) can mean hours,
 and whenever the lock screen shows, which includes every Screen Sharing
 connection. Reproduced on macOS 27.2.1.
 
-`config.sh` runs `bin/disable-aerials`, which switches the desktop and lock
-screen to a still picture and the screen saver to Floating Message. It leaves
-the screen saver on: on a Mac whose display never sleeps, the screen saver is
-what locks the screen. The script rewrites every entry in
+`config.sh` runs `bin/disable-aerials`, which replaces each aerial: an aerial
+desktop and lock screen get a still picture, an aerial screen saver Floating
+Message. A picture, picture folder, colour, dynamic wallpaper or screen saver
+someone chose is left as it is. It leaves the screen saver on: on a Mac whose
+display never sleeps, the screen saver is what locks the screen. The script
+reads every entry in
 `~/Library/Application Support/com.apple.wallpaper/Store/Index.plist` (all
-spaces and displays, the system default, any per-display or per-space entry),
-then restarts WallpaperAgent and stops the aerial extension, which ends its
-decoder. A run that finds every entry already set changes nothing. It refuses
-an entry layout it does not know and leaves the store untouched.
+spaces and displays, the system default, any per-display or per-space entry);
+a slot is an aerial when its provider is `default` (a linked entry with no
+choice of its own shows the system default, an aerial since macOS 14) or names
+an aerial. When it changed something, it restarts WallpaperAgent and stops the
+aerial extension, which ends its decoder. A run that finds no aerial changes
+nothing. It refuses an entry layout it does not know and leaves the store
+untouched.
 
 | Flag | Type | Default | Effect |
 | ---- | ---- | ------- | ------ |
-| `--picture` | File path | `/System/Library/Desktop Pictures/Solid Colors/Space Gray.png` | Desktop and lock screen picture; must be a still image |
-| `--saver` | `.saver` bundle path | `/System/Library/Screen Savers/FloatingMessage.saver` | Screen saver |
+| `--picture` | File path | `/System/Library/Desktop Pictures/Solid Colors/Space Gray.png` | Picture for an aerial desktop and lock screen; must be a still image |
+| `--saver` | `.saver` bundle path | `/System/Library/Screen Savers/FloatingMessage.saver` | Screen saver in place of an aerial one |
 | `--store` | File path | the logged-in user's store | Store to rewrite; WallpaperAgent is restarted only for the default |
 | `--dry-run` | Boolean | `false` | Report the entries that would change, write nothing |
 
@@ -600,8 +605,9 @@ pgrep -lf 'VTDecoderXPCService|WallpaperAerialsExtension'
 plutil -p ~/Library/Application\ Support/com.apple.wallpaper/Store/Index.plist | grep -E '"(Type|Provider)"'
 ```
 
-After the fix every `Type` is `individual` and every `Provider` is
-`com.apple.wallpaper.choice.image` or `com.apple.wallpaper.choice.screen-saver`.
+After the fix no entry is `linked` to `default` and no `Provider` names an
+aerial; a chosen picture, folder, colour or dynamic wallpaper keeps its own
+provider.
 WallpaperAgent may start `WallpaperAerialsExtension` again; idle at 0% CPU with
 no `VTDecoderXPCService` beside it, it is not playing anything. To free a
 running leak without the script, kill both processes: the decoder alone is
