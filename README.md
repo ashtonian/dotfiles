@@ -229,7 +229,7 @@ dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the r
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
-writes managed copies for files a tool rewrites (gh, htop and Taskwarrior
+writes managed copies for files a tool rewrites (gh, htop and Karabiner
 settings, and everything under `~/Library` on macOS), renders the generated
 outputs in `~/.config/dotfiles/generated/` (the Brewfile, and the env, zsh, git
 and ssh fragments), and creates one-line stubs for entry points installers
@@ -513,6 +513,21 @@ passkeys-off check    # exit 1 until each browser profile has the extension load
 
 Loading the extension, the 1Password and Passwords app settings, and troubleshooting:
 [docs/PASSKEYS.md](docs/PASSKEYS.md).
+
+## Mouse buttons
+
+Feature `tool.karabiner` (desktop profile) installs Karabiner-Elements with a managed
+`~/.config/karabiner/karabiner.json`: the G502 X PLUS's G5 button opens Mission Control,
+which G HUB used to do, and every other key and button behaves as it does without
+Karabiner. Once per Mac, install it from a terminal (its `.pkg` needs a password), then
+approve the driver and Input Monitoring that Karabiner asks for:
+
+```sh
+brew install --cask karabiner-elements
+```
+
+Checking the button with Karabiner-EventViewer, and troubleshooting:
+[docs/KARABINER.md](docs/KARABINER.md).
 
 ## Multi-Machine Setup
 

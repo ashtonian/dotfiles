@@ -323,7 +323,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
-| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing` |
+| tools | `tool.toggl-focus`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner` |
 | security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
 
 ## Mackup
