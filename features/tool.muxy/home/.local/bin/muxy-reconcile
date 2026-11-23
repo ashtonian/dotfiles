@@ -1,0 +1,1209 @@
+#!/usr/bin/env python3
+"""muxy-reconcile - list the other Macs in Muxy as remote servers
+
+usage:
+  muxy-reconcile [--mode report|apply] [--exclude-servers '<list>/<ssh> ...']
+
+Each context's overlay links one list into MUXY_RECONCILE_SERVERS_DIR
+(~/.config/muxy/servers.d/<context>.toml):
+
+    group = "Home"              # optional: the group Muxy files them under
+
+    [[server]]
+    name = "Desk"               # the name Muxy shows
+    ssh = "desk"                # an ssh destination: alias, host or user@host
+    # ssh_command = "orb ssh vm"  optional: Muxy connects through this command;
+    #                             ssh then only identifies the machine
+
+Two dotfiles settings steer a run. Each is read as dotfiles apply generated it
+(with lib_sh/machine-setting.sh: launchd does not load the generated env.sh),
+never from a variable inherited from a shell that may predate the last apply;
+a flag overrides it for one run.
+
+muxy.reconcile (--mode): report, the default, computes the change, checks it
+with Muxy, and logs each decision and the diff of settings.toml it would make;
+it writes nothing: not settings.toml, not the state file, and no reload. apply
+makes the change.
+
+muxy.exclude_servers (--exclude-servers): declared servers this Mac leaves out,
+space-separated <list>/<ssh> names, such as personal/laptop (the list's file
+name without .toml, and the server's ssh destination). A name that matches no
+declared server stops the run before it writes anything. Excluding a server
+and declaring it again in a local list changes its name or group on this Mac
+only.
+
+A run looks every destination up with `ssh -G` (user, port, HostName, the
+known_hosts files), `ssh-keygen -F` (the host keys those files hold for it) and
+the system resolver. It leaves out the server that is this Mac (same user, and
+one of this Mac's sshd host keys, or port 22 and one of its interface
+addresses), and matches each declared server to an existing entry: the one it
+wrote for that destination before, else one with the same destination or
+command, else one reaching the same user and port on the same machine, which
+shares an address or a known host key with it (a Mac with two interfaces has
+two addresses and one host key). A matched entry keeps its id, which Muxy's
+open projects and tabs are tied to, and every key a list does not set
+(identity_file, password_login, ...). Entries it never wrote are left as they
+are. One it wrote whose server is no longer declared, or is excluded, is
+removed, unless it was added by hand and adopted, or Muxy paired it: such an
+entry is released, left as it is and no longer managed. It rewrites only the
+[[servers]] tables of settings.toml, after Muxy's own parser accepted the
+result, while holding Muxy's settings lock, and only if nobody saved the file
+during the run; then `muxy config reload` has a running app apply it.
+
+Environment: MUXY_DIR (Muxy's profile; default ~/Library/Application
+Support/Muxy 2), MUXY_RECONCILE_SERVERS_DIR (default
+$XDG_CONFIG_HOME/muxy/servers.d), MUXY_RECONCILE_STATE (default
+$XDG_STATE_HOME/muxy-reconcile/managed.json), MUXY_RECONCILE_LOG (default
+~/Library/Logs/muxy-reconcile/muxy-reconcile.log), MUXY_RECONCILE_LOG_MAX_BYTES
+(262144; the log and one previous copy, so at most twice this),
+MUXY_RECONCILE_SSH (default /usr/bin/ssh), MUXY_RECONCILE_SELF_ADDRESSES
+(space-separated; default this Mac's interface addresses from ifconfig),
+MUXY_RECONCILE_HOST_KEYS (this Mac's sshd public keys, space-separated files or
+patterns; default /etc/ssh/ssh_host_*_key.pub),
+MUXY_RECONCILE_TIMEOUT (seconds per command, default 30).
+DOTFILES_MUXY_APP selects the Muxy app for the muxy wrapper beside this
+script; the script runs that wrapper from the repository, never
+~/.local/bin/muxy.
+
+Exit status: 0 in step, changed, or a change reported, 1 Muxy refused the
+result or a command failed, 2 usage, a bad server list, setting or state file,
+or a list directory missing while the state file manages entries, 3 Muxy or
+another run was saving at the same time (nothing written; the next run
+retries), 69 Muxy is not installed.
+See docs/MUXY.md.
+"""
+import sys
+
+if sys.version_info < (3, 11):
+    sys.exit(f"muxy-reconcile: needs Python 3.11 or later (tomllib); {sys.executable} is "
+             f"{sys.version.split()[0]}. Install Homebrew's python (feature tool.muxy).")
+
+import argparse
+import concurrent.futures
+import contextlib
+import dataclasses
+import datetime
+import difflib
+import errno
+import fcntl
+import glob
+import hashlib
+import ipaddress
+import json
+import math
+import os
+import pwd
+import re
+import secrets
+import shutil
+import socket
+import subprocess
+import tempfile
+import time
+import tomllib
+from pathlib import Path
+
+EXIT_FAILED = 1
+EXIT_CONFIG = 2
+EXIT_RETRY = 3
+EXIT_UNAVAILABLE = 69
+
+DEFAULT_PROFILE = '~/Library/Application Support/Muxy 2'
+DEFAULT_LOG = '~/Library/Logs/muxy-reconcile/muxy-reconcile.log'
+DEFAULT_LOG_MAX_BYTES = 262144
+DEFAULT_SSH = '/usr/bin/ssh'
+DEFAULT_SSH_KEYGEN = '/usr/bin/ssh-keygen'
+DEFAULT_HOST_KEYS = '/etc/ssh/ssh_host_*_key.pub'
+DEFAULT_TIMEOUT_SECONDS = 30
+EXCLUDE_ENV = 'MUXY_RECONCILE_EXCLUDE'
+EXCLUDE_SETTING = 'muxy.exclude_servers'
+MODE_ENV = 'MUXY_RECONCILE_MODE'
+MODE_SETTING = 'muxy.reconcile'
+MODES = ('report', 'apply')
+DEFAULT_MODE = 'report'
+# The dotfiles settings a run reads, by the variable apply exports each as.
+SETTINGS = {MODE_ENV: MODE_SETTING, EXCLUDE_ENV: EXCLUDE_SETTING}
+# The checkout this script is linked from:
+# <repository>/features/tool.muxy/home/.local/bin/muxy-reconcile.
+REPOSITORY = Path(__file__).resolve().parents[5]
+LOCK_WAIT_SECONDS = 10
+RUN_LOCK_WAIT_SECONDS = 60
+SSH_PORT = 22
+STATE_VERSION = 1
+
+# The keys a declared server sets in its entry. Every other key of an entry
+# (password_login, identity_file, paired) is the owner's or Muxy's, and kept.
+MANAGED_KEYS = ('group', 'name', 'ssh', 'ssh_command')
+STATE_RECORD_KEYS = {'ssh', 'adopted'}
+FRAGMENT_KEYS = {'group', 'server'}
+SERVER_KEYS = {'name', 'ssh', 'ssh_command'}
+# A destination goes to `ssh -G` as one argument; anything an option parser or
+# a shell could split is refused.
+DESTINATION = re.compile(r'^[^\s\x00-\x1f\x7f-][^\s\x00-\x1f\x7f]*$')
+
+
+class ConfigError(Exception):
+    """A server list or the state file is wrong: exit 2."""
+
+
+class RetryError(Exception):
+    """Someone else was saving at the same time: exit 3."""
+
+
+class Unavailable(Exception):
+    """Muxy is not installed: exit 69."""
+
+
+class Failure(Exception):
+    """A command failed or Muxy refused the result: exit 1."""
+
+
+# ---------------------------------------------------------------- settings
+
+
+@dataclasses.dataclass(frozen=True)
+class Header:
+    start: int  # offset of the header line
+    end: int    # offset just past its newline
+    path: tuple[str, ...]
+    is_array: bool
+
+
+def skip_string(text, i):
+    """Offset just past the TOML string that opens at text[i]."""
+    quote = text[i]
+    if text.startswith(quote * 3, i):
+        j = i + 3
+        while True:
+            k = text.find(quote * 3, j)
+            if k < 0:
+                raise ValueError(f'unterminated multi-line string at offset {i}')
+            if quote == '"':
+                escapes = 0
+                while k - escapes - 1 >= j and text[k - escapes - 1] == '\\':
+                    escapes += 1
+                if escapes % 2:
+                    j = k + 1
+                    continue
+            end = k + 3
+            # Up to two more quotes belong to the content: """a""""" is 'a""'.
+            while end < len(text) and text[end] == quote and end - k < 5:
+                end += 1
+            return end
+    j = i + 1
+    while j < len(text):
+        ch = text[j]
+        if quote == '"' and ch == '\\':
+            j += 2
+            continue
+        if ch == quote:
+            return j + 1
+        if ch == '\n':
+            break
+        j += 1
+    raise ValueError(f'unterminated string at offset {i}')
+
+
+def parse_key_path(line):
+    """The dotted key and kind of a [table] or [[array]] header line."""
+    s = line.strip()
+    is_array = s.startswith('[[')
+    i = 2 if is_array else 1
+    path = []
+    while True:
+        while i < len(s) and s[i] in ' \t':
+            i += 1
+        if i < len(s) and s[i] in '"\'':
+            end = skip_string(s, i)
+            raw = s[i:end]
+            path.append(json.loads(raw) if raw[0] == '"' else raw[1:-1])
+            i = end
+        else:
+            bare = re.match(r'[A-Za-z0-9_-]+', s[i:])
+            if not bare:
+                raise ValueError(f'malformed table header {s!r}')
+            path.append(bare.group())
+            i += bare.end()
+        while i < len(s) and s[i] in ' \t':
+            i += 1
+        if i < len(s) and s[i] == '.':
+            i += 1
+            continue
+        break
+    close = ']]' if is_array else ']'
+    if not s.startswith(close, i):
+        raise ValueError(f'malformed table header {s!r}')
+    rest = s[i + len(close):].strip()
+    if rest and not rest.startswith('#'):
+        raise ValueError(f'malformed table header {s!r}')
+    return tuple(path), is_array
+
+
+def table_headers(text):
+    """Every table header line, skipping strings, comments and multi-line values."""
+    headers = []
+    i, depth, line_start = 0, 0, True
+    while i < len(text):
+        c = text[i]
+        if c == '\n':
+            line_start = True
+            i += 1
+        elif c in ' \t\r':
+            i += 1
+        elif c == '#':
+            newline = text.find('\n', i)
+            i = len(text) if newline < 0 else newline
+        elif c in '"\'':
+            i = skip_string(text, i)
+            line_start = False
+        elif c == '[' and depth == 0 and line_start:
+            start = text.rfind('\n', 0, i) + 1
+            newline = text.find('\n', i)
+            end = len(text) if newline < 0 else newline + 1
+            path, is_array = parse_key_path(text[i:end])
+            headers.append(Header(start, end, path, is_array))
+            i = end
+            line_start = True
+        else:
+            if c in '[{':
+                depth += 1
+            elif c in ']}':
+                depth = max(0, depth - 1)
+            line_start = False
+            i += 1
+    return headers
+
+
+def server_spans(text, headers):
+    """(start, end) of each [[servers]] element with its sub-tables, in file order."""
+    spans = []
+    for index, header in enumerate(headers):
+        if header.path != ('servers',) or not header.is_array:
+            continue
+        end = len(text)
+        for later in headers[index + 1:]:
+            if later.path[0] != 'servers' or later.path == ('servers',):
+                end = later.start
+                break
+        spans.append((header.start, end))
+    return spans
+
+
+def toml_string(value):
+    out = ['"']
+    for ch in value:
+        if ch == '"':
+            out.append('\\"')
+        elif ch == '\\':
+            out.append('\\\\')
+        elif ch == '\n':
+            out.append('\\n')
+        elif ch == '\t':
+            out.append('\\t')
+        elif ord(ch) < 0x20 or ord(ch) == 0x7f:
+            out.append(f'\\u{ord(ch):04x}')
+        else:
+            out.append(ch)
+    out.append('"')
+    return ''.join(out)
+
+
+def toml_key(key):
+    return key if re.fullmatch(r'[A-Za-z0-9_-]+', key) else toml_string(key)
+
+
+def toml_value(value):
+    """value, as tomllib read it, written back as TOML."""
+    if isinstance(value, bool):
+        return 'true' if value else 'false'
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        if math.isnan(value):
+            return 'nan'
+        if math.isinf(value):
+            return 'inf' if value > 0 else '-inf'
+        return repr(value)
+    if isinstance(value, str):
+        return toml_string(value)
+    if isinstance(value, (datetime.datetime, datetime.date, datetime.time)):
+        return value.isoformat()
+    if isinstance(value, list):
+        return '[' + ', '.join(toml_value(v) for v in value) + ']'
+    if isinstance(value, dict):
+        return '{' + ', '.join(f'{toml_key(k)} = {toml_value(v)}' for k, v in value.items()) + '}'
+    raise TypeError(f'{type(value).__name__} is not a TOML value')
+
+
+def render_entry(entry):
+    """One [[servers]] table, keys sorted as Muxy writes them. A table-valued
+    key goes inline; Muxy's own sub-table, paired, marks an entry this command
+    never rewrites."""
+    lines = ['[[servers]]'] + [f'{toml_key(k)} = {toml_value(entry[k])}' for k in sorted(entry)]
+    return '\n'.join(lines) + '\n\n'
+
+
+@dataclasses.dataclass
+class Settings:
+    path: Path
+    raw: bytes
+    text: str
+    data: dict
+    spans: list
+    headers: list
+    empty_servers: tuple | None = None  # (start, end) of a root `servers = []` line
+
+    @property
+    def digest(self):
+        return hashlib.sha256(self.raw).hexdigest()
+
+    @property
+    def servers(self):
+        return self.data.get('servers', [])
+
+    def span_text(self, index):
+        start, end = self.spans[index]
+        return self.text[start:end]
+
+    def with_servers(self, parts):
+        """This file's text with its [[servers]] tables replaced by parts
+        (rendered tables), every other byte as it was."""
+        pieces = []
+        for n, part in enumerate(parts):
+            if not part.endswith('\n'):
+                part += '\n'
+            if n < len(parts) - 1 and not part.endswith('\n\n'):
+                part += '\n'
+            pieces.append(part)
+        block = ''.join(pieces)
+        if self.spans:
+            pieces = [self.text[:self.spans[0][0]], block]
+            for (_, end), (start, _) in zip(self.spans, self.spans[1:]):
+                pieces.append(self.text[end:start])
+            pieces.append(self.text[self.spans[-1][1]:])
+            return ''.join(pieces)
+        if not block:
+            return self.text
+        text, shift = self.text, 0
+        if self.empty_servers is not None:
+            # The tables replace it; it is in the root table, before every header.
+            start, end = self.empty_servers
+            text, shift = text[:start] + text[end:], end - start
+        # Where Muxy itself would write them: tables are saved in key order.
+        for header in self.headers:
+            if header.path[0] > 'servers':
+                at = header.start - shift
+                return text[:at] + block + text[at:]
+        head = text
+        if head and not head.endswith('\n'):
+            head += '\n'
+        if head and not head.endswith('\n\n'):
+            head += '\n'
+        return head + block
+
+
+def read_settings(path):
+    raw = path.read_bytes()
+    try:
+        text = raw.decode('utf-8')
+        data = tomllib.loads(text)
+    except (UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
+        raise Failure(f'{path} does not parse ({e}); Muxy cannot open it either. Fix the file, '
+                      'or restore it from Settings > Backup & Restore') from e
+    try:
+        headers = table_headers(text)
+    except ValueError as e:
+        raise Failure(f'reading the tables of {path}: {e}') from e
+    spans = server_spans(text, headers)
+    servers = data.get('servers', [])
+    if isinstance(servers, list) and not all(isinstance(s, dict) and isinstance(s.get('id'), str) for s in servers):
+        raise Failure(f'{path} has a server without an id; Muxy cannot open it either. Fix the file, '
+                      'or restore it from Settings > Backup & Restore')
+    empty_servers = None
+    if 'servers' in data and not spans and servers == []:
+        empty_servers = empty_servers_line(text, headers)
+    if not isinstance(servers, list) or len(servers) != len(spans) or (
+            'servers' in data and not spans and empty_servers is None):
+        raise Failure(f'{path} lists its servers in a form muxy-reconcile does not edit (not one '
+                      '[[servers]] table each); edit and save any server in Muxy so it rewrites the file, '
+                      'then run again')
+    return Settings(path, raw, text, data, spans, headers, empty_servers)
+
+
+EMPTY_SERVERS = re.compile(r'''^[ \t]*(?:servers|"servers"|'servers')[ \t]*=[ \t]*\[[ \t]*\][ \t]*(?:#[^\n]*)?(?:\n|\Z)''',
+                           re.MULTILINE)
+
+
+def empty_servers_line(text, headers):
+    """(start, end) of the root table's `servers = []`, the form an empty list
+    of servers is saved in, or None."""
+    root = text[:headers[0].start] if headers else text
+    lines = list(EMPTY_SERVERS.finditer(root))
+    return (lines[0].start(), lines[0].end()) if len(lines) == 1 else None
+
+
+# ---------------------------------------------------------------- declared servers
+
+
+@dataclasses.dataclass(frozen=True)
+class Declared:
+    source: str
+    name: str
+    ssh: str
+    ssh_command: str | None
+    group: str | None
+
+    def entry(self, server_id):
+        entry = {'id': server_id, 'name': self.name}
+        if self.group is not None:
+            entry['group'] = self.group
+        if self.ssh_command is not None:
+            entry['ssh_command'] = self.ssh_command
+        else:
+            entry['ssh'] = self.ssh
+        return entry
+
+
+def parse_exclusions(raw):
+    """The (list, destination) pairs a muxy.exclude_servers value names."""
+    excluded = set()
+    for token in raw.split():
+        list_name, _, destination = token.partition('/')
+        if not list_name or not destination:
+            raise ConfigError(f'{EXCLUDE_SETTING} ({EXCLUDE_ENV}): {token!r} is not <list>/<ssh>, '
+                              'such as personal/laptop')
+        excluded.add((list_name, destination))
+    return frozenset(excluded)
+
+
+def generated_settings(timeout):
+    """The values dotfiles apply generated for this command's settings, read
+    with the repository's lib_sh/machine-setting.sh as its other LaunchAgent
+    scripts read theirs: launchd does not load the generated env.sh. Empty
+    when apply has not generated one. The variables are left out of the
+    helper's environment: env.sh keeps a value already set there, and one
+    inherited from a shell that loaded an older env.sh must not win."""
+    helper = REPOSITORY / 'lib_sh/machine-setting.sh'
+    env = {k: v for k, v in os.environ.items() if k not in SETTINGS}
+    script = 'source "$0" || exit; for name; do machine_setting "$name"; printf "\\0"; done'
+    try:
+        p = subprocess.run(['/bin/bash', '-c', script, str(helper), *SETTINGS], env=env, capture_output=True,
+                           text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:
+        raise Failure(f'reading the dotfiles settings with {helper}: no answer within {timeout}s') from e
+    values = p.stdout.split('\0')
+    if p.returncode != 0 or len(values) != len(SETTINGS) + 1:
+        raise Failure(f'reading the dotfiles settings with {helper}: bash exited {p.returncode}: '
+                      f'{p.stderr.strip()}')
+    return dict(zip(SETTINGS, values))
+
+
+def read_options(mode, exclude, timeout):
+    """The run's mode and the servers it leaves out: each flag given, else the
+    setting dotfiles apply generated."""
+    generated = generated_settings(timeout) if mode is None or exclude is None else {}
+    if mode is None:
+        mode = generated[MODE_ENV] or DEFAULT_MODE
+        if mode not in MODES:
+            raise ConfigError(f'{MODE_SETTING} ({MODE_ENV}) is {mode!r}; want one of {", ".join(MODES)}')
+    if exclude is None:
+        exclude = generated[EXCLUDE_ENV]
+    return mode, parse_exclusions(exclude)
+
+
+def read_server_lists(directory, excluded=frozenset()):
+    """Every declared server, in file-name order, then file order, and the ones
+    excluded names, apart."""
+    declared = []
+    if not directory.is_dir():
+        if excluded:
+            unmatched(excluded, directory)
+        return declared, []
+    for path in sorted(directory.glob('*.toml')):
+        if path.name.startswith('.'):
+            continue
+        try:
+            data = tomllib.loads(path.read_text())
+        except (OSError, UnicodeDecodeError, tomllib.TOMLDecodeError) as e:
+            # A list that cannot be read would look like servers removed.
+            raise ConfigError(f'{path}: {e}') from e
+        unknown = set(data) - FRAGMENT_KEYS
+        if unknown:
+            raise ConfigError(f'{path}: unknown keys: {", ".join(sorted(unknown))}')
+        group = data.get('group')
+        if group is not None and not isinstance(group, str):
+            raise ConfigError(f'{path}: group must be a string')
+        servers = data.get('server', [])
+        if not isinstance(servers, list):
+            raise ConfigError(f'{path}: servers are [[server]] tables')
+        for number, server in enumerate(servers, start=1):
+            where = f'{path}: server {number}'
+            unknown = set(server) - SERVER_KEYS
+            if unknown:
+                raise ConfigError(f'{where}: unknown keys: {", ".join(sorted(unknown))}')
+            for key in ('name', 'ssh'):
+                if not isinstance(server.get(key), str):
+                    raise ConfigError(f'{where}: {key} is required and must be a string')
+            command = server.get('ssh_command')
+            if command is not None and not isinstance(command, str):
+                raise ConfigError(f'{where}: ssh_command must be a string')
+            if not DESTINATION.match(server['ssh']):
+                raise ConfigError(f'{where}: ssh {server["ssh"]!r} must be one destination, '
+                                  'without spaces, control characters or a leading -')
+            declared.append(Declared(path.name, server['name'], server['ssh'], command, group))
+    kept = [d for d in declared if (Path(d.source).stem, d.ssh) not in excluded]
+    left_out = [d for d in declared if (Path(d.source).stem, d.ssh) in excluded]
+    # A typo must not add the very server it was meant to leave out.
+    missing = excluded - {(Path(d.source).stem, d.ssh) for d in left_out}
+    if missing:
+        unmatched(missing, directory)
+    # After exclusions, so a local list can declare an excluded destination again.
+    seen = {}
+    for d in kept:
+        if d.ssh in seen:
+            raise ConfigError(f'ssh {d.ssh!r} is declared in both {seen[d.ssh]} and {d.source}')
+        seen[d.ssh] = d.source
+    return kept, left_out
+
+
+def unmatched(pairs, directory):
+    names = ', '.join(f'{list_name}/{destination}' for list_name, destination in sorted(pairs))
+    raise ConfigError(f'{EXCLUDE_SETTING} names {names}, which no list in {directory} declares '
+                      '(<list> is the file name without .toml, <ssh> the server\'s ssh); nothing written')
+
+
+# ---------------------------------------------------------------- resolution
+
+
+@dataclasses.dataclass(frozen=True)
+class Endpoint:
+    """Where a destination leads: its user and port, and the machine's
+    addresses and the host keys known_hosts holds for it. A machine with
+    several interfaces answers to several addresses; its host key is the same
+    whichever one is used."""
+    user: str
+    port: int
+    hostname: str
+    addresses: frozenset
+    keys: frozenset = frozenset()
+
+    def same_machine(self, other):
+        return bool(self.addresses & other.addresses or self.keys & other.keys)
+
+    def reaches(self, other):
+        return self.user == other.user and self.port == other.port and self.same_machine(other)
+
+
+def normalize_address(text):
+    try:
+        return str(ipaddress.ip_address(text.split('%', 1)[0]))
+    except ValueError:
+        return None
+
+
+@dataclasses.dataclass(frozen=True)
+class SshConfig:
+    user: str
+    port: int
+    hostname: str
+    known_hosts_name: str    # what ssh looks up in known_hosts
+    known_hosts_files: tuple
+
+
+class Resolver:
+    """ssh -G for a destination's user, port, HostName and known_hosts files;
+    ssh-keygen -F for the host keys those files hold for it; the system
+    resolver for its addresses. Each lookup runs once per run."""
+
+    def __init__(self, ssh, keygen, timeout):
+        self.ssh = ssh
+        self.keygen = keygen
+        self.timeout = timeout
+
+    def run(self, argv, what):
+        try:
+            return subprocess.run(argv, capture_output=True, text=True, timeout=self.timeout,
+                                  stdin=subprocess.DEVNULL)
+        except FileNotFoundError as e:
+            raise Failure(f'{argv[0]} is missing') from e
+        except subprocess.TimeoutExpired as e:
+            raise Failure(f'{what}: no answer within {self.timeout}s') from e
+
+    def ssh_config(self, destination):
+        p = self.run([self.ssh, '-G', '--', destination], f'ssh -G {destination}')
+        if p.returncode != 0:
+            raise Failure(f'ssh -G {destination}: {p.stderr.strip() or f"exit {p.returncode}"}')
+        options = {}
+        for line in p.stdout.splitlines():
+            key, _, value = line.partition(' ')
+            options.setdefault(key.lower(), value)
+        try:
+            user, port, hostname = options['user'], int(options['port']), options['hostname']
+        except (KeyError, ValueError) as e:
+            raise Failure(f'ssh -G {destination}: no user, port and hostname in its output') from e
+        name = options.get('hostkeyalias', 'none')
+        name = hostname if name in ('', 'none') else name
+        if port != SSH_PORT:
+            name = f'[{name}]:{port}'
+        files = tuple(os.path.expanduser(f) for option in ('userknownhostsfile', 'globalknownhostsfile')
+                      for f in options.get(option, '').split() if f != 'none')
+        return SshConfig(user, port, hostname, name, files)
+
+    def known_keys(self, config):
+        """The host keys known_hosts holds for config's host, as "type base64"."""
+        keys = set()
+        for path in config.known_hosts_files:
+            if not os.path.isfile(path):
+                continue
+            p = self.run([self.keygen, '-F', config.known_hosts_name, '-f', path], 'ssh-keygen -F')
+            # Exit 1 means no entry.
+            for line in p.stdout.splitlines() if p.returncode == 0 else ():
+                fields = line.split()
+                if not fields or fields[0].startswith('#') or fields[0].startswith('@'):
+                    continue  # comments, and @cert-authority or @revoked lines
+                if len(fields) >= 3:
+                    keys.add(f'{fields[1]} {fields[2]}')
+        return frozenset(keys)
+
+    @staticmethod
+    def addresses(hostname):
+        literal = normalize_address(hostname)
+        if literal:
+            return frozenset([literal])
+        try:
+            infos = socket.getaddrinfo(hostname, None, proto=socket.IPPROTO_TCP)
+        except (socket.gaierror, UnicodeError):
+            return frozenset()
+        return frozenset(a for a in (normalize_address(info[4][0]) for info in infos) if a)
+
+    def resolve(self, declared, existing):
+        """Endpoints for every destination; a name the resolver does not know
+        has no addresses. ssh -G failing for a declared destination is an
+        error; for an existing entry's, that entry just matches nothing."""
+        configs = {}
+        for d in dict.fromkeys([*declared, *existing]):
+            try:
+                configs[d] = self.ssh_config(d)
+            except Failure:
+                if d in declared:
+                    raise
+                configs[d] = None
+        names = {c.hostname for c in configs.values() if c}
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=8)
+        try:
+            futures = {name: pool.submit(self.addresses, name) for name in names}
+            keys = {d: self.known_keys(c) for d, c in configs.items() if c}
+            found = {}
+            for name, future in futures.items():
+                try:
+                    found[name] = future.result(timeout=self.timeout)
+                except concurrent.futures.TimeoutError:
+                    found[name] = frozenset()
+        finally:
+            pool.shutdown(wait=False, cancel_futures=True)
+        return {d: (Endpoint(c.user, c.port, c.hostname, found[c.hostname], keys[d]) if c
+                    else Endpoint('', 0, '', frozenset()))
+                for d, c in configs.items()}
+
+
+def interface_addresses():
+    """This Mac's addresses, from ifconfig."""
+    p = subprocess.run(['/sbin/ifconfig'], capture_output=True, text=True, timeout=DEFAULT_TIMEOUT_SECONDS)
+    if p.returncode != 0:
+        raise Failure(f'ifconfig: {p.stderr.strip() or f"exit {p.returncode}"}')
+    found = set()
+    for match in re.finditer(r'^\s+inet6?\s+(\S+)', p.stdout, re.MULTILINE):
+        address = normalize_address(match.group(1))
+        if address:
+            found.add(address)
+    return frozenset(found)
+
+
+def own_host_keys(patterns):
+    """This Mac's sshd host keys, as "type base64", from its .pub files."""
+    keys = set()
+    for pattern in patterns.split():
+        for path in sorted(glob.glob(os.path.expanduser(pattern))):
+            try:
+                fields = Path(path).read_text().split()
+            except OSError:
+                continue
+            if len(fields) >= 2:
+                keys.add(f'{fields[0]} {fields[1]}')
+    return frozenset(keys)
+
+
+# ---------------------------------------------------------------- plan
+
+
+@dataclasses.dataclass
+class Plan:
+    parts: list               # rendered or verbatim [[servers]] tables, in order
+    servers: list             # the entries those tables hold
+    managed: dict             # id -> {"ssh": declared destination}
+    actions: list             # human-readable decisions
+    counts: dict
+
+    def summary(self):
+        order = ('added', 'adopted', 'updated', 'removed', 'released', 'unchanged', 'not managed', 'this Mac',
+                 'excluded', 'unresolved', 'no host key')
+        return ', '.join(f'{self.counts[k]} {k}' for k in order if self.counts.get(k))
+
+
+def plan(settings, declared, endpoints, self_endpoint, previous, excluded=(), new_id=lambda: secrets.token_hex(16)):
+    """What [[servers]] should hold. endpoints maps every destination (declared
+    and existing) to its Endpoint; previous is the state's id -> record;
+    excluded are the declared servers muxy.exclude_servers leaves out, which
+    count as undeclared."""
+    existing = settings.servers
+    managed_before = {e['id'] for e in existing if e.get('id') in previous}
+    counts = {}
+    actions = []
+
+    def note(kind, message):
+        counts[kind] = counts.get(kind, 0) + 1
+        actions.append(f'{kind}: {message}')
+
+    for d in excluded:
+        note('excluded', f'{d.name} ({Path(d.source).stem}/{d.ssh}): {EXCLUDE_SETTING} leaves it out on this Mac')
+
+    def kept_because(entry):
+        """Why an entry this command manages is released, not removed, once
+        no longer declared: removing it would lose what is not the list's."""
+        if 'paired' in entry:
+            return 'Muxy paired it'
+        if previous[entry['id']].get('adopted'):
+            return 'it was added by hand'
+        return None
+
+    def is_self(d):
+        e = endpoints[d.ssh]
+        return e.user == self_endpoint.user and (
+            bool(e.keys & self_endpoint.keys)
+            or (e.port == self_endpoint.port and bool(e.addresses & self_endpoint.addresses)))
+
+    assigned = {}        # declared index -> existing index
+    taken = set()
+
+    def claim(matches):
+        for di, d in enumerate(declared):
+            if di in assigned:
+                continue
+            candidates = [xi for xi, x in enumerate(existing) if xi not in taken and matches(d, x)]
+            # One this command wrote before wins over one the owner added.
+            candidates.sort(key=lambda xi: existing[xi].get('id') not in managed_before)
+            if candidates:
+                assigned[di] = candidates[0]
+                taken.add(candidates[0])
+
+    # The entry written for this destination last time; then the same
+    # destination or command; then any entry that reaches the same machine.
+    claim(lambda d, x: x.get('id') in managed_before and previous[x['id']].get('ssh') == d.ssh)
+    claim(lambda d, x: 'paired' not in x and (
+        ('ssh' in x and x['ssh'] == d.ssh) or (d.ssh_command is not None and x.get('ssh_command') == d.ssh_command)))
+    claim(lambda d, x: 'paired' not in x and isinstance(x.get('ssh'), str)
+          and endpoints[d.ssh].reaches(endpoints[x['ssh']]))
+
+    result = {}          # existing index -> entry to write
+    added = []
+    managed = {}
+    this_mac = set()     # existing indexes of entries that are this Mac
+    for di, d in enumerate(declared):
+        xi = assigned.get(di)
+        if is_self(d):
+            note('this Mac', f'{d.name} ({d.ssh}) is this Mac; not listed')
+            if xi is not None:
+                # Treated as undeclared from here on.
+                taken.discard(xi)
+                this_mac.add(xi)
+            continue
+        if not endpoints[d.ssh].keys and d.ssh_command is None:
+            # Through ssh_command, the command logs in, not ssh with known_hosts.
+            note('no host key', f'{d.name} ({d.ssh}): known_hosts has no key for {endpoints[d.ssh].hostname}; '
+                                f'Muxy will not connect until `ssh {d.ssh}` accepts one')
+        if xi is None:
+            if not endpoints[d.ssh].addresses and not endpoints[d.ssh].keys:
+                # Neither tells whether it is this Mac.
+                note('unresolved', f'{d.name} ({d.ssh}): {endpoints[d.ssh].hostname} has no address now; '
+                                   'not added this run')
+                continue
+            entry = d.entry(new_id())
+            added.append(entry)
+            managed[entry['id']] = {'ssh': d.ssh}
+            note('added', f'{d.name} ({d.ssh}) as {entry["id"]}')
+            continue
+        current = existing[xi]
+        adopting = current['id'] not in managed_before
+        record = {'ssh': d.ssh}
+        if adopting or previous[current['id']].get('adopted'):
+            record['adopted'] = True
+        managed[current['id']] = record
+        if 'paired' in current:
+            note('unchanged', f'{current["name"]} ({current["id"]}) was paired in Muxy; left as it is')
+            continue
+        # The list sets its keys; the rest are the owner's or Muxy's.
+        wanted = {k: v for k, v in current.items() if k not in MANAGED_KEYS} | d.entry(current['id'])
+        if wanted != current:
+            result[xi] = wanted
+        if adopting:
+            note('adopted', f'{current.get("name")} ({current["id"]}, {current.get("ssh") or current.get("ssh_command")}) '
+                            f'as {d.name} ({d.ssh}); kept when no longer declared')
+        elif wanted != current:
+            note('updated', f'{d.name} ({current["id"]})')
+        else:
+            note('unchanged', f'{d.name} ({current["id"]})')
+
+    parts, servers = [], []
+    for xi, current in enumerate(existing):
+        if xi in result:
+            parts.append(render_entry(result[xi]))
+            servers.append(result[xi])
+            continue
+        if xi not in taken and current['id'] in managed_before:
+            why = 'it is this Mac' if xi in this_mac else 'no longer declared'
+            kept = kept_because(current)
+            if kept is None:
+                note('removed', f'{current.get("name")} ({current["id"]}): {why}')
+                continue
+            note('released', f'{current.get("name")} ({current["id"]}): {why}, but {kept}, '
+                             'so it stays as it is and is no longer managed')
+        elif xi not in taken:
+            note('not managed', f'{current.get("name")} ({current["id"]})')
+        parts.append(settings.span_text(xi))
+        servers.append(current)
+    for entry in added:
+        parts.append(render_entry(entry))
+        servers.append(entry)
+    return Plan(parts, servers, managed, actions, counts)
+
+
+# ---------------------------------------------------------------- Muxy
+
+
+def owned_view(servers):
+    """Each entry's id and the keys a declared server sets, to compare what Muxy
+    read with what was written without depending on how it shows other keys."""
+    return [(s.get('id'), {k: s[k] for k in MANAGED_KEYS if k in s}) for s in servers]
+
+
+class Muxy:
+    def __init__(self, tool, timeout):
+        self.tool = tool
+        self.timeout = timeout
+
+    def run(self, *args, profile=None):
+        env = dict(os.environ)
+        if profile is not None:
+            env['MUXY_DIR'] = str(profile)
+        try:
+            p = subprocess.run([str(self.tool), *args], capture_output=True, text=True, env=env,
+                               timeout=self.timeout, stdin=subprocess.DEVNULL)
+        except FileNotFoundError as e:
+            raise Unavailable(f'{self.tool} is missing') from e
+        except subprocess.TimeoutExpired as e:
+            raise Failure(f'muxy {" ".join(args[:2])}: no answer within {self.timeout}s') from e
+        if p.returncode == EXIT_UNAVAILABLE:
+            raise Unavailable(p.stderr.strip())
+        return p
+
+    def check(self, settings_text, profile):
+        """Muxy's own verdict on settings_text: its parsed servers, or Failure."""
+        with tempfile.TemporaryDirectory(prefix='muxy-reconcile-') as scratch:
+            scratch = Path(scratch)
+            terminal = profile / 'terminal.toml'
+            if terminal.exists():
+                shutil.copyfile(terminal, scratch / 'terminal.toml')
+            (scratch / 'settings.toml').write_text(settings_text)
+            p = self.run('config', 'list', '--json', profile=scratch)
+            if p.returncode != 0:
+                raise Failure(p.stderr.strip().removeprefix('muxy: ').replace(f'{scratch}/', '')
+                              or f'muxy config list: exit {p.returncode}')
+            try:
+                return json.loads(p.stdout).get('servers', [])
+            except (json.JSONDecodeError, AttributeError) as e:
+                raise Failure(f'muxy config list --json printed something other than settings: {e}') from e
+
+    def reload(self):
+        """True when a running app applied the files; False when none runs."""
+        p = self.run('config', 'reload', '--json')
+        if p.returncode != 0:
+            raise Failure(p.stderr.strip().removeprefix('muxy: ') or f'muxy config reload: exit {p.returncode}')
+        try:
+            return bool(json.loads(p.stdout).get('applied'))
+        except (json.JSONDecodeError, AttributeError):
+            return False
+
+
+# ---------------------------------------------------------------- files
+
+
+@contextlib.contextmanager
+def locked(path, wait, what):
+    """An exclusive flock on path, waiting up to wait seconds."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        deadline = time.monotonic() + wait
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as e:
+                if e.errno not in (errno.EWOULDBLOCK, errno.EAGAIN):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise RetryError(f'{what} held {path} for {wait}s; nothing written, the next run retries') from e
+                time.sleep(0.1)
+        yield
+    finally:
+        os.close(fd)
+
+
+def replace_file(path, content, mode):
+    """Write content to path through a temporary file in the same directory."""
+    fd, temporary = tempfile.mkstemp(dir=path.parent, prefix=f'.{path.name}.', suffix='.tmp')
+    try:
+        with os.fdopen(fd, 'wb') as f:
+            f.write(content)
+            f.flush()
+            os.fchmod(f.fileno(), mode)
+            os.fsync(f.fileno())
+        os.replace(temporary, path)
+    except BaseException:
+        with contextlib.suppress(FileNotFoundError):
+            os.unlink(temporary)
+        raise
+    directory = os.open(path.parent, os.O_RDONLY)
+    try:
+        os.fsync(directory)
+    finally:
+        os.close(directory)
+
+
+def write_settings(settings, candidate):
+    """Replace settings.toml with candidate while holding Muxy's settings lock,
+    if the file still holds what this run read."""
+    lock = settings.path.with_name(settings.path.name + '.lock')
+    with locked(lock, LOCK_WAIT_SECONDS, 'Muxy'):
+        try:
+            now = settings.path.read_bytes()
+        except FileNotFoundError:
+            now = None
+        if now is None or hashlib.sha256(now).hexdigest() != settings.digest:
+            raise RetryError(f'{settings.path} changed during this run (Muxy saved it); nothing written, '
+                             'the next run retries')
+        replace_file(settings.path, candidate.encode('utf-8'), settings.path.stat().st_mode & 0o7777)
+
+
+def valid_record(record):
+    return (isinstance(record, dict) and set(record) <= STATE_RECORD_KEYS and isinstance(record.get('ssh'), str)
+            and record.get('adopted', True) is True)
+
+
+class State:
+    """The ids this command manages, per Muxy profile, as JSON:
+    {"version": 1, "profiles": {"<settings.toml>": {"<id>": {"ssh": "<destination>"}}}}.
+    Profiles whose settings.toml is gone are dropped on every save, so the file
+    holds one record per managed server."""
+
+    def __init__(self, path):
+        self.path = path
+        try:
+            data = json.loads(path.read_text())
+        except FileNotFoundError:
+            data = {'version': STATE_VERSION, 'profiles': {}}
+        except (OSError, ValueError) as e:
+            raise ConfigError(f'{path}: {e}; delete it to start over (entries are then matched '
+                              'again by destination and address)') from e
+        if not isinstance(data, dict) or data.get('version') != STATE_VERSION or not isinstance(data.get('profiles'), dict):
+            raise ConfigError(f'{path}: not a muxy-reconcile state file (version {STATE_VERSION}); delete it to start over')
+        for profile, records in data['profiles'].items():
+            if not isinstance(records, dict) or not all(map(valid_record, records.values())):
+                raise ConfigError(f'{path}: the entries it records for {profile} are not muxy-reconcile records; '
+                                  'delete it to start over (entries are then matched again by destination and '
+                                  'address, and kept when no longer declared)')
+        self.data = data
+
+    def managed(self, settings_path):
+        return dict(self.data['profiles'].get(str(settings_path), {}))
+
+    def save(self, settings_path, managed):
+        profiles = {k: v for k, v in self.data['profiles'].items() if Path(k).exists()}
+        profiles[str(settings_path)] = managed
+        self.data = {'version': STATE_VERSION, 'profiles': profiles}
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        replace_file(self.path, (json.dumps(self.data, indent=2, sort_keys=True) + '\n').encode(), 0o600)
+
+
+class Log:
+    """Appends to one file; once it passes max_bytes it becomes <file>.1,
+    replacing the previous copy, so both together stay under twice that."""
+
+    def __init__(self, path, max_bytes):
+        self.path = path
+        self.max_bytes = max_bytes
+
+    def write(self, line):
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with contextlib.suppress(FileNotFoundError):
+                if self.path.stat().st_size > self.max_bytes:
+                    os.replace(self.path, self.path.with_name(self.path.name + '.1'))
+            stamp = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+            with open(self.path, 'a') as f:
+                f.write(f'{stamp} {line}\n')
+        except OSError as e:
+            print(f'muxy-reconcile: log {self.path}: {e}', file=sys.stderr)
+
+
+# ---------------------------------------------------------------- run
+
+
+def env_path(name, default):
+    return Path(os.path.expanduser(os.environ.get(name) or default))
+
+
+def env_int(name, default, minimum):
+    raw = os.environ.get(name)
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError:
+        value = minimum - 1
+    if value < minimum:
+        raise ConfigError(f'{name}={raw}: want a whole number of at least {minimum}')
+    return value
+
+
+def reconcile(mode, exclude, log):
+    timeout = env_int('MUXY_RECONCILE_TIMEOUT', DEFAULT_TIMEOUT_SECONDS, 1)
+    profile = env_path('MUXY_DIR', DEFAULT_PROFILE).absolute()
+    config_home = env_path('XDG_CONFIG_HOME', '~/.config')
+    state_home = env_path('XDG_STATE_HOME', '~/.local/state')
+    lists = env_path('MUXY_RECONCILE_SERVERS_DIR', config_home / 'muxy/servers.d')
+    state_path = env_path('MUXY_RECONCILE_STATE', state_home / 'muxy-reconcile/managed.json')
+    # The wrapper beside this script decides which Muxy runs (DOTFILES_MUXY_APP).
+    muxy = Muxy(Path(__file__).resolve().with_name('muxy'), timeout)
+    resolver = Resolver(os.environ.get('MUXY_RECONCILE_SSH') or DEFAULT_SSH, DEFAULT_SSH_KEYGEN, timeout)
+    settings_path = profile / 'settings.toml'
+
+    # Read first: a bad value is reported even before Muxy has a profile.
+    mode, exclusions = read_options(mode, exclude, timeout)
+    report = mode == 'report'
+
+    with locked(state_path.with_name('lock'), RUN_LOCK_WAIT_SECONDS, 'another muxy-reconcile'):
+        if not settings_path.exists():
+            return f'{settings_path} does not exist yet (open Muxy once); nothing to do'
+        settings = read_settings(settings_path)
+        state = State(state_path)
+        previous = state.managed(settings_path)
+        if previous and not lists.is_dir():
+            # As when a list cannot be read: it would look like every server removed.
+            raise ConfigError(f'{lists} is missing, but {state_path} manages {len(previous)} entries of '
+                              f'{settings_path}; nothing written. Run dotfiles apply to link the lists again, '
+                              'or mount the volume they are on. To stop managing those entries instead, delete '
+                              f'{state_path}: they are then left as they are')
+        declared, excluded = read_server_lists(lists, exclusions)
+
+        override = os.environ.get('MUXY_RECONCILE_SELF_ADDRESSES')
+        own = (frozenset(a for a in map(normalize_address, override.split()) if a)
+               if override is not None else interface_addresses())
+        # ssh's default user is the account's name, whatever USER says.
+        self_endpoint = Endpoint(pwd.getpwuid(os.getuid()).pw_name, SSH_PORT, socket.gethostname(), own,
+                                 own_host_keys(os.environ.get('MUXY_RECONCILE_HOST_KEYS') or DEFAULT_HOST_KEYS))
+        endpoints = resolver.resolve([d.ssh for d in declared],
+                                     [x['ssh'] for x in settings.servers if isinstance(x.get('ssh'), str)])
+
+        result = plan(settings, declared, endpoints, self_endpoint, previous, excluded)
+        for action in result.actions:
+            log.write(action)
+            if report:
+                print(action)
+        nothing_written = f'nothing written, as {MODE_SETTING} is report'
+        state_changed = result.managed != previous
+        if result.servers == settings.servers:
+            if state_changed and report:
+                return f'report: would record: {result.summary()} ({settings_path} is in step); {nothing_written}'
+            if state_changed:
+                state.save(settings_path, result.managed)
+            return f'in step: {result.summary() or "no servers declared"}'
+
+        candidate = settings.with_servers(result.parts)
+        expected = dict(settings.data)
+        if result.servers:
+            expected['servers'] = result.servers
+        else:
+            expected.pop('servers', None)
+        try:
+            reparsed = tomllib.loads(candidate)
+        except tomllib.TOMLDecodeError as e:
+            raise Failure(f'the rewritten settings.toml does not parse ({e}); nothing written') from e
+        if reparsed != expected:
+            raise Failure('the rewritten settings.toml would change more than its [[servers]]; nothing written')
+        if report:
+            # Before Muxy's verdict, so a change it refuses is seen too.
+            for line in difflib.unified_diff(settings.text.splitlines(keepends=True),
+                                             candidate.splitlines(keepends=True),
+                                             str(settings_path), f'{settings_path} (would be)', n=0):
+                line = line.rstrip('\n')
+                log.write(f'diff: {line}')
+                print(line)
+        # Muxy must accept the file as it is before its verdict on the new one counts.
+        try:
+            muxy.check(settings.text, profile)
+        except Failure as e:
+            raise Failure(f'Muxy refuses the current {settings_path} ({e}); nothing written') from e
+        try:
+            listed = muxy.check(candidate, profile)
+        except Failure as e:
+            raise Failure(f'Muxy refuses the new servers ({e}); nothing written') from e
+        if owned_view(listed) != owned_view(result.servers):
+            raise Failure(f'Muxy reads the new servers as {owned_view(listed)}, not as written; nothing written')
+        if report:
+            return f'report: would change: {result.summary()} (Muxy accepts it); {nothing_written}'
+
+        write_settings(settings, candidate)
+        log.write(f'wrote {settings_path} ({settings.digest[:12]} -> '
+                  f'{hashlib.sha256(candidate.encode()).hexdigest()[:12]})')
+        state.save(settings_path, result.managed)
+        try:
+            applied = muxy.reload()
+        except Failure as e:
+            raise Failure(f'wrote {settings_path}, but the running Muxy did not apply it ({e}); '
+                          'it applies when Muxy next starts') from e
+        return f'changed: {result.summary()}; ' + ('the running app applied it' if applied
+                                                   else 'Muxy is not running; it reads it at start')
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog='muxy-reconcile', description=__doc__.split('\n', 1)[0])
+    parser.add_argument('--mode', choices=MODES,
+                        help=f'report what would change and write nothing, or apply it; this run only '
+                             f'(default: the {MODE_SETTING} setting, else {DEFAULT_MODE})')
+    parser.add_argument('--exclude-servers', metavar="'<list>/<ssh> ...'",
+                        help=f'the declared servers to leave out; this run only (default: the {EXCLUDE_SETTING} setting)')
+    args = parser.parse_args(argv)
+    try:
+        log = Log(env_path('MUXY_RECONCILE_LOG', DEFAULT_LOG),
+                  env_int('MUXY_RECONCILE_LOG_MAX_BYTES', DEFAULT_LOG_MAX_BYTES, 1024))
+    except ConfigError as e:
+        print(f'muxy-reconcile: {e}', file=sys.stderr)
+        return EXIT_CONFIG
+    log.write('run')
+    failures = ((ConfigError, EXIT_CONFIG), (RetryError, EXIT_RETRY), (Unavailable, EXIT_UNAVAILABLE),
+                (Failure, EXIT_FAILED), (OSError, EXIT_FAILED))
+    try:
+        summary = reconcile(args.mode, args.exclude_servers, log)
+    except tuple(kind for kind, _ in failures) as e:
+        status = next(code for kind, code in failures if isinstance(e, kind))
+        log.write(f'error: {e}')
+        print(f'muxy-reconcile: {e}', file=sys.stderr)
+        return status
+    log.write(summary)
+    print(f'muxy-reconcile: {summary}')
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())

@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
@@ -112,7 +113,7 @@ func (r *runner) launchAgent(a plan.LaunchAgent) error {
 			if err := r.mkdirParent(a.Target); err != nil {
 				return err
 			}
-			if err := writeAtomic(a.Target, a.Content, 0o644); err != nil {
+			if err := atomicfile.Write(a.Target, a.Content, 0o644); err != nil {
 				return err
 			}
 		}
@@ -152,10 +153,6 @@ func (r *runner) relaunch(a plan.LaunchAgent, unload bool) error {
 		}
 	}
 	return r.env.Launchd.Load(r.ctx, a.Target)
-}
-
-func (r *runner) wait(label, reason string) {
-	r.report.Waiting = append(r.report.Waiting, Waiting{Label: label, Reason: reason})
 }
 
 // teardownAgents unloads and removes the LaunchAgents this run does not keep:

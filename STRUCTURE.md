@@ -15,10 +15,12 @@ This file maps the checked-in implementation.
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
 ├── internal/manifest/       # Feature, profile and machine manifests from the repository and overlays; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
-├── internal/plan/           # Links, managed copies, generated outputs, stubs and LaunchAgents to install
-├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, state, teardown, locking
+├── internal/plan/           # Links, managed copies, generated outputs, stubs, LaunchAgents and app settings to install
+├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, app settings, state, teardown, locking
 ├── internal/launchd/        # LaunchAgent plist reading; launchctl print, bootstrap and bootout in gui/<uid>
-├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig, launchagents/
+├── internal/prefs/          # App settings owned key by key: prefs files, and the Muxy and Claude Code stores
+├── internal/atomicfile/     # Write beside, then rename into place
+├── features/<id>/           # feature.toml, home/ (mirrors $HOME), fragments such as gitconfig, launchagents/, prefs files
 ├── profiles/                # Named feature sets: base, dev, desktop, server, work, studio
 ├── .github/workflows/ci.yml # Engine tests on macOS and Ubuntu; shell suite on macOS
 ├── bin/                     # Executable entry points
@@ -31,6 +33,7 @@ This file maps the checked-in implementation.
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── docs/PASSKEYS.md         # Passkey prompts off (browser.passkeys-off)
 ├── docs/KARABINER.md       # Mouse buttons through Karabiner-Elements (tool.karabiner)
+├── docs/MUXY.md            # The other Macs as Muxy remote servers (tool.muxy)
 ├── Software.md              # Historical software notes
 ├── software_list.md         # Historical installed-package snapshot
 ├── chrome_extensions.md     # Browser inventory instructions
@@ -38,9 +41,7 @@ This file maps the checked-in implementation.
 
 ~/.sync/                    # Separate repos, outside the dotfiles repo
 ├── mackup/<LocalHostName>/  # Earlier app backups; sync no longer runs Mackup (rollout step 8)
-├── dracula-iterm/           # Theme checkout
-├── colorls/                 # Theme checkout
-└── alfred-dracula/          # Theme checkout
+└── colorls/                 # Theme checkout
 ```
 
 The older `.zshrc.omz-backup` is retained as a historical reference. It is not
@@ -59,6 +60,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
 | `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`; requires `agents.delegation` |
+| `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
 | `agents.repo-guard` | dev | all | `~/.local/bin/repo-guard`, `~/.claude/skills/repo-guard/` (its Claude Code plugin; the Codex registration is `bin/dotfiles-agents`'s; lists come from overlays) |
@@ -67,15 +69,15 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
-| `brew.apps` | desktop, work | darwin | Brewfile: 32 cask |
-| `brew.base` | base | darwin, linux | Brewfile: 7 tap, 97 brew |
-| `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 10 cask (personal) |
-| `brew.dev-apps` | dev | darwin | Brewfile: 18 cask |
+| `brew.apps` | desktop, work | darwin | Brewfile: 26 cask |
+| `brew.base` | base | darwin, linux | Brewfile: 6 tap, 97 brew |
+| `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 7 cask (personal) |
+| `brew.dev-apps` | dev | darwin | Brewfile: 12 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
-| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 15 mas |
-| `brew.mas.personal` | desktop | darwin | Brewfile: 6 mas |
-| `brew.vscode` | dev | darwin | Brewfile: 66 vscode |
+| `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 8 mas |
+| `brew.mas.personal` | desktop | darwin | Brewfile: 3 mas |
+| `brew.vscode` | dev | darwin | Brewfile: 52 vscode |
 | `dotfiles.sync` | base | darwin | LaunchAgent `com.dotfiles.sync` |
 | `dotfiles.update` | base | darwin | LaunchAgent `com.dotfiles.update` |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
@@ -93,9 +95,12 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
+| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); settings `muxy.reconcile` (`report` until a Mac sets `apply`) and `muxy.exclude_servers`; 8 Muxy settings ([muxy.toml](features/tool.muxy/muxy.toml)): Dracula dark and light themes, FiraCode Nerd Font in the terminal and composer, terminal font size 14, copy on select, agent sessions shown, tips hidden; Brewfile: 2 cask (Muxy, FiraCode Nerd Font), 1 brew |
 
-Edit linked files in place. Add, remove or move files, then run
-`dotfiles apply`; a file in the way is reported, never overwritten. See
+Edit linked files in place. A feature's prefs file (`[provides.prefs]`) lists
+the app settings it owns, one `key = value` line each; apply sets each one
+through the app and leaves the rest of the app's settings to the machine. Add,
+remove or move files, then run `dotfiles apply`; a file in the way is reported, never overwritten. See
 [A file is in the way](README.md#a-file-is-in-the-way).
 
 ## Shell loading
@@ -141,6 +146,8 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
 | [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`, `bin/agent-monitor`) |
 | [brew-root.sh](lib_sh/brew-root.sh) | `brew_root_available`, `brew_casks_needing_root`: which Homebrew steps a run without a terminal must leave for one (`sync.sh`, `dotfiles-update.sh`) |
+| [machine-setting.sh](lib_sh/machine-setting.sh) | `machine_setting`: a setting's value as `dotfiles apply` generated it into `env.sh`, for scripts LaunchAgents run (`bin/disk-hygiene`, `dotfiles-update.sh`) |
+| [private-names.sh](lib_sh/private-names.sh) | `private_names_found`: tracked lines that name something on an overlay's `denylist.txt` (`sync.sh`, `bin/check-private-names`) |
 | [sync-lock.sh](lib_sh/sync-lock.sh) | `sync_lock_take`, `without_sync_lock`: the `logs/sync.flock` lock that makes sync and update runs exclusive, and runs a step without its descriptor (`sync.sh`, `dotfiles-update.sh`) |
 
 Exporters write to stdout unless given `-o` FILE:
@@ -185,11 +192,15 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry to the cluster gateway through a disk queue; `converge` (run by sync), `status`, `ping` |
-| [bin/go-cache-trim](bin/go-cache-trim) | Delete Go build cache entries unused for `GO_CACHE_TRIM_HOURS` (24); `--dry-run` reports only |
+| [bin/go-cache-trim](bin/go-cache-trim) | Keep `go env GOCACHE` and each `GO_EXTRA_BUILD_CACHES` cache under `GO_CACHE_TRIM_MAX_GIB` (400): entries unused for `GO_CACHE_TRIM_HOURS` (24), then least recently used; `--dry-run` reports only |
 | [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
+| [bin/check-private-names](bin/check-private-names) | Fail when a tracked line names something an overlay keeps private (its `denylist.txt`); sync runs the same check before publishing |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](features/macos.spotlight/home/.local/bin/spotlight-exclusions) | Add the folders in `~/.config/spotlight/exclusions` to Spotlight's Search Privacy list; `check` reports drift, `list`, `remove` |
 | [features/browser.passkeys-off/home/.local/bin/passkeys-off](features/browser.passkeys-off/home/.local/bin/passkeys-off) | Write the Firefox passkey prefs into every profile's `user.js`; `check` reports each Firefox and Chromium profile and the by-hand 1Password and Passwords settings |
+| [features/tool.muxy/home/.local/bin/muxy](features/tool.muxy/home/.local/bin/muxy) | Run the `muxy` inside the installed Muxy app (`DOTFILES_MUXY_APP`, else `~/Applications`, else `/Applications`); what Muxy on another Mac starts over SSH |
+| [features/tool.muxy/home/.local/bin/muxy-reconcile](features/tool.muxy/home/.local/bin/muxy-reconcile) | Bring Muxy's `[[servers]]` in step with `~/.config/muxy/servers.d/*.toml`, leaving out this Mac; logs the change and writes nothing while `muxy.reconcile` is `report` (`--mode` for one run) |
 | [bin/gpg-agent-supervisor](bin/gpg-agent-supervisor) | Start gpg-agent in the GUI login and replace any agent started elsewhere every `GPG_AGENT_SUPERVISOR_SECONDS` (10) |
+| [bin/disable-aerials](bin/disable-aerials) | Rewrite the wallpaper store to a still desktop picture and the Floating Message screen saver, then restart WallpaperAgent; `--dry-run` reports only. `config.sh` runs it |
 
 ## Automation and data boundaries
 
@@ -205,6 +216,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |
+| com.ashtonian.muxy-reconcile | At load, when `~/.config/muxy/servers.d` gains or loses a list, when apply rewrites `~/.config/dotfiles/generated`, and hourly, once Muxy.app and Homebrew's python3 exist | `~/Library/Logs/muxy-reconcile/muxy-reconcile.log`, `launchd.{out,err}` |
 
 Templates are rendered copies, not links. `dotfiles apply` (every sync) writes a
 changed template and reloads the job, except the job it runs in and a scheduled

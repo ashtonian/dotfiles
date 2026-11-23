@@ -3,3 +3,4 @@
 [settings]
 "paths.playwright_browsers" = "/Volumes/E2TB/cache/ms-playwright"
 "paths.agent_monitor_data" = "/Volumes/E2TB/agent-monitor"
+"paths.go_extra_build_caches" = "/Volumes/E2TB2/cache/go/build"

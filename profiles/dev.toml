@@ -6,6 +6,7 @@ enable = [
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
+  "agents.claude.theme",
   # Blocks Claude Code and Codex writes to the repositories the overlays protect.
   "agents.repo-guard",
   "agents.agent-mcp",

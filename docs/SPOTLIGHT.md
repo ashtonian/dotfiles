@@ -18,13 +18,21 @@ Feature `macos.spotlight` (profile `base`, macOS only) installs:
   Spotlight's Search Privacy list, the list System Settings → Spotlight →
   Search Privacy shows and edits.
 
+A machine's own folders, such as source checkouts and agent workspaces only
+that machine has, go in `~/.config/spotlight/exclusions.local`. That file is
+never tracked. The tool reads it after the shared list when it exists, so
+`apply` and `check` cover both lists.
+
 The tool makes the same CoreServices calls as that settings pane
 (`_MDCopyExclusionList` and `_MDSetExclusion`). mds accepts them from the
 logged-in user without root, stores the list in the volume's
-`.Spotlight-V100/VolumeConfiguration.plist`, and stops serving and indexing
-the excluded folders at once: their items drop out of search results within
-seconds, no rebuild needed. Taking a folder off the list makes mds index it
-again within seconds.
+`.Spotlight-V100/VolumeConfiguration.plist`, stops indexing the excluded
+folders at once and purges their items from the index in the background, with
+no rebuild. A query scoped to an excluded folder answers nothing right away,
+but wider searches keep returning its items until the purge reaches them: on
+the MacBook Pro (macOS 27.2.1), 1.6 million items under `~/workgroups` and
+`~/projects` were gone about five minutes after `apply`. Taking a folder off
+the list makes mds index it again within seconds.
 
 Spotlight already skips hidden folders (`~/.cache`, `~/.cargo`, `~/.claude`,
 ...) and `~/Library/Caches`, so the list names only visible folders. Whole
@@ -33,15 +41,16 @@ volumes are switched off with `mdutil` instead (see [Operations](#operations)).
 `dotfiles apply` installs the tool but does not run it, because the engine has
 no feature hooks (rollout steps 6 and 7 add `[hooks]` and `[check]`). Run
 `spotlight-exclusions apply` after installing the feature and after editing
-the list.
+either list.
 
 ## Config
 
 | Setting | Where | Default | Description |
 | --- | --- | --- | --- |
 | Exclusion list | `~/.config/spotlight/exclusions` ([tracked file](../features/macos.spotlight/home/.config/spotlight/exclusions)) | App Support, Logs, pnpm store, `~/sdk`, `~/go`, `/usr/local`, `/Library/Developer` | One absolute or `~` path per line; `#` starts a comment line. Folders absent on a machine are skipped |
-| `SPOTLIGHT_EXCLUSIONS_FILE` | environment | `~/.config/spotlight/exclusions` | List to read instead |
-| `SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT` | environment | `60` | Seconds each `mdfind` may take under `check --counts` |
+| Local exclusion list | `~/.config/spotlight/exclusions.local` (untracked) | none | The machine's own folders, in the same format, read after the shared list. Optional: a missing file adds nothing |
+| `SPOTLIGHT_EXCLUSIONS_FILE` | environment | `~/.config/spotlight/exclusions` | Shared list to read instead; the local list is the same path with `.local` appended |
+| `SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT` | environment | `60` | Seconds the `mdfind` for each listed folder's parent may take under `check --counts` |
 
 ## External Dependencies
 
@@ -56,7 +65,7 @@ the list.
 | Command | Does | Exit |
 | --- | --- | --- |
 | `spotlight-exclusions apply [--dry-run]` | Adds every listed folder that exists and is not excluded yet; `--dry-run` prints them | 0, or 3 if mds refused one |
-| `spotlight-exclusions check [--counts]` | One line per listed folder: `excluded`, `MISSING` or `absent`; `--counts` adds how many items the index still holds under it (slow on large trees) | 0, or 1 if a folder is `MISSING` |
+| `spotlight-exclusions check [--counts]` | One line per listed folder: `excluded`, `MISSING` or `absent`; `--counts` adds how many items the index still holds under it, counted from one query per parent folder | 0, or 1 if a folder is `MISSING` |
 | `spotlight-exclusions list` | Prints Spotlight's whole exclusion list, including folders added in System Settings | 0 |
 | `spotlight-exclusions remove PATH...` | Takes folders off the list; any spelling of the folder (symlink, `/System/Volumes/Data/...`) matches its entry | 0, 1 if a path was not excluded, 3 if mds refused |
 
@@ -91,7 +100,20 @@ mdfind -onlyin ~/Library -count 'kMDItemContentTypeTree == "public.item"'
 ```
 
 A `kMDItemFSName` query falls back to a filesystem search and also counts
-files the index does not hold, so it overstates what is indexed.
+files the index does not hold, so it overstates what is indexed. A query
+scoped to an excluded folder always counts 0, even while the index still holds
+its items, so measure an excluded folder from its parent, as `check --counts`
+does:
+
+```sh
+mdfind -onlyin ~ 'kMDItemContentTypeTree == "public.item"' | grep -c "^$HOME/projects/"
+```
+
+To find what fills the index, group a wide query by folder:
+
+```sh
+mdfind -onlyin ~ 'kMDItemContentTypeTree == "public.item"' | awk -F/ '{print $4}' | sort | uniq -c | sort -rn | head
+```
 
 **Failure modes:**
 
@@ -102,8 +124,13 @@ files the index does not hold, so it overstates what is indexed.
   `log show --last 5m --predicate 'process == "mds"'` for the reason; adding
   the folder in System Settings → Spotlight → Search Privacy shows the same
   error in words.
-- *`check --counts` still shows items under an excluded folder*: mds is
-  catching up, which normally takes seconds; check again in a minute.
+- *`check --counts` still shows items under an excluded folder*: mds is still
+  purging it. A million items took about five minutes; check again later. A
+  few hundred items inside bundles can stay much longer (Dash docsets under
+  `Application Support`, a `.dSYM` in the Go module cache). They no longer
+  change, so mds does no work for them, and only a full rebuild removes them:
+  `sudo mdutil -E /`, which re-indexes the whole volume, honoring the
+  exclusions.
 - *`symbol not found` or a crash after a macOS upgrade*: Apple changed the
   private functions. Add the folders by hand in System Settings, and compare
   the settings pane's imports with what the tool binds:
@@ -112,8 +139,13 @@ files the index does not hold, so it overstates what is indexed.
   `sudo mdutil -i off /Volumes/<name>`; exclusions are per folder.
 - *An app stops finding something through Spotlight*: run
   `spotlight-exclusions list`, `remove` the folder it lives in, and delete
-  its line from the exclusion list so the next `apply` does not exclude it
-  again.
+  its line from whichever list names it (shared or `.local`), so the next
+  `apply` does not exclude it again.
+- *A source checkout or workspace fills the index* (`check --counts` or the
+  measuring query above shows hundreds of thousands of items under it): add
+  it to `~/.config/spotlight/exclusions.local` when only this machine has it,
+  or to the shared list when every machine has it at the same path. Then run
+  `spotlight-exclusions apply`.
 
 ## Security
 

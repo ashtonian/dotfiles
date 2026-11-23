@@ -2,6 +2,9 @@
 # that exists on this machine to the Search Privacy list; see docs/SPOTLIGHT.md.
 # One absolute or ~ path per line; a line starting with # is a comment.
 #
+# Folders only one machine has (its checkouts and workspaces) go in
+# ~/.config/spotlight/exclusions.local, which is never tracked.
+#
 # Spotlight already skips hidden folders (~/.cache, ~/.cargo, ~/.claude, ...)
 # and ~/Library/Caches, so only visible folders belong here.
 

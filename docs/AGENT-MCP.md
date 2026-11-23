@@ -13,11 +13,14 @@ paths, hosts or credentials. OpenCode loads no MCP servers: its local model's
 | Where | Claude Code | Codex |
 | --- | --- | --- |
 | Every session | github (read-only), context7 (remote, user scope) | context7 (remote, `~/.codex/config.toml`) |
-| karsto | serena, codebase-memory, playwright, postgres; typescript-lsp plugin | serena, codebase-memory, postgres |
-| estavelle | serena, codebase-memory, playwright, postgres; typescript-lsp plugin | serena, codebase-memory, postgres |
-| gox | serena, codebase-memory | serena, codebase-memory |
-| home-ops, home-ops-private | kubernetes, terraform, grafana; pyright-lsp plugin | kubernetes, terraform, grafana |
-| `/Volumes/E2TB/home` (homelab ops session) | kubernetes, terraform, grafana (Claude local scope) | — |
+| Go applications with a database and a web console | serena, codebase-memory, playwright, postgres; typescript-lsp plugin | serena, codebase-memory, postgres |
+| Go libraries and engines | serena, codebase-memory | serena, codebase-memory |
+| Infrastructure repositories (Kubernetes, Terraform) | kubernetes, terraform, grafana; pyright-lsp plugin | kubernetes, terraform, grafana |
+| The homelab operations session's directory | kubernetes, terraform, grafana (Claude local scope) | — |
+
+Which repositories are which, with their databases and ports, is in each
+context's overlay (`docs/AGENT-MCP.md` there); see the README's
+[Overlays](../README.md#overlays).
 
 The gopls-lsp plugin stays enabled for every Claude Code session. It starts
 gopls only in Go code.
@@ -31,11 +34,11 @@ gopls only in Go code.
 | serena | `agent-mcp` | `serena start-mcp-server --project-from-cwd --add-mode no-memories --enable-web-dashboard false --open-web-dashboard false --enable-gui-log-window false` | Serena 2.1.0 (`uv tool install -p 3.13 serena-agent==2.1.0`), REPL interface. No memories or onboarding, since they would duplicate AGENTS.md and CLAUDE.md. No dashboard, so there is no web server per session. |
 | | Claude | `--context ~/.config/agent-mcp/serena-claude-code.yml` | Upstream's claude-code context without its ban on Claude's Read and Edit, so LSP diagnostics after edits keep working. |
 | | Codex | `--context codex` | Upstream's Codex context. |
-| | each Go repository | `.serena/project.yml` | Languages (`go`, plus `typescript` in karsto and estavelle), ignored paths and gopls's build (`ls_specific_settings.go.gopls_settings`): karsto and estavelle load their test build tags, gox builds with `GOOS=linux`. Without it Serena writes a per-clone default with no language servers. `.serena/.gitignore` ignores its cache and local files. |
-| | `~/.serena/serena_config.yml` | `trusted_project_path_patterns` | The karsto, gox and estavelle clones. Serena ignores a project's `ls_specific_settings` unless its root matches. |
-| codebase-memory | `agent-mcp` | `~/.local/libexec/codebase-memory-mcp/0.12.1/codebase-memory-mcp`; Codex adds `--tool-profile=analysis` | Code graph. Config (`codebase-memory-mcp config list`): `auto_index=true`, `auto_watch=true`, `ui_enabled=false`. Indexes in `~/.cache/codebase-memory-mcp`, one per clone. karsto's and gox's `.cbmignore` exclude non-code trees. The launcher turns off git's rename detection (`diff.renames=false`) and lazy fetching (`GIT_NO_LAZY_FETCH=1`) for it: the indexer reads history with `git log --name-only`, and with renames on, a partial clone (gox's are `blob:none`) fetches each missing blob from the remote. |
+| | each Go repository | `.serena/project.yml` | Languages (`go`, plus `typescript` where the repository has a web console), ignored paths and gopls's build (`ls_specific_settings.go.gopls_settings`): the repository's test build tags, or `GOOS=linux` for a Linux-only engine. Without it Serena writes a per-clone default with no language servers. `.serena/.gitignore` ignores its cache and local files. |
+| | `~/.serena/serena_config.yml` | `trusted_project_path_patterns` | The clones of the Go repositories that enable Serena. Serena ignores a project's `ls_specific_settings` unless its root matches. |
+| codebase-memory | `agent-mcp` | `~/.local/libexec/codebase-memory-mcp/0.12.1/codebase-memory-mcp`; Codex adds `--tool-profile=analysis` | Code graph. Config (`codebase-memory-mcp config list`): `auto_index=true`, `auto_watch=true`, `ui_enabled=false`. Indexes in `~/.cache/codebase-memory-mcp`, one per clone. A repository's `.cbmignore` excludes its non-code trees. The launcher turns off git's rename detection (`diff.renames=false`) and lazy fetching (`GIT_NO_LAZY_FETCH=1`) for it: the indexer reads history with `git log --name-only`, and with renames on, a partial (`blob:none`) clone fetches each missing blob from the remote. |
 | playwright | `agent-mcp` | `@playwright/mcp` 0.0.83, `--browser chromium --headless --isolated --output-dir ~/.cache/playwright-mcp` | Needs Playwright's Chromium 1247 in `$PLAYWRIGHT_BROWSERS_PATH` (`node node_modules/playwright-core/cli.js install chromium` in `~/.claude/mcp/node`). |
-| postgres | `agent-mcp` | `@bytebase/dbhub` 1.5.0 and its `pg` 8.23.1 driver; `agent-mcp postgres <harness> <databases>` reads `~/.claude/mcp/dbhub/<databases>.toml` | Read-only SQL against the repository's development databases, each on its own host port: karsto's compose PostgreSQL (`karsto`: `karsto_dev`, 5442) and estavelle's console (`estavelle`: `console_dev`, 5452). dbhub lists `pg` only as an optional dependency and, without it, starts but answers every query with `No connector found for DSN`. |
+| postgres | `agent-mcp` | `@bytebase/dbhub` 1.5.0 and its `pg` 8.23.1 driver; `agent-mcp postgres <harness> <databases>` reads `~/.claude/mcp/dbhub/<databases>.toml` | Read-only SQL against the repository's development databases, each on its own host port; the overlay's docs list each repository's config name, database and port. dbhub lists `pg` only as an optional dependency and, without it, starts but answers every query with `No connector found for DSN`. |
 | kubernetes | `agent-mcp` | kubernetes-mcp-server v0.0.67 `--read-only --disable-destructive --disable-multi-cluster`, `~/.kube/mcp-homelab.yaml` | Single context, `admin@talos-homelab`. |
 | terraform | `agent-mcp` | terraform-mcp-server v1.3.0 `stdio --toolsets=registry` | Public registry only. |
 | pprof | `agent-mcp` | pprof-analyzer-mcp v0.3.1 | Reads profile files. No repository loads it: `compare_profiles` reports CPU time in bytes and `analyze_pprof` has no cumulative view. `go tool pprof` does both. |
@@ -94,20 +97,20 @@ To add a server to a repository, add its name to that repository's
 
 ## Operations
 
-**Context cost**, measured with `/context` in karsto on 2026-10-20, before any message:
+**Context cost**, measured with `/context` on 2026-10-20 in an application repository with about 150k of synced rules, before any message:
 
 | Configuration | In context | Deferred MCP schemas |
 | --- | --- | --- |
 | No MCP servers | 165.6k | 0 |
 | Previous global set (9 servers) | 168.7k | 55.6k |
-| karsto set | 166.6k | 30.2k |
+| That repository's set | 166.6k | 30.2k |
 
 - Claude Code defers MCP tool schemas, so a server costs only its instructions
   until a tool is used. Codex sends every schema on every request. Per request
   that is serena 1.1k, codebase-memory 4.4k (analysis profile), postgres 0.4k,
   kubernetes 4.3k, terraform 2.5k and grafana 7.5k tokens.
-- The karsto baseline is 152.7k of memory files, nearly all `.claude/rules/*.md`.
-  The other repositories start at 21–38k.
+- That repository's baseline is 152.7k of memory files, nearly all
+  `.claude/rules/*.md`. The other repositories start at 21–38k.
 
 **Failure modes:**
 
@@ -121,9 +124,9 @@ To add a server to a repository, add its name to that repository's
   plugin) records missing checksums. Commit or discard it like any other
   toolchain change.
 - *postgres answers `SOURCE_UNREACHABLE`*: the repository's development
-  database is down. karsto: `docker compose --profile dev up -d --wait postgres`
-  in the clone; estavelle: `docker compose up -d --wait postgres` in
-  `cloud/console`.
+  database is down. Start it with the repository's compose file
+  (`docker compose up -d --wait postgres`, with the profile and directory it
+  needs; the overlay's docs name them).
 - *postgres answers `No connector found for DSN`*: the `pg` driver is missing
   from `~/.claude/mcp/node`. Run `npm install` there.
 - *Grafana fails to connect*: the keychain token is missing or revoked. Create

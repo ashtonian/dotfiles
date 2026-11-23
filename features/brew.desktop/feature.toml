@@ -13,12 +13,9 @@ brew = ["sapd/headsetcontrol/headsetcontrol"]
 cask = [
   "battle-net",
   "discord",
-  "element",
   "maestral",
   "nordvpn",
   "signal",
   "spotify",
   "steam",
-  "tor-browser",
-  "vox",
 ]
