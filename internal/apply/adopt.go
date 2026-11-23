@@ -74,23 +74,30 @@ func Adopt(ctx context.Context, p *plan.Plan, prev *State, targets []string, sto
 			if !present {
 				return nil, nil, fmt.Errorf("adopt %s: it has no value here, so there is nothing to keep", target)
 			}
-			src, err := load(pr.Source)
+			// The value is kept where it comes from: the feature's prefs
+			// file, or the [prefs] table of the profile or machine manifest
+			// that overrides it.
+			table, key := "", pr.Key
+			if pr.Origin != "" {
+				table, key = "prefs", pr.ID()
+			}
+			src, err := load(pr.File)
 			if err != nil {
 				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
 			}
-			updated, err := prefs.SetLine(pr.Source, src.after, pr.Key, live)
+			updated, err := prefs.SetLine(pr.File, src.after, table, key, live)
 			if err != nil {
 				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
 			}
 			if !bytes.Equal(updated, src.after) {
-				actions = append(actions, Action{Kind: "adopt", Path: target, Detail: pr.Source})
+				actions = append(actions, Action{Kind: "adopt", Path: target, Detail: pr.File})
 			}
 			src.after = updated
 			value, err := prefs.EncodeJSON(live)
 			if err != nil {
 				return nil, nil, fmt.Errorf("adopt %s: %w", target, err)
 			}
-			rec := PrefRecord{Value: value, Previous: value, HadPrevious: true}
+			rec := PrefRecord{Want: value, Value: value, Previous: value, HadPrevious: true}
 			if old, had := prev.Prefs[target]; had {
 				rec.Previous, rec.HadPrevious = old.Previous, old.HadPrevious
 			}

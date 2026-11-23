@@ -239,8 +239,10 @@ key: a feature's prefs file lists them, and `apply` sets each one through the
 app (`muxy config set` inside `Muxy.app`; an in-place edit of
 `settings.json`), leaving every other key to the machine. A setting changed in
 the app after apply set it is reported, never overwritten, and
-`dotfiles adopt <store>:<key>` keeps it; disabling the feature puts back the
-value it replaced. See
+`dotfiles adopt <store>:<key>` keeps it; a `[prefs]` table in a profile or
+`machine.toml` gives one machine its own value (see
+[Profiles and machines](#profiles-and-machines)); disabling the feature puts
+back the value it replaced. See
 [App settings](docs/MACHINE-FEATURES.md#app-settings). `--app-timeout`
 (default `15s`) bounds each call to an app's settings tool.
 Without `machine.toml` it refuses to run, since no profile would apply and it
@@ -260,7 +262,7 @@ removed.
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
 | `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font) |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings, Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14) |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -271,7 +273,7 @@ removed.
 | Mac mini | `base, dev, desktop, server` | `personal` and the clients worked from it |
 | A client's machine | `base, dev, work` | that client's only |
 
-Override one feature or setting for one machine in `machine.toml`:
+Override one feature, setting or app setting for one machine in `machine.toml`:
 
 ```toml
 profiles = ["base", "dev", "desktop", "server"]
@@ -281,7 +283,23 @@ disable = ["tool.colorls"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]
+"muxy:terminal.font_size" = 13.0   # instead of tool.muxy's shared 14.0
 ```
+
+| Table | Keys | Overrides | Checked |
+| --- | --- | --- | --- |
+| `[features]` | `enable`, `disable`: feature ids | the feature's `default`, then each profile in order | an unknown id is an error |
+| `[settings]` | setting names, such as `"paths.playwright_browsers"` | the declaring feature's default, then each profile's `[settings]` in order | an unknown name or a value of the wrong type is an error |
+| `[prefs]` | app settings, `<store>:<key>` as `dotfiles adopt` names them, such as `"muxy:terminal.font_size"` | the owning feature's prefs file, then each profile's `[prefs]` in order | a key no enabled feature owns, or a value the store cannot take, is a plan error |
+
+A profile's `[prefs]` table works the same way for every machine that lists
+the profile. Changing or removing an override takes effect on the next apply
+(removing one returns the setting to the shared value); disabling the feature
+still puts back the value from before dotfiles. `dotfiles check`, `doctor` and
+`status` show each app setting's value and where it comes from; see
+[Per-machine overrides](docs/MACHINE-FEATURES.md#per-machine-overrides).
 
 ### Overlays
 

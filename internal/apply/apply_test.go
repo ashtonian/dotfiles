@@ -27,13 +27,17 @@ type machine struct {
 	launchd               *fakeLaunchd    // nil: the plan has no LaunchAgents
 	job                   string          // the launchd job the run executes in
 	stores                map[string]PrefStore
+	statePath             string // where Checkpoint saves
+	// machineTOML, when set, is the machine manifest's text, for its [prefs]
+	// table; disable still turns features off.
+	machineTOML string
 }
 
 func newMachine(t *testing.T) *machine {
 	t.Helper()
 	root := t.TempDir()
 	m := &machine{t: t, repo: filepath.Join(root, "repo"), home: filepath.Join(root, "home"),
-		goos: "linux", state: newState(), tracked: map[string]bool{}}
+		goos: "linux", state: newState(), tracked: map[string]bool{}, statePath: filepath.Join(root, "applied.json")}
 	m.generated = filepath.Join(m.home, ".config", "dotfiles", "generated")
 	require.NoError(t, os.MkdirAll(m.home, 0o700))
 	m.write("features/shell/feature.toml", `id = "shell"
@@ -73,24 +77,40 @@ func (m *machine) plan() *plan.Plan {
 	}
 	features, err := manifest.LoadFeatures(roots...)
 	require.NoError(m.t, err)
-	res, err := resolve.Resolve(features, nil, &manifest.Machine{Features: manifest.Selection{Disable: m.disable}}, m.goos)
+	mach := &manifest.Machine{}
+	if m.machineTOML != "" {
+		path := m.machinePath()
+		require.NoError(m.t, os.WriteFile(path, []byte(m.machineTOML), 0o600))
+		mach, err = manifest.LoadMachine(path)
+		require.NoError(m.t, err)
+	}
+	mach.Features.Disable = m.disable
+	res, err := resolve.Resolve(features, nil, mach, m.goos)
 	require.NoError(m.t, err)
-	p, err := plan.Build(features, res.Runnable(features), res.Values(), plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
+	p, err := plan.Build(features, res.Runnable(features), res.Values(), res.PrefLayers, plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
 	require.NoError(m.t, err)
 	return p
 }
 
-func (m *machine) run(dryRun bool) *Report {
-	m.t.Helper()
+func (m *machine) machinePath() string { return filepath.Join(filepath.Dir(m.repo), "machine.toml") }
+
+// env is the Env a run works in, saving checkpoints to m.statePath.
+func (m *machine) env() Env {
 	env := Env{Home: m.home, StowTree: filepath.Join(m.repo, "stow"), Job: m.job, Prefs: m.stores,
-		Roots: []Root{{Dir: m.repo, Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}}}
+		Checkpoint: func(s *State) error { return s.Save(m.statePath) },
+		Roots:      []Root{{Dir: m.repo, Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}}}
 	if m.overlay != "" {
 		env.Roots = append(env.Roots, Root{Dir: m.overlay, Tracked: func(string) bool { return false }})
 	}
 	if m.launchd != nil {
 		env.Launchd = m.launchd
 	}
-	report, next, err := Run(context.Background(), m.plan(), m.state, env, dryRun)
+	return env
+}
+
+func (m *machine) run(dryRun bool) *Report {
+	m.t.Helper()
+	report, next, err := Run(context.Background(), m.plan(), m.state, m.env(), dryRun)
 	require.NoError(m.t, err)
 	if !dryRun {
 		m.state = next

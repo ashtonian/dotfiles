@@ -46,6 +46,12 @@ type Env struct {
 	StowTree string
 	// Prefs holds a store for each name in prefs.Stores.
 	Prefs map[string]PrefStore
+	// Checkpoint durably saves a state the run has reached, as the state
+	// file. apply calls it before it changes an app setting, with the
+	// setting's earlier value recorded, so a run that stops before saving
+	// its final state still knows what to put back. Required when the plan
+	// has app settings and the run is not a dry run.
+	Checkpoint func(*State) error
 	// Launchd is the user's launchd GUI domain. Required when the plan or the
 	// previous state has LaunchAgents.
 	Launchd Launchd
@@ -72,7 +78,7 @@ type Launchd interface {
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, adopt, agent, update-agent, load, reload, unload, remove-agent
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref, adopt, agent, update-agent, load, reload, unload, remove-agent
 	Path   string
 	Detail string
 }
@@ -128,9 +134,10 @@ type runner struct {
 }
 
 // Run converges the machine on p. prev is the state the last run saved; the
-// returned state is what to save now. With dryRun nothing on disk changes and
-// the report lists what would. I/O failures stop the run; conflicts are
-// reported as problems and leave the file untouched.
+// returned state is what to save now, also when Run fails: then it holds what
+// the run did on top of prev. With dryRun nothing on disk changes and the
+// report lists what would. I/O failures stop the run; conflicts are reported
+// as problems and leave the file untouched.
 func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (*Report, *State, error) {
 	if len(env.Roots) == 0 {
 		return nil, nil, errors.New("apply: Env.Roots is required")
@@ -142,6 +149,9 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 	}
 	if env.Launchd == nil && !env.LeaveLaunchAgents && (len(p.LaunchAgents) > 0 || len(p.OffAgents) > 0 || len(prev.Agents) > 0) {
 		return nil, nil, errors.New("apply: LaunchAgents need Env.Launchd, and launchd runs only on macOS")
+	}
+	if env.Checkpoint == nil && !dryRun && len(p.Prefs) > 0 {
+		return nil, nil, errors.New("apply: app settings need Env.Checkpoint")
 	}
 	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun,
 		sources: map[rootPath]bool{}, unfolded: map[string]bool{}, unrecorded: map[string]string{}}
@@ -190,10 +200,27 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {
-			return &r.report, nil, err
+			return &r.report, r.partial(), err
 		}
 	}
 	return &r.report, r.next, nil
+}
+
+// partial is the state of a run that has not finished: what it recorded so
+// far over what the last run saved. A record the run would have dropped is
+// still there, and the next run looks at it again.
+func (r *runner) partial() *State {
+	s := r.prev.clone()
+	s.overlay(r.next)
+	return s
+}
+
+// checkpoint saves partial through Env.Checkpoint.
+func (r *runner) checkpoint() error {
+	if err := r.env.Checkpoint(r.partial()); err != nil {
+		return fmt.Errorf("apply: saving the state before changing an app setting: %w", err)
+	}
+	return nil
 }
 
 func eachItem[T any](r *runner, items []T, do func(T) error) error {

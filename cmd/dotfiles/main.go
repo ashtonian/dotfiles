@@ -218,7 +218,7 @@ func load(p paths) (*loaded, error) {
 
 // plan builds the desired state for this machine from what load resolved.
 func (l *loaded) plan(p paths) (*plan.Plan, error) {
-	return plan.Build(l.features, l.result.Runnable(l.features), l.result.Values(),
+	return plan.Build(l.features, l.result.Runnable(l.features), l.result.Values(), l.result.PrefLayers,
 		plan.Env{Home: p.home, GeneratedDir: p.generated, GOOS: runtime.GOOS})
 }
 
@@ -261,7 +261,8 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	env := apply.Env{Home: p.home, StowTree: filepath.Join(p.repo, retiredStowTree), Prefs: opts.stores}
+	env := apply.Env{Home: p.home, StowTree: filepath.Join(p.repo, retiredStowTree), Prefs: opts.stores,
+		Checkpoint: func(s *apply.State) error { return s.Save(p.state) }}
 	for _, root := range l.roots {
 		tracked, err := trackedFiles(ctx, root.Dir, opts.gitTimeout)
 		if err != nil {
@@ -277,13 +278,15 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		env.Job = os.Getenv("XPC_SERVICE_NAME")
 	}
 	report, next, err := apply.Run(ctx, pl, prev, env, dryRun)
+	// A run that fails partway still returns what it did, which the next
+	// run needs: an app setting's earlier value, a link it made.
+	if !dryRun && next != nil {
+		if saveErr := next.Save(p.state); saveErr != nil {
+			return exitFor(errors.Join(err, saveErr), stderr)
+		}
+	}
 	if err != nil {
 		return exitFor(err, stderr)
-	}
-	if !dryRun {
-		if err := next.Save(p.state); err != nil {
-			return exitFor(err, stderr)
-		}
 	}
 
 	verb := ""
@@ -305,6 +308,9 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		// Expected states, not problems; apply prints them only as it acts.
 		for _, w := range report.Waiting {
 			fmt.Fprintf(stdout, "waiting     %s: %s\n", w.Label, w.Reason)
+		}
+		for _, pr := range pl.Prefs {
+			fmt.Fprintf(stdout, "app-setting %s\n", describePref(pr))
 		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
@@ -389,7 +395,8 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	if err != nil {
 		return exitFor(err, stderr)
 	}
-	if _, err := l.plan(p); err != nil {
+	pl, err := l.plan(p)
+	if err != nil {
 		return exitFor(err, stderr)
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
@@ -397,6 +404,9 @@ func cmdCheck(p paths, stdout, stderr io.Writer) int {
 	}
 	for _, root := range l.roots[1:] {
 		fmt.Fprintf(stdout, "overlay: %s at %s\n", root.Overlay, root.Dir)
+	}
+	for _, pr := range pl.Prefs {
+		fmt.Fprintf(stdout, "app setting: %s\n", describePref(pr))
 	}
 	fmt.Fprintf(stdout, "ok: %d features plan for %s\n", len(l.result.Runnable(l.features)), p.machine)
 	return exitOK
@@ -475,6 +485,10 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	if err != nil {
 		return exitFor(err, stderr)
 	}
+	pl, err := l.plan(p)
+	if err != nil {
+		return exitFor(err, stderr)
+	}
 	type rootRow struct {
 		Name   string `json:"name"`
 		Dir    string `json:"dir"`
@@ -487,9 +501,19 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 		Enabled bool   `json:"enabled"`
 		Source  string `json:"source"`
 	}
+	type prefRow struct {
+		ID    string `json:"id"`
+		Value any    `json:"value"`
+		// SetBy is the feature that owns the setting, or "profile:<name>" or
+		// "machine" when an override sets it.
+		SetBy   string `json:"set_by"`
+		Feature string `json:"feature"`
+		Shared  any    `json:"shared"` // the feature's own value
+	}
 	var out struct {
 		Roots    []rootRow    `json:"roots"`
 		Features []featureRow `json:"features"`
+		Prefs    []prefRow    `json:"prefs"`
 	}
 	for _, root := range l.roots {
 		row := rootRow{Name: root.Overlay, Dir: root.Dir}
@@ -505,6 +529,9 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	for _, id := range sortedKeys(l.result.Decisions) {
 		d := l.result.Decisions[id]
 		out.Features = append(out.Features, featureRow{ID: id, Enabled: d.Enabled, Source: d.Source})
+	}
+	for _, pr := range pl.Prefs {
+		out.Prefs = append(out.Prefs, prefRow{ID: pr.ID(), Value: pr.Value, SetBy: pr.SetBy(), Feature: pr.Feature, Shared: pr.Shared})
 	}
 	if jsonOut {
 		enc := json.NewEncoder(stdout)
@@ -528,10 +555,41 @@ func cmdStatus(ctx context.Context, p paths, jsonOut bool, gitTimeout time.Durat
 	for _, r := range out.Features {
 		fmt.Fprintf(w, "%s\t%t\t%s\n", r.ID, r.Enabled, r.Source)
 	}
+	if len(pl.Prefs) > 0 {
+		fmt.Fprintln(w)
+		fmt.Fprintln(w, "APP SETTING\tVALUE\tSET BY")
+		for _, pr := range pl.Prefs {
+			setBy := pr.SetBy()
+			if pr.Origin != "" {
+				setBy += fmt.Sprintf(" (%s shares %s)", pr.Feature, tomlValue(pr.Shared))
+			}
+			fmt.Fprintf(w, "%s\t%s\t%s\n", pr.ID(), tomlValue(pr.Value), setBy)
+		}
+	}
 	if err := w.Flush(); err != nil {
 		return exitFor(err, stderr)
 	}
 	return exitOK
+}
+
+// describePref says what value an app setting gets here and where it comes
+// from: the feature that owns it, or the profile or machine manifest whose
+// [prefs] table overrides the feature's value.
+func describePref(pr plan.Pref) string {
+	d := fmt.Sprintf("%s = %s, from %s", pr.ID(), tomlValue(pr.Value), pr.SetBy())
+	if pr.Origin != "" {
+		d += fmt.Sprintf(" (%s shares %s)", pr.Feature, tomlValue(pr.Shared))
+	}
+	return d
+}
+
+// tomlValue renders a setting value as a prefs file or [prefs] table writes it.
+func tomlValue(v any) string {
+	s, err := prefs.EncodeTOML(v)
+	if err != nil {
+		return fmt.Sprint(v)
+	}
+	return s
 }
 
 // gitState returns the checkout's short commit and whether a tracked file has

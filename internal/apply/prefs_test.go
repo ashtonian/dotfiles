@@ -19,10 +19,11 @@ import (
 
 // memoryStore is one app's settings in memory, with a failure to act out.
 type memoryStore struct {
-	values map[string]any
-	getErr error
-	setErr error // one wrapping prefs.ErrNotApplied still saves
-	sets   int
+	values   map[string]any
+	getErr   error
+	setErr   error // one wrapping prefs.ErrNotApplied still saves
+	unsetErr error // likewise
+	sets     int
 }
 
 func (s *memoryStore) Get(_ context.Context, key string) (any, bool, error) {
@@ -43,8 +44,11 @@ func (s *memoryStore) Set(_ context.Context, key string, value any) error {
 }
 
 func (s *memoryStore) Unset(_ context.Context, key string) error {
+	if s.unsetErr != nil && !errors.Is(s.unsetErr, prefs.ErrNotApplied) {
+		return s.unsetErr
+	}
 	delete(s.values, key)
-	return nil
+	return s.unsetErr
 }
 
 const muxyPrefs = `# shared Muxy settings
@@ -176,18 +180,35 @@ func TestPrefsAStoreThatFailsIsAProblemForItsSettingsOnly(t *testing.T) {
 	m.run(false)
 	recorded := m.state.Prefs["muxy:appearance.dark_theme"]
 
-	muxy.getErr = fmt.Errorf("%w: Muxy is not installed", prefs.ErrUnavailable)
+	muxy.getErr = errors.New("muxy config list: no answer within 30s")
 	m.write("features/app/muxy.toml", `"appearance.dark_theme" = "Nord"`+"\n")
 	report := m.run(false)
 	require.Len(t, report.Problems, 2, "the owned setting, and the one teardown could not read")
 	for _, p := range report.Problems {
-		assert.Contains(t, p.Detail, "Muxy is not installed")
+		assert.Contains(t, p.Detail, "no answer within 30s")
 	}
 	assert.Zero(t, kinds(report)["pref"]+kinds(report)["update-pref"]+kinds(report)["restore-pref"])
 	assert.Equal(t, recorded, m.state.Prefs["muxy:appearance.dark_theme"], "what apply set is still known for the next run")
-	assert.Contains(t, m.state.Prefs, "muxy:terminal.font_families")
+	assert.Contains(t, m.state.Prefs, "muxy:terminal.font_families", "teardown tries again next run")
 	_, err := os.Lstat(m.at(".config/shell/a.sh"))
 	assert.NoError(t, err, "everything else still converges")
+}
+
+func TestPrefsTeardownForgetsTheSettingsOfAnAppThatIsGone(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+
+	// Muxy uninstalled, then its feature turned off.
+	muxy.getErr = fmt.Errorf("%w: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy", prefs.ErrUnavailable)
+	m.disable = []string{"app"}
+	report := m.run(false)
+	assert.Empty(t, report.Problems, "uninstalling the app is no failure")
+	assert.Equal(t, map[string]string{
+		"muxy:appearance.dark_theme":  `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy; before dotfiles set it, it was "Muxy"`,
+		"muxy:terminal.font_families": `app not available: Muxy is not installed; looked for /Applications/Muxy.app/Contents/MacOS/muxy; before dotfiles set it, it was no value`,
+	}, details(report, "forget-pref"), "the earlier value is reported once, to set by hand")
+	assert.Empty(t, m.state.Prefs)
+	assert.Empty(t, m.run(false).Actions, "and never again")
 }
 
 func TestPrefsAValueTheRunningAppDidNotTakeIsStillRecorded(t *testing.T) {
@@ -270,7 +291,187 @@ func TestAnOverlayAndTheRepositoryCannotOwnOneSetting(t *testing.T) {
 	require.NoError(t, err)
 	res, err := resolve.Resolve(features, nil, &manifest.Machine{}, m.goos)
 	require.NoError(t, err)
-	_, err = plan.Build(features, res.Runnable(features), res.Values(), plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
+	_, err = plan.Build(features, res.Runnable(features), res.Values(), res.PrefLayers, plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
 	require.ErrorIs(t, err, plan.ErrPlan)
 	assert.Contains(t, err.Error(), "app and personal.muxy both install muxy:appearance.dark_theme")
+}
+
+// stopAfterSet ends the run once the app has taken a value: a SIGTERM to
+// `dotfiles apply` between setting it and saving the state.
+type stopAfterSet struct {
+	*memoryStore
+	stop context.CancelFunc
+}
+
+func (s stopAfterSet) Set(ctx context.Context, key string, value any) error {
+	err := s.memoryStore.Set(ctx, key, value)
+	s.stop()
+	return err
+}
+
+func TestPrefsARunStoppedAfterSettingStillPutsBackTheEarlierValue(t *testing.T) {
+	for _, tt := range []struct {
+		name    string
+		saved   func(m *machine, partial *State) *State
+		pending bool // the record still says apply was setting it
+	}{
+		// cmd/dotfiles saves the state Run returns with its error, which has
+		// what the app stored, read back after the set.
+		{"the partial state saved", func(_ *machine, partial *State) *State { return partial }, false},
+		// Killed outright: only the checkpoint reached the disk.
+		{"only the checkpoint saved", func(m *machine, _ *State) *State {
+			s, err := LoadState(m.statePath)
+			require.NoError(t, err)
+			return s
+		}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			m, muxy := prefsMachine(t)
+			ctx, stop := context.WithCancel(context.Background())
+			env := m.env()
+			env.Prefs = map[string]PrefStore{"muxy": stopAfterSet{muxy, stop}}
+			_, partial, err := Run(ctx, m.plan(), m.state, env, false)
+			require.ErrorIs(t, err, context.Canceled)
+			require.Equal(t, "Dracula", muxy.values["appearance.dark_theme"], "the app took the value")
+			m.state = tt.saved(m, partial)
+			rec := m.state.Prefs["muxy:appearance.dark_theme"]
+			assert.Equal(t, tt.pending, rec.Pending)
+			assert.JSONEq(t, `"Muxy"`, string(rec.Previous), "the earlier value was saved before the app's changed")
+
+			next := m.run(false)
+			assert.Empty(t, next.Problems, "neither value is a change made here")
+			assert.Equal(t, `["FiraCode Nerd Font Mono"] (was no value)`, details(next, "pref")["muxy:terminal.font_families"])
+			assert.False(t, m.state.Prefs["muxy:appearance.dark_theme"].Pending)
+			assert.Empty(t, m.run(false).Actions)
+
+			m.disable = []string{"app"}
+			torn := m.run(false)
+			assert.Empty(t, torn.Problems)
+			assert.Equal(t, "Muxy", muxy.values["appearance.dark_theme"], "the value the owner had")
+			assert.NotContains(t, muxy.values, "terminal.font_families")
+		})
+	}
+}
+
+func TestPrefsTeardownStoppedAfterPuttingBackFinishesQuietly(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+	before := m.state
+	m.disable = []string{"app"}
+	m.run(false)
+	require.Equal(t, "Muxy", muxy.values["appearance.dark_theme"])
+
+	m.state = before // the run that put the values back stopped before saving
+	again := m.run(false)
+	assert.Empty(t, again.Problems)
+	assert.Empty(t, again.Actions)
+	assert.Empty(t, m.state.Prefs)
+}
+
+// f32Store keeps floats as 32-bit numbers and lists them as 64-bit ones, as
+// Muxy does: 1.3 reads back as 1.2999999523162842.
+type f32Store struct{ *memoryStore }
+
+func (s f32Store) Set(ctx context.Context, key string, value any) error {
+	if f, ok := value.(float64); ok {
+		value = float64(float32(f))
+	}
+	return s.memoryStore.Set(ctx, key, value)
+}
+
+func TestPrefsARoundedValueIsInStepAndPutBack(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/app/feature.toml", "id = \"app\"\ndefault = true\n[provides.prefs]\nmuxy = \"muxy.toml\"\n")
+	m.write("features/app/muxy.toml", "\"composer.line_height\" = 1.3\n")
+	earlier := float64(float32(1.2))
+	mem := &memoryStore{values: map[string]any{"composer.line_height": earlier}}
+	m.stores = map[string]PrefStore{"muxy": f32Store{mem}}
+
+	first := m.run(false)
+	assert.Empty(t, first.Problems)
+	assert.Equal(t, "1.3 (was 1.2000000476837158); the app stored 1.2999999523162842", details(first, "pref")["muxy:composer.line_height"])
+	again := m.run(false)
+	assert.Empty(t, again.Problems, "what the app stored is what apply set")
+	assert.Empty(t, again.Actions)
+
+	m.write("features/app/muxy.toml", "\"composer.line_height\" = 1.4\n")
+	assert.Equal(t, 1, kinds(m.run(false))["update-pref"], "a new value is still a move")
+	mem.values["composer.line_height"] = 1.5
+	assert.Len(t, m.run(false).Problems, 1, "and a change made here still a change")
+	mem.values["composer.line_height"] = float64(float32(1.4))
+
+	m.disable = []string{"app"}
+	torn := m.run(false)
+	assert.Empty(t, torn.Problems)
+	assert.True(t, prefs.Equal(earlier, mem.values["composer.line_height"]), "teardown puts back the old value, not %v", mem.values["composer.line_height"])
+}
+
+func TestPrefsAnUnsetTheRunningAppDidNotTakeStillCounts(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.run(false)
+	muxy.unsetErr = fmt.Errorf("%w: no response from Muxy", prefs.ErrNotApplied)
+	m.disable = []string{"app"}
+
+	torn := m.run(false)
+	assert.Empty(t, torn.Problems, "saved; the app loads it when it restarts")
+	assert.Equal(t, "no value", details(torn, "restore-pref")["muxy:terminal.font_families"])
+	assert.NotContains(t, muxy.values, "terminal.font_families")
+	again := m.run(false)
+	assert.Empty(t, again.Problems)
+	assert.Empty(t, again.Actions)
+}
+
+func TestPrefsAClaudeKeyInsideAnObjectIsRefused(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/app/feature.toml", "id = \"app\"\ndefault = true\n[provides.prefs]\nclaude = \"claude.toml\"\n")
+	for _, line := range []string{"permissions.defaultMode = \"acceptEdits\"\n", "\"permissions.defaultMode\" = \"acceptEdits\"\n"} {
+		m.write("features/app/claude.toml", line)
+		features, err := manifest.LoadFeatures(manifest.Root{Dir: m.repo})
+		require.NoError(t, err)
+		res, err := resolve.Resolve(features, nil, &manifest.Machine{}, m.goos)
+		require.NoError(t, err)
+		_, err = plan.Build(features, res.Runnable(features), res.Values(), nil, plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
+		require.ErrorIs(t, err, plan.ErrPlan, line)
+	}
+}
+
+func TestPrefOverridesConvergeAndGoBackToTheSharedValue(t *testing.T) {
+	m, muxy := prefsMachine(t)
+	m.machineTOML = "profiles = []\n\n[prefs]\n\"muxy:appearance.dark_theme\" = \"Nord\" # this Mac's display\n"
+
+	first := m.run(false)
+	assert.Empty(t, first.Problems)
+	assert.Equal(t, `"Nord" (was "Muxy")`, details(first, "pref")["muxy:appearance.dark_theme"])
+
+	m.machineTOML = "profiles = []\n\n[prefs]\n\"muxy:appearance.dark_theme\" = \"Solarized\"\n"
+	changed := m.run(false)
+	assert.Empty(t, changed.Problems, "a new override is no change made here")
+	assert.Equal(t, `"Solarized" (was "Nord")`, details(changed, "update-pref")["muxy:appearance.dark_theme"])
+
+	m.machineTOML = "profiles = []\n"
+	removed := m.run(false)
+	assert.Empty(t, removed.Problems)
+	assert.Equal(t, `"Dracula" (was "Solarized")`, details(removed, "update-pref")["muxy:appearance.dark_theme"], "back to the shared value")
+
+	m.machineTOML = "profiles = []\n\n[prefs]\n\"muxy:appearance.dark_theme\" = \"Nord\" # this Mac's display\n"
+	m.run(false)
+	muxy.values["appearance.dark_theme"] = "Gruvbox"
+	report, next, err := Adopt(context.Background(), m.plan(), m.state, []string{"muxy:appearance.dark_theme"}, m.stores)
+	require.NoError(t, err)
+	assert.Equal(t, m.machinePath(), details(report, "adopt")["muxy:appearance.dark_theme"], "adopt keeps an override where it is set")
+	m.state = next
+	written, err := os.ReadFile(m.machinePath())
+	require.NoError(t, err)
+	assert.Equal(t, "profiles = []\n\n[prefs]\n\"muxy:appearance.dark_theme\" = \"Gruvbox\" # this Mac's display\n", string(written))
+	shared, err := os.ReadFile(filepath.Join(m.repo, "features/app/muxy.toml"))
+	require.NoError(t, err)
+	assert.Equal(t, muxyPrefs, string(shared), "the shared value stays")
+	m.machineTOML = string(written)
+	assert.Empty(t, m.run(false).Actions, "adopted: in step")
+
+	m.disable = []string{"app"}
+	m.machineTOML = "profiles = []\n"
+	torn := m.run(false)
+	assert.Empty(t, torn.Problems)
+	assert.Equal(t, "Muxy", muxy.values["appearance.dark_theme"], "teardown puts back the value from before dotfiles")
 }

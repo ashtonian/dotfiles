@@ -130,7 +130,7 @@ disable = ["shell.greeting"]
 	require.NoError(t, os.WriteFile(path, MachineFile(nil, []string{"base", "dev"}), 0o644))
 	m, err = LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
 }
 
 func writeProfile(t *testing.T, root, name, body string) {
@@ -220,7 +220,7 @@ func TestLoadMachineOverlays(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, MachineFile([]string{"personal", "client-a"}, []string{"base"}), 0o644))
 	m, err := LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
 
 	for _, body := range []string{"overlays = [\"personal\", \"personal\"]\n", "overlays = [\"a.b\"]\n", "overlays = [\"../x\"]\n"} {
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))

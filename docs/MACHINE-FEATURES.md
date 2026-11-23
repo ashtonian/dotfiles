@@ -97,7 +97,9 @@ A feature is enabled when the last decision in this order says so:
 error that names both. `conflicts` makes two features mutually exclusive.
 Settings resolve the same way: feature default, then profiles in order, then
 the machine manifest. A missing required setting fails `apply` for that feature
-only and shows on the status page.
+only and shows on the status page. App settings a feature owns resolve in the
+same order too: the feature's prefs file, then each profile's `[prefs]` table,
+then the machine manifest's (see [App settings](#app-settings)).
 
 ### Machine manifest
 
@@ -112,6 +114,9 @@ disable = ["shell.omz.git-auto-fetch", "backup.mackup.macosx"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]                                # app settings, keyed as `dotfiles adopt` names them
+"muxy:terminal.font_size" = 13.0       # this machine's smaller screen
 ```
 
 `dotfiles init --profiles base,dev,...` writes this file (`install.sh` runs it
@@ -252,7 +257,7 @@ muxy = "muxy.toml"
 # features/tool.muxy/muxy.toml: one top-level `key = value` per line
 "appearance.dark_theme" = "Dracula"
 "terminal.font_families" = ["FiraCode Nerd Font Mono"]
-"terminal.font_size" = 13.0
+"terminal.font_size" = 14.0
 ```
 
 `apply` sets each key through the app's own interface, a store, and leaves
@@ -260,22 +265,88 @@ every other key alone:
 
 | Store | Talks to | Keys |
 | --- | --- | --- |
-| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`), which validates each value and has the running app apply it. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
-| `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from | top-level keys; a value may be an object, which replaces that whole key |
+| `muxy` | `muxy config list/set/unset` inside `Muxy.app` (`~/Applications`, then `/Applications`). `set` and `unset` save a value only if the app can start with it, then ask a running desktop app to reload its settings; they never start the app and never talk to Muxy's terminal server, so no terminal ends. Never the `muxy` on `PATH`, which can be a remote-server build | `muxy config list`'s dotted keys, quoted; leaves only, never a whole section |
+| `claude` | `~/.claude/settings.json`, rewritten in place: other keys keep their values, order and formatting, and the write goes ahead only while the file still holds what it was computed from. A `settings.json` that links elsewhere is written through the link | top-level keys only; a value may be an object, which replaces that whole key. A key inside an object, such as `permissions.defaultMode`, is refused: the object holds the machine's own rules |
+
+Every key is written on its own line. An unquoted dotted key such as
+`permissions.defaultMode = "acceptEdits"` is a plan error, because TOML reads
+it as a whole `permissions` table; quote a key that holds a dot.
 
 An app setting always has some value, so there is no "nothing there yet" that
 tells apply's own work from the owner's, as there is for a link or copy. The
-first apply on a machine sets the key and records the value it replaced in
-the state file. From then on:
+first apply on a machine records the value the key has in the state file,
+saves the state, and only then sets the key, so a run that stops partway
+still knows what to put back. It then reads the key back and records what the
+app stored, which can differ a little from what was set: Muxy keeps a float
+as 32 bits, so `1.3` reads back as `1.2999999523162842`. From then on:
 
-- a key that still has the value apply set follows the repository;
+- a key that still has the value apply set follows the plan: a new value in
+  the prefs file, a profile or `machine.toml` is set (`update-pref`);
 - a key changed in the app since is a problem (`changed here since dotfiles
-  set it`) and is left alone; `dotfiles adopt <store>:<key>` rewrites that
-  line of the prefs file with the app's value;
+  set it`) and is left alone; `dotfiles adopt <store>:<key>` writes the app's
+  value where the planned value comes from (below);
 - disabling the feature, or removing the line, puts back the recorded earlier
   value (or unsets the key), unless the key changed in the app since;
-- a store that cannot be reached (the app is not installed) is a problem for
-  its keys only; the rest of apply converges, and the next run tries again.
+- a store that cannot be reached is a problem for its keys only; the rest of
+  apply converges, and the next run tries again. During teardown, an app that
+  is no longer installed (`app not available`) cannot take its old value back:
+  apply prints `forget-pref` once with the earlier value, to set by hand if
+  the app returns, and drops the record.
+
+#### Per-machine overrides
+
+A shared value can be changed for one machine, or for every machine with a
+profile, by naming the setting in a `[prefs]` table, keyed `<store>:<key>` as
+`dotfiles adopt` and the reports name it:
+
+```toml
+# ~/.config/dotfiles/machine.toml
+[prefs]
+"muxy:terminal.font_size" = 13.0
+
+# profiles/laptop.toml
+[prefs]
+"muxy:appearance.dark_theme" = "Nord"
+```
+
+The order is the one settings follow: the feature's prefs file, then each
+profile in `machine.toml` order, then `machine.toml`; the last one that names
+the key wins. Each override is checked like a prefs file line (a known store,
+a leaf for Muxy, a top-level key for Claude Code, a value with a JSON form).
+`machine.toml` may name only a setting a feature enabled here owns, so a typo
+or a stale override is a plan error, never silently ignored. A profile is
+shared by machines that turn features on and off, so it may name a setting
+whose feature is off on a machine, which that machine leaves out; one that no
+feature owns at all is a plan error.
+
+An override changes the planned value, not the record of what was there
+before dotfiles, so:
+
+- adding or changing one sets the new value on the next apply
+  (`update-pref`), as a repository change would;
+- removing one sets the shared value again on the next apply;
+- teardown still puts back the value the key had before dotfiles first set it;
+- `dotfiles adopt <store>:<key>` rewrites the line where the value comes from:
+  the override's line in `machine.toml` or the profile (which must be written
+  on its own line in a `[prefs]` table), or the feature's prefs file. A
+  trailing `# comment` on that line stays.
+
+`dotfiles check`, `dotfiles doctor` and `dotfiles status` show each setting's
+value and where it comes from:
+
+```text
+$ dotfiles check
+app setting: muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)
+app setting: muxy:appearance.dark_theme = "Dracula", from tool.muxy
+$ dotfiles doctor
+app-setting muxy:terminal.font_size = 13.0, from machine (tool.muxy shares 14.0)
+$ dotfiles status
+APP SETTING              VALUE  SET BY
+muxy:terminal.font_size  13.0   machine (tool.muxy shares 14.0)
+```
+
+`dotfiles status --json` lists them under `prefs`, each with `id`, `value`,
+`set_by`, `feature` and `shared`.
 
 A feature in an overlay owns settings the same way: `dotfiles adopt` writes
 the value into the overlay's prefs file, and a machine that drops the overlay
