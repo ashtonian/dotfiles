@@ -87,9 +87,6 @@ zinit light MichaelAquilina/zsh-you-should-use
 #=============================================================================
 # PLUGIN CONFIGURATION
 #=============================================================================
-# SSH agent forwarding
-zstyle :omz:plugins:ssh-agent agent-forwarding on
-
 # Custom web search engines
 ZSH_WEB_SEARCH_ENGINES=(reddit "https://old.reddit.com/search/?q=")
 
@@ -145,9 +142,6 @@ zinit snippet OMZL::directories.zsh
 zinit ice wait"0" lucid atload"_dotfiles_git_aliases"
 zinit snippet OMZP::git
 
-zinit ice wait"0" lucid
-zinit snippet OMZP::git-auto-fetch
-
 # Colored man pages
 zinit ice wait"1" lucid
 zinit snippet OMZP::colored-man-pages
@@ -189,27 +183,9 @@ zinit snippet OMZP::terraform
 zinit ice wait"1" lucid
 zinit snippet OMZP::golang
 
-# Node/npm
-zinit ice wait"1" lucid
-zinit snippet OMZP::node
-
-zinit ice wait"1" lucid
-zinit snippet OMZP::npm
-
-# Ruby/Rake
-zinit ice wait"2" lucid
-zinit snippet OMZP::ruby
-
-zinit ice wait"2" lucid
-zinit snippet OMZP::rake
-
 # GPG agent
 zinit ice wait"1" lucid
 zinit snippet OMZP::gpg-agent
-
-# SSH agent
-zinit ice wait"1" lucid
-zinit snippet OMZP::ssh-agent
 
 # Rsync
 zinit ice wait"2" lucid
@@ -219,24 +195,9 @@ zinit snippet OMZP::rsync
 zinit ice wait"2" lucid
 zinit snippet OMZP::tmux
 
-# VSCode
-zinit ice wait"2" lucid
-zinit snippet OMZP::vscode
-
 # Web search
 zinit ice wait"2" lucid
 zinit snippet OMZP::web-search
-
-#=============================================================================
-# CUSTOM PLUGINS
-#=============================================================================
-# NOTE: wakatime-zsh-plugin removed - wakatime-cli handles tracking natively
-# NOTE: git-it-on.zsh removed - use `gh repo view --web` instead
-
-# iTerm2 integration (simple OMZ plugin - stable with Dracula theme)
-# For full shell integration, install via: iTerm2 > Install Shell Integration
-zinit ice wait"1" lucid
-zinit snippet OMZP::iterm2
 
 #=============================================================================
 # SYNTAX HIGHLIGHTING (last)

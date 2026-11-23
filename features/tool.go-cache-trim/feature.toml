@@ -1,0 +1,9 @@
+id = "tool.go-cache-trim"
+description = "Hourly: deletes Go build cache entries unused for 24 hours (bin/go-cache-trim)"
+category = "tools"
+platforms = ["darwin"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.go-cache-trim.plist"
+# Homebrew's go, which the job's PATH finds (brew.base).
+when_exists = ["/opt/homebrew/bin/go"]

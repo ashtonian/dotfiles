@@ -148,10 +148,10 @@ content (mail, Drive).
 
 The server listens on loopback only. To reach the web UI from another device,
 add `OPENCODE_HOSTNAME`, an address on a network you trust, to the
-`EnvironmentVariables` of the installed
-`~/Library/LaunchAgents/com.ashtonian.opencode.plist`, then reload it with
-`launchctl unload` and `launchctl load` on that file. Reinstalling would replace
-the edit with the template. The UI is then at `http://<this Mac>:4096` (user
+`EnvironmentVariables` of `launchagents/com.ashtonian.opencode.plist` in this
+feature; the next `dotfiles apply` installs it and reloads the server on every
+Mac with the feature. An edit to the installed copy in `~/Library/LaunchAgents`
+is reported by apply on every run and never overwritten. The UI is then at `http://<this Mac>:4096` (user
 `opencode`). The service does not configure TLS, so the password crosses that
 network unencrypted; see Security.
 
@@ -214,7 +214,7 @@ printf '%s' 'https://<gateway host>/v1' > ~/.local/share/opencode/homelab/base-u
 (umask 077; openssl rand -base64 32 | tr -d '\n=' | tr '+/' '-_' > ~/.local/share/opencode/homelab/server-password)
 
 chmod 600 ~/.local/share/opencode/homelab/{base-url,litellm.key,server-password}
-~/.dotfiles/bin/dotfiles-install-launchagents.sh --opencode-only
+dotfiles apply                        # the server's LaunchAgent waits for opencode and server-password
 ```
 
 Then grant **Full Disk Access** to `~/.local/libexec/opencode-stable/bin/opencode`
@@ -345,11 +345,11 @@ Service logs have no rotation configured by these scripts.
 
 | Path | Purpose |
 | ------ | --------- |
-| `feature.toml` | What `dotfiles apply` installs: a link per file under `home/` |
+| `feature.toml` | What `dotfiles apply` installs: a link per file under `home/`, and on macOS the server's LaunchAgent once opencode and its password exist |
 | `home/.config/opencode/opencode.jsonc` | Providers, models, default agent |
 | `home/.config/opencode/agents/coordinator.md` | Coordinator prompt and permissions |
 | `home/.config/opencode/plugins/delegate.ts` | Job store, worker commands, completion notices, the five `delegate_*` tools. Linked; Bun resolves its imports from the link's location, `~/.config/opencode/node_modules`, where OpenCode installs them |
 | `../../bin/opencode-server` | LaunchAgent entry point: loads the password, runs `opencode serve` from the stable path |
 | `../../bin/stable-exec` | Runs a Homebrew CLI from a fixed path so privacy grants survive upgrades |
-| `../../launchagents/com.ashtonian.opencode.plist` | The always-on server |
+| `launchagents/com.ashtonian.opencode.plist` | The always-on server |
 | `../../lib_sh/opencode.sh` | `oc`, `ocweb` |

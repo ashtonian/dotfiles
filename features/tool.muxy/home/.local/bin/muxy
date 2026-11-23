@@ -1,0 +1,25 @@
+#!/bin/sh
+# muxy - run the muxy command line tool from the installed Muxy app
+#
+# Muxy's desktop app on another Mac reaches this one over SSH and runs `muxy`
+# from PATH or ~/.local/bin; `muxy` then starts the muxy-server beside it. So
+# the copy found here decides which server version remote clients get. This
+# runs the one inside the app bundle, so the CLI, the local server and what
+# remote clients start are always the installed app's version.
+#
+# The app is DOTFILES_MUXY_APP when set, else ~/Applications/Muxy.app, else
+# /Applications/Muxy.app: the order dotfiles apply's Muxy settings store uses.
+# Exit status 69 (EX_UNAVAILABLE): the app is not installed.
+if [ -n "${DOTFILES_MUXY_APP:-}" ]; then
+    app=$DOTFILES_MUXY_APP
+elif [ -x "$HOME/Applications/Muxy.app/Contents/MacOS/muxy" ]; then
+    app=$HOME/Applications/Muxy.app
+else
+    app=/Applications/Muxy.app
+fi
+tool=$app/Contents/MacOS/muxy
+if [ ! -x "$tool" ]; then
+    echo "muxy: $tool is missing; install Muxy (Homebrew cask muxy)" >&2
+    exit 69
+fi
+exec "$tool" "$@"

@@ -4,14 +4,16 @@
 #===============================================================================
 #
 # USAGE:
-#   agent-monitor install [--data-dir DIR]   install or update the pinned release,
-#                                            Claude Code + Codex hooks and the LaunchAgent
+#   agent-monitor install [--data-dir DIR]   install or update the pinned release and the
+#                                            Claude Code + Codex hooks, then (re)start the
+#                                            dashboard; dotfiles apply installs its LaunchAgent
 #   agent-monitor serve                      run the dashboard (the LaunchAgent's entry point)
 #   agent-monitor status                     service, health and hook state
 #   agent-monitor uninstall-hooks            remove the dashboard's Claude Code and Codex hooks
 #   agent-monitor lan enable < token-file    let the LAN gate serve the dashboard to holders
-#                                            of this token (the cluster proxy); installs its agent
-#   agent-monitor lan disable                stop the LAN gate and delete its token
+#                                            of this token (the cluster proxy); (re)starts the gate
+#   agent-monitor lan disable                delete the gate's token; dotfiles apply then
+#                                            stops the gate and removes its LaunchAgent
 #   agent-monitor gate                       run the LAN gate (its LaunchAgent's entry point)
 #
 # The dashboard listens on 127.0.0.1:$AGENT_MONITOR_PORT and reads ~/.claude and
@@ -45,6 +47,14 @@ gate_agent=com.ashtonian.agent-monitor-gate
 die() { # die <exit status> <message>
 	print -u2 "agent-monitor: $2"
 	exit $1
+}
+
+source ${bin_dir:h}/lib_sh/launch-agent.sh
+
+# start_agent <label>: the agents.agent-monitor feature's LaunchAgents wait for
+# the files install and lan enable write (features/agents.agent-monitor).
+start_agent() {
+	DOTFILES_DIR=${bin_dir:h} start_launch_agent $1 agents.agent-monitor || exit
 }
 
 with_node() {
@@ -115,8 +125,9 @@ cmd_install() {
 	# Writes `node <app>/scripts/{hook,codex-hook}-handler.js <event>` entries into
 	# ~/.claude/settings.json and ~/.codex/hooks.json, leaving other hooks alone.
 	with_node $node_bin $app/scripts/install-hooks.js --both
-	$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-only
+	start_agent $agent
 	print "agent-monitor $CCAM_VERSION installed: http://127.0.0.1:$port"
+	print "One-time: allow node access to the data volume when macOS asks (Privacy & Security > Files and Folders)"
 }
 
 cmd_serve() {
@@ -160,13 +171,18 @@ cmd_lan() {
 			mkdir -p $config
 			chmod 700 $config
 			(umask 077 && print -rn -- $token > $gate_token.tmp) && mv $gate_token.tmp $gate_token
-			# The gate alone: reinstalling the dashboard's agent would restart it.
-			$bin_dir/dotfiles-install-launchagents.sh --agent-monitor-gate-only
+			# The gate alone: restarting the dashboard is not needed for a new token.
+			start_agent $gate_agent
+			print "One-time: allow node to accept incoming connections when the macOS firewall asks"
 			;;
 		disable)
-			launchctl bootout gui/$UID/$gate_agent 2>/dev/null || true
-			rm -f $HOME/Library/LaunchAgents/$gate_agent.plist $gate_token
-			print "LAN gate stopped and its token deleted"
+			rm -f $gate_token
+			# Its LaunchAgent waits for the token, so apply unloads and removes it.
+			local engine=${DOTFILES_BIN:-$HOME/.local/bin/dotfiles} rc=0
+			[[ -x $engine ]] || die 69 "token deleted, but $engine is missing to stop the gate; run ${bin_dir:h}/sync.sh apply"
+			$engine apply --repo ${bin_dir:h} || rc=$?
+			(( rc <= 1 )) || die 70 "token deleted, but dotfiles apply failed (exit $rc); run $engine doctor"
+			print "LAN gate token deleted and the gate stopped"
 			;;
 		*) die 64 "usage: agent-monitor lan enable|disable" ;;
 	esac

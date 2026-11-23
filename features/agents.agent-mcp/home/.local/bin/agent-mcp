@@ -65,7 +65,7 @@ case $server in
 		# The indexer reads history with `git log --name-only`. Rename detection
 		# (the user config sets diff.renames=copies) needs blob contents, and in a
 		# partial clone each missing blob is fetched from the remote one request
-		# at a time: a gox index ran for minutes without finishing. Names need
+		# at a time: a large Go monorepo's index ran for minutes without finishing. Names need
 		# only trees. The daemon inherits this environment from the server that
 		# starts it.
 		n=${GIT_CONFIG_COUNT:-0}
@@ -85,7 +85,7 @@ case $server in
 		# repository's databases.
 		databases=${3:-}
 		case $databases in
-			'' | *[!a-z0-9_-]*) die 64 "postgres: name the dbhub config, e.g. agent-mcp postgres $harness karsto" ;;
+			'' | *[!a-z0-9_-]*) die 64 "postgres: name the dbhub config, e.g. agent-mcp postgres $harness <config-name>" ;;
 		esac
 		dbhub_config=$mcp/dbhub/$databases.toml
 		[ -r "$dbhub_config" ] || die 78 "postgres: missing $dbhub_config"

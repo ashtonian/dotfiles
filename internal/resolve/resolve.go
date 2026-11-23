@@ -1,6 +1,7 @@
 // Package resolve decides which features a machine enables and what each
 // setting's value is, from feature defaults, profiles in order, and the
-// machine manifest.
+// machine manifest. App setting overrides follow the same order; package plan
+// applies them over the values the features' prefs files give.
 package resolve
 
 import (
@@ -35,6 +36,16 @@ type Value struct {
 	Source string
 }
 
+// PrefLayer is one manifest's [prefs] table: values for app settings the
+// enabled features own, keyed <store>:<key>.
+type PrefLayer struct {
+	// Source is "profile:<name>" or "machine", as for a setting.
+	Source string
+	// File is the manifest that holds the table, which adopt rewrites.
+	File   string
+	Values map[string]any
+}
+
 // Result is the outcome of resolution.
 type Result struct {
 	Decisions map[string]Decision
@@ -47,6 +58,10 @@ type Result struct {
 	// Missing lists required settings without a value, per feature. Apply
 	// skips those features and reports them.
 	Missing map[string][]string
+	// PrefLayers are the [prefs] overrides, lowest precedence first: the
+	// profiles in order, then the machine manifest. Tables that set nothing
+	// are left out.
+	PrefLayers []PrefLayer
 }
 
 // Resolve applies feature defaults, then each of the machine's profiles in
@@ -108,7 +123,16 @@ func Resolve(features map[string]*manifest.Feature, profiles map[string]*manifes
 	if err != nil {
 		return nil, err
 	}
-	return &Result{Decisions: decisions, Order: order, Settings: settings, Missing: missing}, nil
+	var layers []PrefLayer
+	for _, name := range machine.Profiles {
+		if p := profiles[name]; len(p.Prefs) > 0 {
+			layers = append(layers, PrefLayer{Source: "profile:" + name, File: p.Path, Values: p.Prefs})
+		}
+	}
+	if len(machine.Prefs) > 0 {
+		layers = append(layers, PrefLayer{Source: "machine", File: machine.Path, Values: machine.Prefs})
+	}
+	return &Result{Decisions: decisions, Order: order, Settings: settings, Missing: missing, PrefLayers: layers}, nil
 }
 
 func pullRequirements(features map[string]*manifest.Feature, decisions map[string]Decision, goos string) error {
@@ -214,7 +238,7 @@ func resolveSettings(features map[string]*manifest.Feature, profiles map[string]
 			if !ok {
 				return fmt.Errorf("%w: %s sets unknown setting %q", ErrConflict, source, name)
 			}
-			if err := manifest.CheckValue(d.setting.Type, src[name]); err != nil {
+			if err := d.setting.Check(src[name]); err != nil {
 				return fmt.Errorf("%w: %s: setting %q: %w", ErrConflict, source, name, err)
 			}
 			if slices.Contains(order, d.feature) {

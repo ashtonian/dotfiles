@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""spotlight-exclusions - keep Spotlight out of toolchains, package stores and app caches
+
+usage:
+  spotlight-exclusions apply [--dry-run]   exclude every configured folder that exists
+  spotlight-exclusions check [--counts]    show each configured folder; exit 1 if one is not excluded
+  spotlight-exclusions list                print Spotlight's exclusion list
+  spotlight-exclusions remove PATH...      take folders off the exclusion list
+
+The configured folders are read from SPOTLIGHT_EXCLUSIONS_FILE
+(default ~/.config/spotlight/exclusions), then from the same path with
+.local appended when that file exists; --counts gives the mdfind for each
+parent folder SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT seconds (default 60). Exit status: 0 ok,
+1 a folder is not excluded, 2 usage or config error, 3 mds refused a change.
+See docs/SPOTLIGHT.md.
+"""
+from __future__ import annotations
+
+import argparse
+import ctypes
+import os
+import subprocess
+import sys
+import threading
+from dataclasses import dataclass, field
+from pathlib import Path
+
+DEFAULT_CONFIG = "~/.config/spotlight/exclusions"
+# The machine's own folders, never tracked: checkouts and workspaces only one
+# machine has. Read after the shared list, if present.
+LOCAL_SUFFIX = ".local"
+DEFAULT_COUNT_TIMEOUT_SECONDS = 60
+
+EXIT_DRIFT = 1
+EXIT_USAGE = 2
+EXIT_SPOTLIGHT = 3
+
+CORESERVICES = "/System/Library/Frameworks/CoreServices.framework/CoreServices"
+COREFOUNDATION = "/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation"
+UTF8 = 0x08000100  # kCFStringEncodingUTF8
+
+
+class ConfigError(Exception):
+    pass
+
+
+class SpotlightError(Exception):
+    pass
+
+
+def read_config(path: Path) -> list[str]:
+    """Configured folders, ~-expanded and normalized, in file order without duplicates."""
+    folders: list[str] = []
+    for number, line in enumerate(path.read_text().splitlines(), start=1):
+        entry = line.strip()
+        if not entry or entry.startswith("#"):
+            continue
+        expanded = os.path.expanduser(entry)
+        if not os.path.isabs(expanded):
+            raise ConfigError(f"{path}:{number}: {entry!r} is not an absolute or ~ path")
+        normalized = os.path.normpath(expanded)
+        if normalized not in folders:
+            folders.append(normalized)
+    return folders
+
+
+def identity(path: str) -> tuple[int, int] | None:
+    # Device and inode, so a firmlinked spelling (/System/Volumes/Data/Users/...)
+    # or a symlink matches the configured path.
+    try:
+        st = os.stat(path)
+    except (FileNotFoundError, NotADirectoryError):
+        return None
+    return st.st_dev, st.st_ino
+
+
+@dataclass
+class Plan:
+    add: list[str] = field(default_factory=list)       # present, not excluded yet
+    excluded: list[str] = field(default_factory=list)  # present and excluded
+    absent: list[str] = field(default_factory=list)    # not on this machine
+
+
+def plan(configured: list[str], current: list[str]) -> Plan:
+    current_ids = {i for i in map(identity, current) if i is not None}
+    result = Plan()
+    for folder in configured:
+        folder_id = identity(folder)
+        if folder_id is None:
+            result.absent.append(folder)
+        elif folder_id in current_ids:
+            result.excluded.append(folder)
+        else:
+            result.add.append(folder)
+    return result
+
+
+class Spotlight:
+    """The exclusion calls behind System Settings' Search Privacy list.
+
+    mds accepts them from the logged-in user without root, stores the list in
+    the volume's VolumeConfiguration.plist and drops the excluded items from
+    the index. Editing that plist directly instead needs root, a restart of
+    mds and a full rebuild of the index.
+    """
+
+    def __init__(self) -> None:
+        cs = ctypes.CDLL(CORESERVICES)
+        cf = ctypes.CDLL(COREFOUNDATION)
+        cs._MDCopyExclusionList.restype = ctypes.c_void_p
+        cs._MDCopyExclusionList.argtypes = []
+        # Returns 0 on success, otherwise an error code System Settings maps
+        # to "permission denied", "not indexed" and the like.
+        cs._MDSetExclusion.restype = ctypes.c_int32
+        cs._MDSetExclusion.argtypes = [ctypes.c_void_p, ctypes.c_bool]
+        cf.CFStringCreateWithCString.restype = ctypes.c_void_p
+        cf.CFStringCreateWithCString.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_uint32]
+        cf.CFStringGetMaximumSizeOfFileSystemRepresentation.restype = ctypes.c_long
+        cf.CFStringGetMaximumSizeOfFileSystemRepresentation.argtypes = [ctypes.c_void_p]
+        cf.CFStringGetFileSystemRepresentation.restype = ctypes.c_bool
+        cf.CFStringGetFileSystemRepresentation.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_long]
+        cf.CFArrayGetCount.restype = ctypes.c_long
+        cf.CFArrayGetCount.argtypes = [ctypes.c_void_p]
+        cf.CFArrayGetValueAtIndex.restype = ctypes.c_void_p
+        cf.CFArrayGetValueAtIndex.argtypes = [ctypes.c_void_p, ctypes.c_long]
+        cf.CFRelease.restype = None
+        cf.CFRelease.argtypes = [ctypes.c_void_p]
+        self._cs = cs
+        self._cf = cf
+
+    def exclusions(self) -> list[str]:
+        array = self._cs._MDCopyExclusionList()
+        if not array:
+            raise SpotlightError("reading the exclusion list: mds returned nothing")
+        try:
+            return [self._path(self._cf.CFArrayGetValueAtIndex(array, i))
+                    for i in range(self._cf.CFArrayGetCount(array))]
+        finally:
+            self._cf.CFRelease(array)
+
+    def set_excluded(self, path: str, excluded: bool) -> None:
+        string = self._cf.CFStringCreateWithCString(None, path.encode(), UTF8)
+        if not string:
+            raise SpotlightError(f"encoding {path!r}")
+        try:
+            code = self._cs._MDSetExclusion(string, excluded)
+        finally:
+            self._cf.CFRelease(string)
+        if code != 0:
+            verb = "excluding" if excluded else "including"
+            raise SpotlightError(f"{verb} {path}: mds error {code}")
+
+    def _path(self, string: int) -> str:
+        size = self._cf.CFStringGetMaximumSizeOfFileSystemRepresentation(string)
+        buffer = ctypes.create_string_buffer(size)
+        if not self._cf.CFStringGetFileSystemRepresentation(string, buffer, size):
+            raise SpotlightError("decoding an exclusion list entry")
+        return os.fsdecode(buffer.value)
+
+
+def count_timeout() -> int:
+    raw = os.environ.get("SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT", str(DEFAULT_COUNT_TIMEOUT_SECONDS))
+    if not raw.isdigit() or int(raw) < 1:
+        raise ConfigError(f"SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT={raw}: want a whole number of seconds, at least 1")
+    return int(raw)
+
+
+# A content-type query is answered from the index only; a kMDItemFSName
+# query falls back to a filesystem search and counts unindexed files too.
+INDEX_QUERY = 'kMDItemContentTypeTree == "public.item"'
+
+
+def indexed_items(folders: list[str], timeout: int) -> dict[str, str]:
+    """How many items under each folder the index still holds, '?' where mdfind fails.
+
+    Counted from one query per parent folder: mds answers nothing for a query
+    scoped to an excluded folder, yet its items stay in the index, and in the
+    results of every wider search, until mds has purged them.
+    """
+    by_parent: dict[str, list[str]] = {}
+    for folder in folders:
+        real = os.path.realpath(folder)
+        by_parent.setdefault(os.path.dirname(real), []).append(folder)
+    counts: dict[str, str] = {}
+    for parent, children in by_parent.items():
+        tally = count_under(parent, [os.path.realpath(c) for c in children], timeout)
+        for child in children:
+            found = tally.get(os.path.realpath(child))
+            counts[child] = "?" if found is None else str(found)
+    return counts
+
+
+def count_under(parent: str, folders: list[str], timeout: int) -> dict[str, int]:
+    """Indexed items mdfind reports under each of folders, all inside parent; empty if it fails."""
+    tally = dict.fromkeys(folders, 0)
+    prefixes = [(folder + os.sep, folder) for folder in folders]
+    try:
+        proc = subprocess.Popen(["mdfind", "-onlyin", parent, INDEX_QUERY],
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
+    except OSError:
+        return {}
+    # Streamed: a parent such as $HOME can hold millions of indexed items.
+    timer = threading.Timer(timeout, proc.kill)
+    timer.start()
+    try:
+        for line in proc.stdout:
+            path = line.rstrip("\n")
+            for prefix, folder in prefixes:
+                if path.startswith(prefix) or path == folder:
+                    tally[folder] += 1
+                    break
+    finally:
+        timer.cancel()
+        proc.stdout.close()
+    return tally if proc.wait() == 0 else {}
+
+
+def config_files() -> tuple[Path, Path]:
+    """The shared list and this machine's own list beside it."""
+    shared = Path(os.path.expanduser(os.environ.get("SPOTLIGHT_EXCLUSIONS_FILE", DEFAULT_CONFIG)))
+    return shared, shared.with_name(shared.name + LOCAL_SUFFIX)
+
+
+def configured_folders() -> list[str]:
+    """The shared list's folders, then the local list's, without duplicates."""
+    shared, local = config_files()
+    folders: list[str] = []
+    for config in (shared, local):
+        try:
+            entries = read_config(config)
+        except FileNotFoundError as err:
+            if config == local:
+                continue
+            raise ConfigError(f"reading {config}: {err.strerror}") from err
+        except OSError as err:
+            raise ConfigError(f"reading {config}: {err.strerror}") from err
+        for folder in entries:
+            if os.path.exists(folder) and not os.path.isdir(folder):
+                raise ConfigError(f"{config}: {folder} is not a folder")
+            if folder not in folders:
+                folders.append(folder)
+    return folders
+
+
+def cmd_apply(spotlight: Spotlight, dry_run: bool) -> int:
+    todo = plan(configured_folders(), spotlight.exclusions())
+    failed = 0
+    for folder in todo.add:
+        if dry_run:
+            print(f"would exclude {folder}")
+            continue
+        try:
+            spotlight.set_excluded(folder, True)
+            print(f"excluded {folder}")
+        except SpotlightError as err:
+            print(f"spotlight-exclusions: {err}", file=sys.stderr)
+            failed += 1
+    added = f"{len(todo.add)} to add" if dry_run else f"{len(todo.add) - failed} added"
+    print(f"{added}, {len(todo.excluded)} already excluded, "
+          f"{len(todo.absent)} absent on this machine, {failed} failed")
+    return EXIT_SPOTLIGHT if failed else 0
+
+
+def cmd_check(spotlight: Spotlight, counts: bool) -> int:
+    timeout = count_timeout() if counts else 0
+    todo = plan(configured_folders(), spotlight.exclusions())
+    rows = ([("excluded", f) for f in todo.excluded]
+            + [("MISSING", f) for f in todo.add]
+            + [("absent", f) for f in todo.absent])
+    indexed = indexed_items(todo.excluded + todo.add, timeout) if counts else {}
+    if counts:
+        print(f"{'state':<9} {'indexed':>8}  folder")
+    for state, folder in rows:
+        if counts:
+            print(f"{state:<9} {indexed.get(folder, '-'):>8}  {folder}")
+        else:
+            print(f"{state:<9} {folder}")
+    return EXIT_DRIFT if todo.add else 0
+
+
+def cmd_list(spotlight: Spotlight) -> int:
+    for path in spotlight.exclusions():
+        print(path)
+    return 0
+
+
+def cmd_remove(spotlight: Spotlight, paths: list[str]) -> int:
+    # The argument may spell the folder differently from the stored entry
+    # (symlink, firmlink), so the stored string is what gets removed.
+    stored = {i: entry for entry in spotlight.exclusions() if (i := identity(entry)) is not None}
+    not_excluded = failed = 0
+    for path in paths:
+        folder = os.path.abspath(os.path.expanduser(path))
+        entry = stored.get(identity(folder))
+        if entry is None:
+            print(f"spotlight-exclusions: {folder} is not excluded", file=sys.stderr)
+            not_excluded += 1
+            continue
+        try:
+            spotlight.set_excluded(entry, False)
+            print(f"included {entry}")
+        except SpotlightError as err:
+            print(f"spotlight-exclusions: {err}", file=sys.stderr)
+            failed += 1
+    if failed:
+        return EXIT_SPOTLIGHT
+    return EXIT_DRIFT if not_excluded else 0
+
+
+def main(argv: list[str]) -> int:
+    parser = argparse.ArgumentParser(
+        prog="spotlight-exclusions",
+        description="Keep Spotlight out of toolchains, package stores and app caches.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    apply = commands.add_parser("apply", help="exclude every configured folder that exists")
+    apply.add_argument("--dry-run", action="store_true", help="print what apply would exclude")
+    check = commands.add_parser("check", help="show each configured folder; exit 1 if one is not excluded")
+    check.add_argument("--counts", action="store_true",
+                       help="also count the items the index still holds under each folder (slow)")
+    commands.add_parser("list", help="print Spotlight's exclusion list")
+    remove = commands.add_parser("remove", help="take folders off the exclusion list")
+    remove.add_argument("paths", nargs="+", metavar="PATH")
+    args = parser.parse_args(argv)
+
+    if sys.platform != "darwin":
+        print("spotlight-exclusions: Spotlight exists only on macOS", file=sys.stderr)
+        return EXIT_USAGE
+    try:
+        spotlight = Spotlight()
+        if args.command == "apply":
+            return cmd_apply(spotlight, args.dry_run)
+        if args.command == "check":
+            return cmd_check(spotlight, args.counts)
+        if args.command == "list":
+            return cmd_list(spotlight)
+        return cmd_remove(spotlight, args.paths)
+    except ConfigError as err:
+        print(f"spotlight-exclusions: {err}", file=sys.stderr)
+        return EXIT_USAGE
+    except SpotlightError as err:
+        print(f"spotlight-exclusions: {err}", file=sys.stderr)
+        return EXIT_SPOTLIGHT
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

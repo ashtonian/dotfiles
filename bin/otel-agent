@@ -4,37 +4,92 @@
 #===============================================================================
 #
 # USAGE:
-#   otel-agent install                 install or update the pinned collector, and
-#                                      its LaunchAgent once a gateway is configured
-#   otel-agent configure URL < token   store the gateway URL and ingest token, then
-#                                      (re)start the LaunchAgent
-#   otel-agent serve                   run the collector (the LaunchAgent's entry point)
-#   otel-agent status                  service, health and export counters
-#   otel-agent ping                    send one test event through the pipeline
+#   otel-agent enroll HOST [--context CTX]   read HOST's ingest token and the gateway
+#                                            URL from the cluster with kubectl, then
+#                                            configure
+#   otel-agent configure URL HOST < token    store the gateway URL, this Mac's source
+#                                            name and its token, install the collector
+#                                            and (re)start it: dotfiles apply installs
+#                                            the LaunchAgent once enrollment exists
+#   otel-agent install                       install or update the pinned collector, and
+#                                            restart it once a gateway is configured
+#   otel-agent converge                      after a pull: install the pinned collector and
+#                                            restart it when what it runs from changed
+#   otel-agent check                         exit 0 when the collector can start, else
+#                                            print why and exit 78
+#   otel-agent serve                         run the collector (the LaunchAgent's entry point)
+#   otel-agent status                        service, host, queue and export counters
+#   otel-agent ping                          send one test event through the pipeline
 #
 # Claude Code, Codex and OpenCode export OTLP to 127.0.0.1:4318 (HTTP) or :4317
 # (gRPC). The collector deletes identities and tool content and forwards metrics
-# and log events to the gateway. See docs/AGENT-TELEMETRY.md.
+# and log events to the gateway, queueing on disk while it is unreachable. See
+# docs/AGENT-TELEMETRY.md.
 set -euo pipefail
 
-# One pinned release of the core distribution and the SHA-256 published with it.
-readonly OTELCOL_VERSION=0.163.1
-readonly OTELCOL_SHA256=664047e6ffd98ffaaf90d282bb481ffad46b1e8456f0b2f65e42d627d665d8d3
-readonly OTELCOL_URL=https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$OTELCOL_VERSION/otelcol_${OTELCOL_VERSION}_darwin_arm64.tar.gz
+# One pinned release of the contrib distribution (for file_storage) and the
+# SHA-256 published with each platform's archive.
+readonly OTELCOL_VERSION=0.165.0
+typeset -rA OTELCOL_SHA256=(
+	darwin_arm64 f9a0ed310e9beeb0fabca9d9c24bd0d3467f6339e3207710dbd66a6adf1298f6
+	darwin_amd64 7d14e5c14bcb930d55f2bd5d3fbb3734be5fd2889698488e65e488efda5473c9
+)
 
-bin_dir=${0:A:h} # captured here: inside a function $0 is the function name
-state=${OTEL_AGENT_HOME:-$HOME/.local/share/otel-agent}
+self=${0:A} # captured here: inside a function $0 is the function name
+bin_dir=${self:h}
+home=${OTEL_AGENT_HOME:-$HOME/.local/share/otel-agent}                     # gateway URL, token, host name
+state=${OTEL_AGENT_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/otel-agent} # disk queue, serving stamp
 libexec=${OTEL_AGENT_LIBEXEC:-$HOME/.local/libexec/otelcol}
 config=${OTEL_AGENT_CONFIG:-$HOME/.config/otel-agent/config.yaml}
-otelcol=$libexec/$OTELCOL_VERSION/otelcol
+case $(uname -m) in
+	arm64) platform=darwin_arm64 ;;
+	x86_64) platform=darwin_amd64 ;;
+	*) platform=unsupported ;;
+esac
+# Per version and platform: a build installed from a Rosetta shell is replaced
+# by the native one the next time the LaunchAgent starts.
+otelcol=$libexec/${OTELCOL_VERSION}_$platform/otelcol-contrib
+queue=$state/queue
 agent=com.ashtonian.otel-agent
 receiver=http://127.0.0.1:4318
 health_url=http://127.0.0.1:13134/
 metrics_url=http://127.0.0.1:8889/metrics
 
 die() { # die <exit status> <message>
-	print -u2 "otel-agent: $2"
+	print -u2 -r -- "otel-agent: $2"
 	exit $1
+}
+
+source ${bin_dir:h}/lib_sh/launch-agent.sh
+
+# valid_host: the gateway indexes Loki streams and Mimir series by host.name, so
+# it must be a short, stable source name (studio, mbp, mini), not a hostname.
+valid_host() {
+	[[ ${1:-} =~ '^[a-z0-9]([a-z0-9-]{0,30}[a-z0-9])?$' ]]
+}
+
+# host_name prints the enrolled source name; OTEL_AGENT_HOST overrides it.
+host_name() {
+	if [[ -n ${OTEL_AGENT_HOST:-} ]]; then
+		print -r -- $OTEL_AGENT_HOST
+	elif [[ -s $home/host ]]; then
+		print -r -- "$(<$home/host)"
+	fi
+}
+
+# config_problem prints why the collector cannot start, or nothing.
+config_problem() {
+	local host
+	host=$(host_name)
+	if [[ ! -s $home/endpoint || ! -s $home/token ]]; then
+		print "no gateway configured; run otel-agent enroll HOST"
+	elif [[ -z $host ]]; then
+		print "no host name configured; run otel-agent enroll HOST (studio, mbp or mini)"
+	elif ! valid_host $host; then
+		print "host name '$host' is not a short lowercase name; run otel-agent enroll HOST"
+	elif [[ ! -r $config ]]; then
+		print "missing $config; enable the agents.otel-agent feature and run dotfiles apply"
+	fi
 }
 
 # install_release downloads the pinned collector into a versioned directory and
@@ -42,64 +97,150 @@ die() { # die <exit status> <message>
 # grant tied to one binary.
 install_release() {
 	if [[ ! -x $otelcol ]]; then
-		[[ $(uname -m) == arm64 ]] || die 69 "only the darwin_arm64 release is pinned"
+		[[ -n ${OTELCOL_SHA256[$platform]:-} ]] || die 69 "no otelcol-contrib release is pinned for $(uname -m)"
+		local url=https://github.com/open-telemetry/opentelemetry-collector-releases/releases/download/v$OTELCOL_VERSION/otelcol-contrib_${OTELCOL_VERSION}_$platform.tar.gz
 		local tmp
 		tmp=$(mktemp -d)
 		trap "rm -rf '$tmp'" EXIT
-		curl -fsSL --retry 3 -o $tmp/otelcol.tar.gz $OTELCOL_URL
+		curl -fsSL --retry 3 -o $tmp/otelcol.tar.gz $url || die 69 "downloading $url failed"
 		local sum
 		sum=$(shasum -a 256 $tmp/otelcol.tar.gz)
 		sum=${sum%% *}
-		[[ $sum == $OTELCOL_SHA256 ]] || die 65 "checksum mismatch for $OTELCOL_URL (got $sum)"
-		tar -xzf $tmp/otelcol.tar.gz -C $tmp otelcol
+		[[ $sum == $OTELCOL_SHA256[$platform] ]] || die 65 "checksum mismatch for $url (got $sum)"
+		tar -xzf $tmp/otelcol.tar.gz -C $tmp otelcol-contrib
+		local out
+		out=$($tmp/otelcol-contrib --version 2>&1) \
+			|| die 70 "the $platform collector does not run on this Mac ($(uname -m), macOS $(sw_vers -productVersion)): $out"
+		# Moved in under a temporary name, then renamed: an interrupted install
+		# never leaves a partial binary at the path the -x check above trusts,
+		# and converge and serve installing at once never share a file.
 		mkdir -p ${otelcol:h}
-		mv $tmp/otelcol $otelcol
+		mv $tmp/otelcol-contrib $otelcol.partial.$$
+		mv $otelcol.partial.$$ $otelcol
 	fi
 	local dir
 	for dir in $libexec/*(N/); do
-		[[ ${dir:t} == $OTELCOL_VERSION ]] || rm -rf $dir
+		[[ $dir == ${otelcol:h} ]] || rm -rf $dir
 	done
+}
+
+# fingerprint identifies what a collector starts from: the pinned release, its
+# config and this script. serve records it and converge restarts the collector
+# when it no longer matches. dotfiles apply restarts it when its plist changes.
+fingerprint() {
+	{ print -r -- $OTELCOL_VERSION; cat $config $self } | shasum -a 256 | cut -d' ' -f1
+}
+
+agent_loaded() {
+	launchctl print gui/$UID/$agent >/dev/null 2>&1
+}
+
+# start_agent restarts the collector on what is configured now. Enrolling
+# satisfies the LaunchAgent's when_exists, so the first time apply installs it.
+start_agent() {
+	DOTFILES_DIR=${bin_dir:h} start_launch_agent $agent agents.otel-agent || exit
 }
 
 cmd_install() {
 	install_release
 	print "otel-agent: collector $OTELCOL_VERSION at $otelcol"
-	if [[ -s $state/endpoint && -s $state/token ]]; then
-		$bin_dir/dotfiles-install-launchagents.sh --otel-agent-only
+	if [[ -z $(config_problem) ]]; then
+		start_agent
 	else
-		print "otel-agent: next, run: otel-agent configure https://<gateway> < token-file"
+		print "otel-agent: next, run: otel-agent enroll HOST (see docs/AGENT-TELEMETRY.md)"
 	fi
 }
 
 cmd_configure() {
-	local url=${1:-}
+	local url=${1:-} host=${2:-}
 	url=${url%/}
-	[[ $url == https://?* ]] || die 64 "usage: otel-agent configure https://<gateway> < token-file"
+	[[ $url == https://?* ]] || die 64 "usage: otel-agent configure https://<gateway> HOST < token-file"
+	valid_host $host || die 64 "HOST is this Mac's source name (studio, mbp or mini): lowercase letters, digits and inner hyphens, at most 32"
 	local token=
 	IFS= read -r token || true
 	(( ${#token} >= 32 )) || die 65 "the token on stdin is shorter than 32 characters"
-	mkdir -p $state
-	chmod 700 $state
+	# The binary first: the LaunchAgent starts as soon as the host file exists.
+	install_release
+	mkdir -p $home
+	chmod 700 $home
 	(
 		umask 077
-		print -r -- $url >$state/endpoint
-		print -r -- $token >$state/token
+		print -r -- $url >$home/endpoint
+		print -r -- $token >$home/token
+		print -r -- $host >$home/host
 	)
-	chmod 600 $state/endpoint $state/token
-	if [[ -x $otelcol ]]; then
-		$bin_dir/dotfiles-install-launchagents.sh --otel-agent-only
-	else
-		print "otel-agent: gateway stored; run otel-agent install"
+	chmod 600 $home/endpoint $home/token $home/host
+	print "otel-agent: $host enrolled with $url"
+	start_agent
+}
+
+cmd_enroll() {
+	local host=${1:-} context=${OTEL_AGENT_KUBE_CONTEXT:-}
+	(( $# )) && shift
+	while (( $# )); do
+		case $1 in
+			--context)
+				[[ -n ${2:-} ]] || die 64 "usage: otel-agent enroll HOST [--context CONTEXT]"
+				context=$2
+				shift 2
+				;;
+			*) die 64 "usage: otel-agent enroll HOST [--context CONTEXT]" ;;
+		esac
+	done
+	valid_host $host || die 64 "usage: otel-agent enroll HOST [--context CONTEXT]; HOST is studio, mbp or mini"
+	if ! command -v kubectl >/dev/null; then
+		die 69 "kubectl is not installed here. From a Mac with cluster access, run:
+  kubectl -n monitoring get secret otel-gateway-token-$host -o jsonpath='{.data.token}' | base64 -d \\
+    | ssh <this mac> ~/.dotfiles/bin/otel-agent configure https://otel.<internal domain> $host"
 	fi
+	local -a kube=(kubectl)
+	[[ -n $context ]] && kube+=(--context=$context)
+	local domain token
+	domain=$($kube -n argocd get secret render-domains -o jsonpath='{.data.domain\.internal}' | base64 -d) \
+		|| die 69 "reading argocd/render-domains failed"
+	[[ -n $domain ]] || die 69 "argocd/render-domains has no domain.internal"
+	token=$($kube -n monitoring get secret otel-gateway-token-$host -o jsonpath='{.data.token}' | base64 -d) \
+		|| die 69 "reading monitoring/otel-gateway-token-$host failed"
+	print -r -- $token | cmd_configure https://otel.$domain $host
+}
+
+# cmd_converge brings an enrolled Mac to what the checkout pins. sync.sh runs it
+# after every apply; a Mac that never enrolled runs no collector and is skipped.
+cmd_converge() {
+	[[ -e $home/endpoint ]] || return 0
+	local problem
+	problem=$(config_problem)
+	[[ -z $problem ]] || die 78 $problem
+	install_release
+	# sync.sh converges right after dotfiles apply, which loads the agent.
+	agent_loaded || die 78 "$agent is not loaded: dotfiles apply loads it while the agents.otel-agent feature is on; see dotfiles doctor"
+	if [[ -s $state/serving && $(<$state/serving) == $(fingerprint) ]]; then
+		return 0
+	fi
+	launchctl kickstart -k gui/$UID/$agent
+	print "otel-agent: restarted the collector on otelcol-contrib $OTELCOL_VERSION"
+}
+
+cmd_check() {
+	local problem
+	problem=$(config_problem)
+	[[ -z $problem ]] || die 78 $problem
 }
 
 cmd_serve() {
-	[[ -x $otelcol ]] || die 78 "collector not installed; run otel-agent install"
-	[[ -s $state/endpoint && -s $state/token ]] || die 78 "gateway not configured; run otel-agent configure"
-	[[ -r $config ]] || die 78 "missing $config; enable the agents.otel-agent feature and run dotfiles apply"
-	export OTEL_AGENT_GATEWAY=$(<$state/endpoint)
-	export OTEL_AGENT_TOKEN=$(<$state/token)
-	export OTEL_AGENT_HOST=${OTEL_AGENT_HOST:-$(scutil --get LocalHostName 2>/dev/null || hostname -s)}
+	cmd_check
+	# A pull can move the pin before converge runs; the new config needs the new binary.
+	install_release
+	export OTEL_AGENT_GATEWAY=$(<$home/endpoint)
+	export OTEL_AGENT_TOKEN=$(<$home/token)
+	export OTEL_AGENT_HOST=$(host_name)
+	export OTEL_AGENT_QUEUE=$queue
+	mkdir -p $queue
+	chmod 700 $state $queue
+	# file_storage renames a corrupt queue file to <file>.<time>.backup; keep the newest.
+	local -a backups=($queue/*.backup(N.om))
+	(( $#backups <= 1 )) || rm -f $backups[2,-1]
+	fingerprint >$state/serving
 	exec $otelcol --config=$config
 }
 
@@ -110,18 +251,39 @@ cmd_status() {
 	else
 		print "service:   not loaded"
 	fi
-	if [[ -x $otelcol ]]; then print "collector: $OTELCOL_VERSION"; else print "collector: not installed"; fi
-	if [[ -s $state/endpoint ]]; then print "gateway:   $(<$state/endpoint)"; else print "gateway:   not configured"; fi
+	if [[ -x $otelcol ]]; then print "collector: otelcol-contrib $OTELCOL_VERSION ($platform)"; else print "collector: not installed"; fi
+	local host
+	host=$(host_name)
+	print "host:      ${host:-not configured}"
+	if [[ -s $home/endpoint ]]; then print "gateway:   $(<$home/endpoint)"; else print "gateway:   not configured"; fi
+	local -a files=($queue/exporter_*(N.))
+	if (( $#files )); then
+		local kib
+		kib=$(du -sk $queue)
+		print "queue:     $(( ${kib%%[[:space:]]*} / 1024 )) MiB on disk in $queue"
+	else
+		print "queue:     empty ($queue)"
+	fi
+	local problem
+	problem=$(config_problem)
+	[[ -z $problem ]] || print "problem:   $problem"
 	if curl -fsS -m 2 $health_url >/dev/null 2>&1; then print "health:    ok"; else print "health:    unreachable"; fi
 	local metrics
 	metrics=$(curl -fsS -m 2 $metrics_url 2>/dev/null) || return 0
-	# Totals since the collector started, summed over signals and exporters.
+	# Totals since the collector started, summed over exporters; the queue per
+	# signal, in bytes, against its capacity.
 	print -r -- $metrics | awk '
-		/^otelcol_(receiver_accepted|receiver_refused|exporter_sent|exporter_send_failed|exporter_enqueue_failed)_/ ||
-		/^otelcol_exporter_queue_size/ {
+		/^otelcol_(receiver_accepted|receiver_refused|exporter_sent|exporter_send_failed|exporter_enqueue_failed)_/ {
 			name = $1; sub(/\{.*/, "", name); total[name] += $NF
 		}
-		END { for (name in total) printf "  %-48s %d\n", name, total[name] }' | sort
+		/^otelcol_exporter_queue_(size|capacity)\{/ {
+			signal = $1; sub(/.*data_type="/, "", signal); sub(/".*/, "", signal)
+			if ($1 ~ /_size\{/) size[signal] += $NF; else capacity[signal] += $NF
+		}
+		END {
+			for (name in total) printf "  %-48s %d\n", name, total[name]
+			for (signal in capacity) printf "  %-48s %.1f of %d MiB\n", "queue " signal, size[signal] / 1048576, capacity[signal] / 1048576
+		}' | sort
 }
 
 # cmd_ping posts one log event that the gateway stores like any other, so a
@@ -139,10 +301,13 @@ cmd_ping() {
 }
 
 case ${1:-} in
-	install) cmd_install ;;
+	enroll) shift; cmd_enroll "$@" ;;
 	configure) shift; cmd_configure "$@" ;;
+	install) cmd_install ;;
+	converge) cmd_converge ;;
+	check) cmd_check ;;
 	serve) cmd_serve ;;
 	status) cmd_status ;;
 	ping) cmd_ping ;;
-	*) die 64 "usage: otel-agent install | configure URL < token | serve | status | ping" ;;
+	*) die 64 "usage: otel-agent enroll HOST [--context CTX] | configure URL HOST < token | install | converge | check | serve | status | ping" ;;
 esac

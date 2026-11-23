@@ -1,5 +1,5 @@
 id = "brew.dev-apps"
-description = "Development applications: editors, terminals, containers, database and API clients, agent apps"
+description = "Development applications: editors, containers, database and API clients, agent apps"
 category = "packages"
 platforms = ["darwin"]
 requires = ["brew.base"]
@@ -11,18 +11,11 @@ cask = [
   "bruno",
   "claude-code",
   "codex",
-  "codex-app",
-  "cursor",
-  "cyberduck",
   "dash",
-  "docker-desktop",
   "font-fira-code-nerd-font",
-  "gitkraken",
   "goland",
-  "iterm2",
   "lens",
-  "mqttx",
+  "orbstack",
   "postico",
   "visual-studio-code",
-  "wireshark-app",
 ]

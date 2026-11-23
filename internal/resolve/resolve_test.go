@@ -149,6 +149,7 @@ func TestSettings(t *testing.T) {
 		feature("app", on,
 			setting("app.path", manifest.Setting{Type: "path", Default: "~/default"}),
 			setting("app.token", manifest.Setting{Type: "secret", Required: true}),
+			setting("app.mode", manifest.Setting{Type: "string", Default: "report", Values: []string{"report", "apply"}}),
 		),
 		feature("plugin", on, requires("app")),
 		feature("off", setting("off.flag", manifest.Setting{Type: "bool"})),
@@ -164,6 +165,7 @@ func TestSettings(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, Value{Value: "~/profile", Source: "profile:base"}, res.Settings["app.path"])
 		assert.Equal(t, Value{Value: secret, Source: "machine"}, res.Settings["app.token"])
+		assert.Equal(t, Value{Value: "report", Source: "default"}, res.Settings["app.mode"])
 		assert.NotContains(t, res.Settings, "off.flag")
 		assert.Empty(t, res.Missing)
 		assert.Equal(t, []string{"app", "plugin"}, res.Runnable(features))
@@ -183,6 +185,7 @@ func TestSettings(t *testing.T) {
 		{"an unknown setting", map[string]any{"nope": "x"}, `unknown setting "nope"`},
 		{"a wrong type", map[string]any{"app.path": int64(3)}, "want a string"},
 		{"a secret value instead of a reference", map[string]any{"app.token": "hunter2"}, "never a value"},
+		{"a value the setting does not list", map[string]any{"app.mode": "aply"}, `setting "app.mode": want one of report, apply, got "aply"`},
 	}
 	for _, tt := range errorCases {
 		t.Run(tt.name, func(t *testing.T) {
