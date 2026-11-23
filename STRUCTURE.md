@@ -13,7 +13,7 @@ This file maps the checked-in implementation.
 ├── sync.sh                  # Signed Git publication, engine build and apply, packages
 ├── go.mod                   # The feature engine's Go module
 ├── cmd/dotfiles/            # Engine command: init, apply, doctor, status, check, adopt
-├── internal/manifest/       # Feature, profile and machine manifests; strict parsing and validation
+├── internal/manifest/       # Feature, profile and machine manifests from the repository and overlays; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
 ├── internal/plan/           # Links, managed copies, generated outputs, stubs and LaunchAgents to install
 ├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, state, teardown, locking
@@ -206,12 +206,13 @@ its loaded plist settings. Reloading always-on services interrupts attached
 sessions.
 
 Sync holds `logs/sync.flock` using macOS lockf (the weekly update holds it for
-its whole run too, so the two never overlap), runs `dotfiles apply` right after
+its whole run too, so the two never overlap), syncs the overlays `machine.toml`
+lists (the engine names their checkouts) and runs `dotfiles apply` right after
 the dotfiles merge (refusing to merge an engine layout this machine cannot
 install: no `machine.toml`, no Go, or an upstream engine that does not build here
 or cannot plan the manifest), then installs the generated Brewfile's missing packages with
 `--no-upgrade`. It does not run Mackup. Git sync is
-separate for dotfiles and each immediate Git repo under `SYNC_DIR`. It signs
+separate for dotfiles, each listed overlay, and each immediate Git repo under `SYNC_DIR`. It signs
 commits and merges, verifies outgoing signatures, and checks GitHub verification
 after publishing. Auxiliary merges use `-X ours`, which prefers local conflicting
 hunks rather than discarding all remote changes. Only dotfiles gets secret scans.

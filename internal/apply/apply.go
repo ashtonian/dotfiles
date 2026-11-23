@@ -23,14 +23,20 @@ import (
 	"github.com/ashtonian/dotfiles/internal/plan"
 )
 
+// Root is a checkout the plan installs from: the dotfiles repository or an
+// overlay. Links into it are apply's own, including stow's old ones.
+type Root struct {
+	Dir string
+	// Tracked reports whether a path relative to Dir is tracked by git.
+	// Unfolding moves only untracked files home: moving a tracked one would
+	// delete it from the checkout on the next sync.
+	Tracked func(rel string) bool
+}
+
 // Env is the machine apply works on.
 type Env struct {
-	Home     string
-	RepoRoot string // links into this tree are apply's own, including stow's old ones
-	// Tracked reports whether a path relative to RepoRoot is tracked by git.
-	// Unfolding moves only untracked files home: moving a tracked one would
-	// delete it from the repository on the next sync.
-	Tracked func(rel string) bool
+	Home  string
+	Roots []Root
 	// StowTree is the retired stow tree inside the repository, laid out as
 	// <package>/<path under $HOME>. Files still in it after the migration are
 	// untracked files a tool wrote, or that an older sync linked one by one;
@@ -87,17 +93,30 @@ type Report struct {
 	Waiting  []Waiting
 }
 
+// spelling is one way to write a root's directory: as given, or with
+// symlinks resolved.
+type spelling struct {
+	dir  string
+	root int // index into Env.Roots
+}
+
+// rootPath is a path inside one of the roots.
+type rootPath struct {
+	root int
+	rel  string
+}
+
 type runner struct {
-	ctx    context.Context
-	env    Env
-	repos  []string // the repository root as given and with symlinks resolved
-	prev   *State
-	next   *State
-	dryRun bool
-	report Report
-	// sources holds every planned link and copy source, relative to the
-	// repository; unfolding leaves them in place even before they are tracked.
-	sources  map[string]bool
+	ctx       context.Context
+	env       Env
+	spellings []spelling
+	prev      *State
+	next      *State
+	dryRun    bool
+	report    Report
+	// sources holds every planned link and copy source; unfolding leaves them
+	// in place even before they are tracked.
+	sources  map[rootPath]bool
 	unfolded map[string]bool // folded directories handled this run
 	// unrecorded maps the labels of LaunchAgents to remove that apply has no
 	// record of installing to their plists: the retired installer's.
@@ -109,31 +128,39 @@ type runner struct {
 // the report lists what would. I/O failures stop the run; conflicts are
 // reported as problems and leave the file untouched.
 func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (*Report, *State, error) {
-	if env.Tracked == nil {
-		return nil, nil, errors.New("apply: Env.Tracked is required")
+	if len(env.Roots) == 0 {
+		return nil, nil, errors.New("apply: Env.Roots is required")
+	}
+	for _, root := range env.Roots {
+		if root.Tracked == nil {
+			return nil, nil, fmt.Errorf("apply: root %s needs Tracked", root.Dir)
+		}
 	}
 	if env.Launchd == nil && !env.LeaveLaunchAgents && (len(p.LaunchAgents) > 0 || len(p.OffAgents) > 0 || len(prev.Agents) > 0) {
 		return nil, nil, errors.New("apply: LaunchAgents need Env.Launchd, and launchd runs only on macOS")
 	}
 	r := &runner{ctx: ctx, env: env, prev: prev, next: newState(), dryRun: dryRun,
-		sources: map[string]bool{}, unfolded: map[string]bool{}, unrecorded: map[string]string{}}
+		sources: map[rootPath]bool{}, unfolded: map[string]bool{}, unrecorded: map[string]string{}}
 	for label, target := range p.OffAgents {
 		if _, recorded := prev.Agents[label]; !recorded {
 			r.unrecorded[label] = target
 		}
 	}
-	r.repos = []string{filepath.Clean(env.RepoRoot)}
-	if resolved, err := filepath.EvalSymlinks(env.RepoRoot); err == nil && resolved != r.repos[0] {
-		r.repos = append(r.repos, resolved)
+	for i, root := range env.Roots {
+		given := filepath.Clean(root.Dir)
+		r.spellings = append(r.spellings, spelling{dir: given, root: i})
+		if resolved, err := filepath.EvalSymlinks(given); err == nil && resolved != given {
+			r.spellings = append(r.spellings, spelling{dir: resolved, root: i})
+		}
 	}
 	for _, l := range p.Links {
-		if rel, ok := r.repoRel(l.Source); ok {
-			r.sources[rel] = true
+		if at, ok := r.locate(l.Source); ok {
+			r.sources[at] = true
 		}
 	}
 	for _, c := range p.Copies {
-		if rel, ok := r.repoRel(c.Source); ok {
-			r.sources[rel] = true
+		if at, ok := r.locate(c.Source); ok {
+			r.sources[at] = true
 		}
 	}
 
@@ -182,31 +209,36 @@ func (r *runner) problem(path, detail string) {
 }
 
 // inRepo reports whether the symlink at link, whose destination is dest,
-// points into the repository.
+// points into one of the roots.
 func (r *runner) inRepo(link, dest string) bool {
 	if !filepath.IsAbs(dest) {
 		dest = filepath.Join(filepath.Dir(link), dest)
 	}
 	dest = filepath.Clean(dest)
-	for _, repo := range r.repos {
-		if dest == repo || strings.HasPrefix(dest, repo+string(filepath.Separator)) {
+	for _, s := range r.spellings {
+		if dest == s.dir || strings.HasPrefix(dest, s.dir+string(filepath.Separator)) {
 			return true
 		}
 	}
 	return false
 }
 
-// repoRel returns path relative to the repository, under either spelling of
-// the repository root.
-func (r *runner) repoRel(path string) (string, bool) {
+// locate returns the root path is inside, under either spelling of the
+// root's directory, and path relative to it.
+func (r *runner) locate(path string) (rootPath, bool) {
 	path = filepath.Clean(path)
-	for _, repo := range r.repos {
-		if strings.HasPrefix(path, repo+string(filepath.Separator)) {
-			rel, err := filepath.Rel(repo, path)
-			return rel, err == nil
+	for _, s := range r.spellings {
+		if strings.HasPrefix(path, s.dir+string(filepath.Separator)) {
+			rel, err := filepath.Rel(s.dir, path)
+			return rootPath{root: s.root, rel: rel}, err == nil
 		}
 	}
-	return "", false
+	return rootPath{}, false
+}
+
+// tracked reports whether git tracks the file at at.
+func (r *runner) tracked(at rootPath) bool {
+	return r.env.Roots[at.root].Tracked(at.rel)
 }
 
 // foldedParents returns the directories between $HOME and target that are
@@ -275,7 +307,7 @@ func (r *runner) unfold(dir string) error {
 		if d.IsDir() {
 			return nil
 		}
-		if rel, ok := r.repoRel(path); ok && (r.sources[rel] || r.env.Tracked(rel)) {
+		if at, ok := r.locate(path); ok && (r.sources[at] || r.tracked(at)) {
 			return nil
 		}
 		rel, err := filepath.Rel(dest, path)
@@ -329,8 +361,8 @@ func (r *runner) unfold(dir string) error {
 }
 
 // removeEmptyDirs removes the directories unfolding left empty: those under
-// root, root itself, and then its parents up to the repository root. Git does
-// not track directories, so an empty one in the repository is clutter.
+// root, root itself, and then its parents up to the checkout's root. Git does
+// not track directories, so an empty one in a checkout is clutter.
 func (r *runner) removeEmptyDirs(root string) {
 	var dirs []string
 	_ = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
@@ -343,7 +375,7 @@ func (r *runner) removeEmptyDirs(root string) {
 		_ = os.Remove(dirs[i]) // fails, as intended, unless the directory is empty
 	}
 	for dir := filepath.Dir(root); ; dir = filepath.Dir(dir) {
-		if _, inside := r.repoRel(dir); !inside || os.Remove(dir) != nil {
+		if _, inside := r.locate(dir); !inside || os.Remove(dir) != nil {
 			return
 		}
 	}
@@ -436,7 +468,7 @@ func (r *runner) rescueStowTree() error {
 			return err
 		}
 		_, under, found := strings.Cut(filepath.ToSlash(rel), "/")
-		if repoRel, ok := r.repoRel(file); !found || (ok && r.env.Tracked(repoRel)) {
+		if at, ok := r.locate(file); !found || (ok && r.tracked(at)) {
 			continue // a package's own README, or a file git still tracks
 		}
 		target := filepath.Join(r.env.Home, filepath.FromSlash(under))

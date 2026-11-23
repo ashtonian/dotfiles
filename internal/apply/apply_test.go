@@ -23,6 +23,7 @@ type machine struct {
 	state                 *State
 	disable               []string
 	tracked               map[string]bool // repository paths git tracks, slash-separated
+	overlay               string          // the "personal" overlay's checkout; empty for none
 	launchd               *fakeLaunchd    // nil: the plan has no LaunchAgents
 	job                   string          // the launchd job the run executes in
 }
@@ -65,7 +66,11 @@ func (m *machine) write(rel, content string) {
 
 func (m *machine) plan() *plan.Plan {
 	m.t.Helper()
-	features, err := manifest.LoadFeatures(m.repo)
+	roots := []manifest.Root{{Dir: m.repo}}
+	if m.overlay != "" {
+		roots = append(roots, manifest.Root{Dir: m.overlay, Overlay: "personal"})
+	}
+	features, err := manifest.LoadFeatures(roots...)
 	require.NoError(m.t, err)
 	res, err := resolve.Resolve(features, nil, &manifest.Machine{Features: manifest.Selection{Disable: m.disable}}, m.goos)
 	require.NoError(m.t, err)
@@ -76,8 +81,11 @@ func (m *machine) plan() *plan.Plan {
 
 func (m *machine) run(dryRun bool) *Report {
 	m.t.Helper()
-	env := Env{Home: m.home, RepoRoot: m.repo, StowTree: filepath.Join(m.repo, "stow"),
-		Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }, Job: m.job}
+	env := Env{Home: m.home, StowTree: filepath.Join(m.repo, "stow"), Job: m.job,
+		Roots: []Root{{Dir: m.repo, Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}}}
+	if m.overlay != "" {
+		env.Roots = append(env.Roots, Root{Dir: m.overlay, Tracked: func(string) bool { return false }})
+	}
 	if m.launchd != nil {
 		env.Launchd = m.launchd
 	}
@@ -140,6 +148,44 @@ func TestDisablingAFeatureRemovesWhatItInstalled(t *testing.T) {
 	assert.NoFileExists(t, m.at(".config/shell/a.sh"))
 	// A stub belongs to the owner once created.
 	assert.FileExists(t, m.at(".zshrc"))
+}
+
+// withOverlay gives the machine a "personal" overlay whose one feature links
+// a rules file.
+func (m *machine) withOverlay() string {
+	m.t.Helper()
+	m.overlay = filepath.Join(filepath.Dir(m.repo), "overlays", "personal")
+	write := func(rel, content string) {
+		path := filepath.Join(m.overlay, rel)
+		require.NoError(m.t, os.MkdirAll(filepath.Dir(path), 0o755))
+		require.NoError(m.t, os.WriteFile(path, []byte(content), 0o644))
+	}
+	write("features/personal.rules/feature.toml", "id = \"personal.rules\"\ndefault = true\n[provides]\nlink = [\".claude/rules/personal.md\"]\n")
+	write("features/personal.rules/home/.claude/rules/personal.md", "rules\n")
+	return filepath.Join(m.overlay, "features", "personal.rules", "home", ".claude", "rules", "personal.md")
+}
+
+func TestOverlayLinksAreApplysOwn(t *testing.T) {
+	m := newMachine(t)
+	source := m.withOverlay()
+	m.run(false)
+	dest, err := os.Readlink(m.at(".claude/rules/personal.md"))
+	require.NoError(t, err)
+	assert.Equal(t, source, dest)
+	assert.Empty(t, m.run(false).Actions, "a second run changes nothing")
+
+	// A link into the overlay from an older layout is apply's to replace.
+	require.NoError(t, os.Remove(m.at(".claude/rules/personal.md")))
+	require.NoError(t, os.Symlink(filepath.Join(m.overlay, "old.md"), m.at(".claude/rules/personal.md")))
+	report := m.run(false)
+	assert.Empty(t, report.Problems)
+	assert.Equal(t, 1, kinds(report)["relink"])
+
+	// A machine that leaves the context loses what its overlay installed.
+	m.overlay = ""
+	report = m.run(false)
+	assert.Equal(t, 1, kinds(report)["unlink"])
+	assert.NoFileExists(t, m.at(".claude/rules/personal.md"))
 }
 
 func TestAFileInTheWayIsLeftAlone(t *testing.T) {
