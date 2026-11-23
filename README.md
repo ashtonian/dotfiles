@@ -53,6 +53,7 @@ recognize `/usr/local` Homebrew installations.
 | Mac App Store sign-in | The `brew.mas` feature's App Store apps |
 | Zinit and downloaded plugins | Interactive shell; first use downloads plugins |
 | Codex / Claude Code, authenticated separately | Their respective launchers and workers |
+| Muxy 2.5 or later in `/Applications` or `~/Applications`, or at `DOTFILES_MUXY_APP` (`tool.muxy` installs its cask) | Setting the shared Muxy settings through the `muxy config` inside the app |
 | OpenCode and a configured gateway | Optional coordinator; see its package README |
 
 Claude Code, gitstead, and gateway credentials need separate setup when those
@@ -67,7 +68,7 @@ under [Multi-Machine Setup](#multi-machine-setup) before relying on automatic sy
 | **Features** | What this machine's profiles enable, linked one file at a time; see [feature inventory](STRUCTURE.md#features) |
 | **Zinit** | Zsh plugin manager with deferred loading |
 | **Mackup** | Installed, but not run by sync; see [Mackup](#mackup-app-config-backup) |
-| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
+| **LaunchAgents** | Owned by `dotfiles apply`: sync every 4 hours, Friday updates, daily disk pruning, hourly Go build cache trim, the hourly Muxy server list, gpg-agent, and the Codex, OpenCode, agent dashboard and telemetry services once their setup exists ([list](docs/OPERATIONS.md#launchagents)) |
 
 ## Architecture
 
@@ -213,6 +214,8 @@ dotfiles doctor            # drift and conflicts, changing nothing; exit 1 if an
 dotfiles check             # validate the manifests and plan this machine; reads nothing in $HOME
 dotfiles overlays          # the checkout directory of each overlay machine.toml lists
 dotfiles adopt ~/.config/htop/htoprc   # make a managed copy's local edits the repository's version
+dotfiles adopt muxy:appearance.dark_theme   # the same for an app setting changed in the app
+dotfiles forget muxy:appearance.dark_theme  # drop the earlier value of a setting whose app is gone for good
 ```
 
 `apply` links each tracked file into `$HOME` on its own (never a directory),
@@ -226,6 +229,19 @@ file it did not create: a file in the way or a locally edited managed copy is
 reported and left alone. `dotfiles adopt <path>` copies a managed copy's local
 edits into its tracked file, which sync then publishes like any tracked edit. A
 second run with nothing changed does nothing.
+
+App settings that share a file with one machine's own state, such as Muxy's
+theme and Claude Code's `theme` in `~/.claude/settings.json`, are owned key by
+key: a feature's prefs file lists them, and `apply` sets each one through the
+app (`muxy config set` inside `Muxy.app`; an in-place edit of
+`settings.json`), leaving every other key to the machine. A setting changed in
+the app after apply set it is reported, never overwritten, and
+`dotfiles adopt <store>:<key>` keeps it; a `[prefs]` table in a profile or
+`machine.toml` gives one machine its own value (see
+[Profiles and machines](#profiles-and-machines)); disabling the feature puts
+back the value it replaced. See
+[App settings](docs/MACHINE-FEATURES.md#app-settings). `--app-timeout`
+(default `15s`) bounds each call to an app's settings tool.
 Without `machine.toml` it refuses to run, since no profile would apply and it
 would remove everything the profiles install.
 
@@ -242,8 +258,8 @@ removed.
 | Profile | Enables |
 | ------- | ------- |
 | `base` | Shared environment and zsh, git, ssh, gh/atuin/htop/colorls/mise settings, command-line packages, Spotlight exclusions (macOS) |
-| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs |
-| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, neofetch and Taskwarrior settings |
+| `dev` | Development apps, VS Code extensions, Go tools, Claude Code and MCP configs, Claude Code's Dracula theme |
+| `desktop` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`) and personal ones (`brew.desktop`: games, media, messaging, VPN; `brew.mas.personal`), the RescueTime and WakaTime trackers, OpenCode and the agent telemetry collector (both reach the home cluster), the Mackup config, passkey prompts turned off (`browser.passkeys-off`), the Karabiner mouse mapping (`tool.karabiner`), Muxy with its shared settings (Dracula, FiraCode Nerd Font at 14), its command line tool and the other Macs as its remote servers |
 | `server` | Nothing yet; power, remote login and firewall settings arrive with `config.sh`'s migration |
 | `work` | Desktop and App Store apps for any desk (`brew.apps`, `brew.mas`, which needs an App Store sign-in); personal features come only from `desktop`, which the work machine does not use |
 | `studio` | Host facts only: Playwright's browsers and the agent dashboard's data on the E2TB volume |
@@ -254,7 +270,7 @@ removed.
 | Mac mini | `base, dev, desktop, server` | `personal` and the clients worked from it |
 | A client's machine | `base, dev, work` | that client's only |
 
-Override one feature or setting for one machine in `machine.toml`:
+Override one feature, setting or app setting for one machine in `machine.toml`:
 
 ```toml
 profiles = ["base", "dev", "desktop", "server"]
@@ -264,7 +280,23 @@ disable = ["tool.colorls"]
 
 [settings]
 "paths.playwright_browsers" = "~/Library/Caches/ms-playwright"
+
+[prefs]
+"muxy:terminal.font_size" = 13.0   # instead of tool.muxy's shared 14.0
 ```
+
+| Table | Keys | Overrides | Checked |
+| --- | --- | --- | --- |
+| `[features]` | `enable`, `disable`: feature ids | the feature's `default`, then each profile in order | an unknown id is an error |
+| `[settings]` | setting names, such as `"paths.playwright_browsers"` | the declaring feature's default, then each profile's `[settings]` in order | an unknown name or a value of the wrong type is an error |
+| `[prefs]` | app settings, `<store>:<key>` as `dotfiles adopt` names them, such as `"muxy:terminal.font_size"` | the owning feature's prefs file, then each profile's `[prefs]` in order | a key no enabled feature owns, or a value the store cannot take, is a plan error |
+
+A profile's `[prefs]` table works the same way for every machine that lists
+the profile. Changing or removing an override takes effect on the next apply
+(removing one returns the setting to the shared value); disabling the feature
+still puts back the value from before dotfiles. `dotfiles check`, `doctor` and
+`status` show each app setting's value and where it comes from; see
+[Per-machine overrides](docs/MACHINE-FEATURES.md#per-machine-overrides).
 
 ### Overlays
 
@@ -296,11 +328,16 @@ profiles = ["base", "dev", "desktop", "studio", "personal"]
   overlay, to its own remote, before `apply` reads it.
 - Taking an overlay off the list removes what its features installed on the
   next `apply`.
+- An overlay's `denylist.txt` lists the names it keeps private, one per line
+  (`#` comments). Before sync publishes this repository it fails if a tracked
+  line names one, as a whole word in any case, and so does
+  `bin/check-private-names` (run it before pushing a branch). The lists stay
+  in the overlays, so public CI never sees them.
 
 | Exit status | Meaning |
 | ----------- | ------- |
 | 0 | Done; for `doctor`, nothing to fix |
-| 1 | Problems left for you (a file in the way, an edited copy, a missing setting), or for `doctor`, pending changes |
+| 1 | Problems left for you (a file in the way, an edited copy, an app setting changed in the app, an app that is not installed, a missing setting), or for `doctor`, pending changes |
 | 2 | The manifests are invalid or contradict each other (unknown key or feature, a requirement disabled on purpose, a conflict), or a listed overlay is not cloned |
 | 64 | Usage |
 | 70 | An I/O failure |
@@ -476,8 +513,9 @@ checks it. Setup, configuration, operations and security:
 Repositories list the MCP servers they need in committed `.mcp.json` (Claude
 Code) and `.codex/config.toml` (Codex) files; every entry runs
 `agent-mcp <server>`, which pins each server's binary and flags in one place.
-Servers load only where they are used: Serena in the Go repositories, the code
-graph in karsto, Kubernetes, Terraform and Grafana in home-ops. See
+Servers load only where they are used: Serena in the Go repositories, a code
+graph in the application repositories, Kubernetes, Terraform and Grafana in the
+infrastructure repositories. See
 [docs/AGENT-MCP.md](docs/AGENT-MCP.md).
 
 ### Agent telemetry
@@ -547,6 +585,36 @@ brew install --cask karabiner-elements
 Checking the button with Karabiner-EventViewer, and troubleshooting:
 [docs/KARABINER.md](docs/KARABINER.md).
 
+## Muxy remote servers
+
+Feature `tool.muxy` (desktop profile) makes each Mac's Muxy list the other Macs of
+every context it works in as remote servers. Each context's overlay names its Macs:
+`Host` aliases in an `ssh_config` fragment, and a list linked to
+`~/.config/muxy/servers.d/<context>.toml`. `muxy-reconcile`, run by the LaunchAgent
+`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, when apply
+rewrites its generated files, and hourly,
+rewrites only the `[[servers]]` tables of Muxy's `settings.toml`: it leaves out the Mac
+it runs on, keeps the ids of entries that already reach the same Mac (Muxy ties tabs to
+them), keeps entries added by hand, and writes only what Muxy's own parser accepts. Until
+a Mac's `machine.toml` sets `muxy.reconcile` to `apply`, it only logs what it would change
+(the Mac mini moves first; [Rollout](docs/MUXY.md#rollout)).
+`~/.local/bin/muxy` runs the app's own `muxy`, which is also what Muxy on the other Macs
+starts over SSH. While Muxy's own server copy `~/.local/bin/.muxy` exists, apply leaves
+`~/.local/bin/muxy` alone (a running server may execute from it); the copy is retired by
+hand at a planned server restart only. Neither apply nor `muxy-reconcile` stops, restarts
+or upgrades a Muxy server. One Mac leaves out, adds or renames servers, or changes how one
+is reached, in files only it has (`muxy.exclude_servers` in `machine.toml`, a local list,
+`~/.ssh/config.local`). Once per Mac:
+
+```sh
+dotfiles doctor            # "waiting ~/.local/bin/muxy": Muxy's own server copy is here; leave it
+ssh <alias> true           # once per listed Mac: accept its host key
+muxy-reconcile --mode report   # what it would change, checked by Muxy; writes nothing
+```
+
+The algorithm, configuration, exit statuses and troubleshooting:
+[docs/MUXY.md](docs/MUXY.md).
+
 ## Multi-Machine Setup
 
 This repo is designed to sync across multiple machines via LaunchAgent (every 4 hours). Each machine converges on the features its profiles enable and installs their missing packages; app settings backup returns with rollout step 8 (see [Mackup](#mackup-app-config-backup)).
@@ -599,7 +667,7 @@ repository.
 - **Publishing**: Gitleaks scans staged dotfiles and outgoing commits with redacted output; auxiliary repos are not scanned. Missing tools, scan failures, signing failures and merge failures stop publication. GitHub verification is checked after the push and does not undo publication on failure; bad_email requires correcting the signing identity.
 - **Locking**: macOS `lockf` holds `logs/sync.flock` open during sync and during the weekly update, so packages never upgrade while a sync runs `brew bundle` or `dotfiles apply` (`lib_sh/sync-lock.sh`). A sync that finds the lock held skips its run; the update waits up to `UPDATE_LOCK_WAIT` seconds (30 minutes) and runs its own sync inside its lock. The file remains after exit, and its presence does not mean the lock is held. Check availability with `sync.sh check`.
 - **Failures**: Sync returns a nonzero status when an operation fails and records the failure in `logs/sync.log`.
-- **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local` and `Brewfile.local` are never tracked.
+- **Local overrides**: `machine.toml`, the stubs, `.gitconfig.local`, `.zshrc.local`, `.ssh/config.local`, `Brewfile.local` and `~/.config/spotlight/exclusions.local` are never tracked.
 
 ## Mackup: App Config Backup
 

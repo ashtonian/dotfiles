@@ -6,7 +6,7 @@
 # Nothing site-specific lives here: bin/otel-agent serve reads the gateway URL,
 # token and host name from ~/.local/share/otel-agent and passes them, with the
 # queue directory, as environment variables. The redaction patterns must match
-# the gateway's (home-ops k8s/monitoring/otel-gateway/configmap.yaml), which
+# the cluster gateway's config (k8s/monitoring/otel-gateway), which
 # repeats them in case a client skips this collector.
 extensions:
   health_check:

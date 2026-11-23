@@ -165,13 +165,13 @@ claudeclean() {
   echo "Removed ${removed} dead session(s), $(ls ~/.claude/sessions/*.json(N) 2>/dev/null | wc -l | tr -d ' ') active remaining"
 }
 
-# Open the gitstead fleet `fleet` (gox, estavelle, karsto): one tab per workspace,
-# one split per agent, claudemore in each, as tmux -CC panes inside iTerm.
-# gitstead flags pass through: `claudefleet --agent astra`, `--launcher iterm`,
-# `--launcher muxy`, `--fresh`. One workspace: `gitstead ws open gox`.
+# Open the gitstead fleet `fleet` (its workspaces come from the overlays'
+# gitstead config): one tab per workspace, one split per agent, claudemore in
+# each, as tmux -CC panes inside iTerm. gitstead flags pass through:
+# `claudefleet --agent astra`, `--launcher iterm`, `--launcher muxy`, `--fresh`.
+# One workspace: `gitstead ws open <workspace>`.
 claudefleet() {
   gitstead fleet open fleet "$@"
 }
-[ -f ~/.corio-bench-secrets ] && source ~/.corio-bench-secrets
 
 (( $+functions[dotfiles_greeting] )) && dotfiles_greeting

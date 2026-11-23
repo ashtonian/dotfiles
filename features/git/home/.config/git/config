@@ -157,12 +157,6 @@
 [pull]
 	rebase = false
 
-# home-ops: run its leak guard hooks in every clone and worktree (home-ops .githooks/README.md).
-[includeIf "hasconfig:remote.*.url:git@github.com:ashtonian/home-ops.git"]
-    path = ~/.config/home-ops/hooks.gitconfig
-[includeIf "hasconfig:remote.*.url:https://github.com/ashtonian/home-ops.git"]
-    path = ~/.config/home-ops/hooks.gitconfig
-
 # Last, so they win over everything above: fragments of the enabled features
 # (dotfiles apply), then machine-local settings. ~/.gitconfig wins over both.
 [include]

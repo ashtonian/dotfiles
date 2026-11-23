@@ -59,9 +59,17 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a stub keyword that is not one word", "a", "id = \"a\"\n[provides]\nstub = [{ path = \".ssh/config\", line = \"Include x\", before = [\"Host *\"] }]\n", "must be one word"},
 		{"a setting with an unknown type", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"float\"\n", `unknown type "float"`},
 		{"a secret default that is a value", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"secret\"\ndefault = \"hunter2\"\n", "never a value"},
+		{"values for a setting that is not a string", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"int\"\nvalues = [\"1\"]\n", "only a string setting can"},
+		{"the same value twice", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"string\"\nvalues = [\"on\", \"on\"]\n", "must be distinct"},
+		{"a default that is not one of the values", "a", "id = \"a\"\n[settings.\"a.x\"]\ntype = \"string\"\ndefault = \"of\"\nvalues = [\"on\", \"off\"]\n", `want one of on, off, got "of"`},
+		{"an unknown preference store", "a", "id = \"a\"\n[provides.prefs]\niterm = \"iterm.toml\"\n", `prefs names unknown store "iterm"`},
+		{"a prefs file outside the feature", "a", "id = \"a\"\n[provides.prefs]\nmuxy = \"../muxy.toml\"\n", "leaves the feature directory"},
 		{"a launch agent that is not a plist", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"agent.xml\"\n", "must be a .plist file"},
 		{"a launch agent outside the feature", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"../com.example.a.plist\"\n", "leaves the feature directory"},
 		{"a relative when_exists", "a", "id = \"a\"\n[[provides.launch_agent]]\nplist = \"com.example.a.plist\"\nwhen_exists = [\"bin/tool\"]\n", "must be absolute or start with ~/"},
+		{"a hold on a path it does not link", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/b\" = [\"~/.b\"]\n", `link_unless_exists names ".local/bin/b", which is not in link`},
+		{"a hold with no paths", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = []\n", "list the paths that hold it"},
+		{"a relative hold", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = [\".local/bin/.a\"]\n", "must be absolute or start with ~/"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -88,6 +96,23 @@ when_exists = ["/opt/homebrew/bin/go", "~/.config/trim/enabled"]
 	require.NoError(t, err)
 	assert.Equal(t, []LaunchAgent{{Plist: "launchagents/com.example.trim.plist",
 		WhenExists: []string{"/opt/homebrew/bin/go", "~/.config/trim/enabled"}}}, features["tool.trim"].Provides.LaunchAgent)
+}
+
+func TestLoadFeaturesReadsLinkHolds(t *testing.T) {
+	root := t.TempDir()
+	writeFeature(t, root, "tool.a", `
+id = "tool.a"
+
+[provides]
+link = [".local/bin/a", ".local/bin/b"]
+
+[provides.link_unless_exists]
+".local/bin/a" = ["~/.local/bin/.a", "/opt/a"]
+`)
+	features, err := LoadFeatures(Root{Dir: root})
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{".local/bin/a": {"~/.local/bin/.a", "/opt/a"}},
+		features["tool.a"].Provides.LinkUnlessExists)
 }
 
 func TestLoadFeaturesRejectsALaunchAgentDeclaredTwice(t *testing.T) {
@@ -128,7 +153,7 @@ disable = ["shell.greeting"]
 	require.NoError(t, os.WriteFile(path, MachineFile(nil, []string{"base", "dev"}), 0o644))
 	m, err = LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Profiles: []string{"base", "dev"}}, m, "MachineFile round-trips")
 }
 
 func writeProfile(t *testing.T, root, name, body string) {
@@ -218,7 +243,7 @@ func TestLoadMachineOverlays(t *testing.T) {
 	require.NoError(t, os.WriteFile(path, MachineFile([]string{"personal", "client-a"}, []string{"base"}), 0o644))
 	m, err := LoadMachine(path)
 	require.NoError(t, err)
-	assert.Equal(t, &Machine{Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
+	assert.Equal(t, &Machine{Path: path, Overlays: []string{"personal", "client-a"}, Profiles: []string{"base"}}, m, "MachineFile round-trips")
 
 	for _, body := range []string{"overlays = [\"personal\", \"personal\"]\n", "overlays = [\"a.b\"]\n", "overlays = [\"../x\"]\n"} {
 		require.NoError(t, os.WriteFile(path, []byte(body), 0o644))

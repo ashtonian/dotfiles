@@ -1,0 +1,41 @@
+id = "tool.muxy"
+description = "Muxy, its terminal font and the Muxy settings every machine shares; Muxy's command line tool from the app, and the other Macs as Muxy remote servers from each context's list (muxy-reconcile)"
+category = "tools"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+cask = ["muxy", "font-fira-code-nerd-font"]
+# muxy-reconcile needs Python 3.11 or later (tomllib); /usr/bin/python3 is 3.9.
+brew = ["python"]
+# ~/.local/bin/muxy is what Muxy on another Mac runs over SSH.
+link = [".local/bin/muxy", ".local/bin/muxy-reconcile"]
+
+[provides.prefs]
+muxy = "muxy.toml"
+
+# Muxy's own "Install muxy-server" keeps its server under ~/.local/bin/.muxy
+# and links ~/.local/bin/muxy to it. A server running from there holds the
+# terminals of every Mac connected to it, so apply leaves the link alone while
+# that install exists; it is moved aside by hand after a planned server
+# restart (docs/MUXY.md).
+[provides.link_unless_exists]
+".local/bin/muxy" = ["~/.local/bin/.muxy"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.muxy-reconcile.plist"
+# The app the muxy wrapper runs, and Homebrew's python3 (above).
+when_exists = ["/Applications/Muxy.app", "/opt/homebrew/bin/python3"]
+
+[settings."muxy.reconcile"]
+type = "string"
+default = "report"
+values = ["report", "apply"]
+env = "MUXY_RECONCILE_MODE"
+doc = "What muxy-reconcile does with the change it computes: report logs each decision and the diff of Muxy's settings.toml and writes nothing (no settings.toml, no state file, no reload); apply makes the change. Set apply per Mac in machine.toml, the Mac mini first (docs/MUXY.md, Rollout)"
+
+[settings."muxy.exclude_servers"]
+type = "string"
+default = ""
+env = "MUXY_RECONCILE_EXCLUDE"
+doc = "Declared servers this Mac leaves out of Muxy, space-separated as <list>/<ssh>: the server list's file name without .toml, and the server's ssh destination, such as `personal/laptop`. An entry it wrote for that server is removed, one it adopted or Muxy paired is released (kept, no longer managed). A name that matches no declared server stops muxy-reconcile (exit 2) without writing. To change a server's name or group here, exclude it and declare it again in a local list in ~/.config/muxy/servers.d"

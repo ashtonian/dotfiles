@@ -5,6 +5,7 @@ package manifest
 import (
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -14,6 +15,8 @@ import (
 	"strings"
 
 	"github.com/BurntSushi/toml"
+
+	"github.com/ashtonian/dotfiles/internal/prefs"
 )
 
 // Platforms a feature can declare; the values match runtime.GOOS.
@@ -97,6 +100,14 @@ type Provides struct {
 	Link      []string        `toml:"link"`       // files under home/, linked one by one
 	Copy      []string        `toml:"copy"`       // files under home/, installed as managed copies
 	Stub      []Stub          `toml:"stub"`       // local entry points created once, never overwritten
+	// LinkUnlessExists holds links back: for an entry of Link, paths
+	// (absolute or starting with ~/) whose presence means something else owns
+	// the link's place. While any exists, apply neither makes nor replaces the
+	// entry's links.
+	LinkUnlessExists map[string][]string `toml:"link_unless_exists"`
+	// Prefs maps a store from prefs.Stores to a file of the settings this
+	// feature owns in that app, set key by key; see package prefs.
+	Prefs map[string]string `toml:"prefs"`
 	// LaunchAgent lists launchd jobs for the user's GUI session. They are
 	// installed on macOS only; elsewhere the rest of the feature applies.
 	LaunchAgent []LaunchAgent `toml:"launch_agent"`
@@ -150,13 +161,32 @@ type Setting struct {
 	// Env exports the resolved value under this name in the generated env.sh.
 	// Secrets cannot be exported.
 	Env string `toml:"env"`
+	// Values, for a string setting, are the only values it may take, so a
+	// typo fails resolve instead of the script that reads the setting.
+	Values []string `toml:"values"`
 }
 
-// Profile is a named set of feature decisions and setting values.
+// Check validates a value for this setting: its type, then Values.
+func (s Setting) Check(v any) error {
+	if err := CheckValue(s.Type, v); err != nil {
+		return err
+	}
+	if len(s.Values) > 0 && !slices.Contains(s.Values, v.(string)) {
+		return fmt.Errorf("want one of %s, got %q", strings.Join(s.Values, ", "), v)
+	}
+	return nil
+}
+
+// Profile is a named set of feature decisions, setting values and app
+// setting overrides.
 type Profile struct {
 	Name     string         `toml:"-"`
+	Path     string         `toml:"-"` // the file it was read from
 	Features Selection      `toml:"features"`
 	Settings map[string]any `toml:"settings"`
+	// Prefs overrides app settings that enabled features own, keyed
+	// <store>:<key> as `dotfiles adopt` names them.
+	Prefs map[string]any `toml:"prefs"`
 }
 
 // Selection turns features on or off.
@@ -166,13 +196,15 @@ type Selection struct {
 }
 
 // Machine is this machine's untracked manifest: the overlays of the contexts
-// it belongs to, its profiles in order, then single-feature and setting
-// overrides.
+// it belongs to, its profiles in order, then single-feature, setting and app
+// setting overrides.
 type Machine struct {
+	Path     string         `toml:"-"` // the file it was read from
 	Overlays []string       `toml:"overlays"`
 	Profiles []string       `toml:"profiles"`
 	Features Selection      `toml:"features"`
 	Settings map[string]any `toml:"settings"`
+	Prefs    map[string]any `toml:"prefs"` // as Profile.Prefs
 }
 
 // Supports reports whether the feature runs on goos. No platforms means all.
@@ -314,10 +346,11 @@ func LoadProfiles(roots ...Root) (map[string]*Profile, error) {
 		}
 		for _, path := range paths {
 			var p Profile
-			if err := decodeStrict(path, &p, settingValue); err != nil {
+			if err := decodeStrict(path, &p, overrideValue); err != nil {
 				return nil, err
 			}
 			p.Name = strings.TrimSuffix(filepath.Base(path), ".toml")
+			p.Path = path
 			if !idPattern.MatchString(p.Name) {
 				return nil, fmt.Errorf("%w: %s: profile name %q must be lowercase words joined by - or .", ErrInvalid, path, p.Name)
 			}
@@ -333,12 +366,13 @@ func LoadProfiles(roots ...Root) (map[string]*Profile, error) {
 // LoadMachine reads the machine manifest. A missing file is ErrNoMachine.
 func LoadMachine(path string) (*Machine, error) {
 	var m Machine
-	if err := decodeStrict(path, &m, settingValue); err != nil {
+	if err := decodeStrict(path, &m, overrideValue); err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			return nil, fmt.Errorf("%w at %s", ErrNoMachine, path)
 		}
 		return nil, err
 	}
+	m.Path = path
 	if err := checkOverlayNames(m.Overlays); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
@@ -372,10 +406,13 @@ func writeList(b *strings.Builder, items []string) {
 	b.WriteString("]\n")
 }
 
-// Setting values decode into `any`, and the decoder reports the keys inside
-// such a value (a secret's { secret = "op://..." }) as undecoded; CheckValue
-// validates those values against their declared type instead.
-func settingValue(k toml.Key) bool   { return len(k) >= 3 && k[0] == "settings" }
+// Setting and app setting values decode into `any`, and the decoder reports
+// the keys inside such a value (a secret's { secret = "op://..." }, an inline
+// table a Claude setting takes) as undecoded; CheckValue and package prefs
+// validate those values instead.
+func overrideValue(k toml.Key) bool {
+	return len(k) >= 3 && (k[0] == "settings" || k[0] == "prefs")
+}
 func settingDefault(k toml.Key) bool { return len(k) >= 4 && k[0] == "settings" && k[2] == "default" }
 
 func decodeStrict(path string, v any, freeform func(toml.Key) bool) error {
@@ -430,6 +467,27 @@ func validateFeature(f *Feature, dirName string) error {
 	}
 	for _, p := range append(slices.Clone(f.Provides.Link), f.Provides.Copy...) {
 		if err := checkRelative(p); err != nil {
+			return err
+		}
+	}
+	for entry, paths := range f.Provides.LinkUnlessExists {
+		if !slices.Contains(f.Provides.Link, entry) {
+			return fmt.Errorf("link_unless_exists names %q, which is not in link", entry)
+		}
+		if len(paths) == 0 {
+			return fmt.Errorf("link_unless_exists %s: list the paths that hold it", entry)
+		}
+		for _, w := range paths {
+			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
+				return fmt.Errorf("link_unless_exists %s: %q must be absolute or start with ~/", entry, w)
+			}
+		}
+	}
+	for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
+		if !slices.Contains(prefs.Stores, store) {
+			return fmt.Errorf("prefs names unknown store %q (want one of %s)", store, strings.Join(prefs.Stores, ", "))
+		}
+		if err := checkRelative(f.Provides.Prefs[store]); err != nil {
 			return err
 		}
 	}
@@ -488,8 +546,16 @@ func validateFeature(f *Feature, dirName string) error {
 		if !slices.Contains(SettingTypes, s.Type) {
 			return fmt.Errorf("setting %q has unknown type %q (want one of %s)", name, s.Type, strings.Join(SettingTypes, ", "))
 		}
+		if len(s.Values) > 0 && s.Type != "string" {
+			return fmt.Errorf("setting %q lists values, which only a string setting can", name)
+		}
+		for i, v := range s.Values {
+			if v == "" || slices.Contains(s.Values[:i], v) {
+				return fmt.Errorf("setting %q values must be distinct and not empty", name)
+			}
+		}
 		if s.Default != nil {
-			if err := CheckValue(s.Type, s.Default); err != nil {
+			if err := s.Check(s.Default); err != nil {
 				return fmt.Errorf("setting %q default: %w", name, err)
 			}
 		}

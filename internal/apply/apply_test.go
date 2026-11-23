@@ -26,13 +26,18 @@ type machine struct {
 	overlay               string          // the "personal" overlay's checkout; empty for none
 	launchd               *fakeLaunchd    // nil: the plan has no LaunchAgents
 	job                   string          // the launchd job the run executes in
+	stores                map[string]PrefStore
+	statePath             string // where Checkpoint saves
+	// machineTOML, when set, is the machine manifest's text, for its [prefs]
+	// table; disable still turns features off.
+	machineTOML string
 }
 
 func newMachine(t *testing.T) *machine {
 	t.Helper()
 	root := t.TempDir()
 	m := &machine{t: t, repo: filepath.Join(root, "repo"), home: filepath.Join(root, "home"),
-		goos: "linux", state: newState(), tracked: map[string]bool{}}
+		goos: "linux", state: newState(), tracked: map[string]bool{}, statePath: filepath.Join(root, "applied.json")}
 	m.generated = filepath.Join(m.home, ".config", "dotfiles", "generated")
 	require.NoError(t, os.MkdirAll(m.home, 0o700))
 	m.write("features/shell/feature.toml", `id = "shell"
@@ -72,24 +77,40 @@ func (m *machine) plan() *plan.Plan {
 	}
 	features, err := manifest.LoadFeatures(roots...)
 	require.NoError(m.t, err)
-	res, err := resolve.Resolve(features, nil, &manifest.Machine{Features: manifest.Selection{Disable: m.disable}}, m.goos)
+	mach := &manifest.Machine{}
+	if m.machineTOML != "" {
+		path := m.machinePath()
+		require.NoError(m.t, os.WriteFile(path, []byte(m.machineTOML), 0o600))
+		mach, err = manifest.LoadMachine(path)
+		require.NoError(m.t, err)
+	}
+	mach.Features.Disable = m.disable
+	res, err := resolve.Resolve(features, nil, mach, m.goos)
 	require.NoError(m.t, err)
-	p, err := plan.Build(features, res.Runnable(features), res.Values(), plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
+	p, err := plan.Build(features, res.Runnable(features), res.Values(), res.PrefLayers, plan.Env{Home: m.home, GeneratedDir: m.generated, GOOS: m.goos})
 	require.NoError(m.t, err)
 	return p
 }
 
-func (m *machine) run(dryRun bool) *Report {
-	m.t.Helper()
-	env := Env{Home: m.home, StowTree: filepath.Join(m.repo, "stow"), Job: m.job,
-		Roots: []Root{{Dir: m.repo, Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}}}
+func (m *machine) machinePath() string { return filepath.Join(filepath.Dir(m.repo), "machine.toml") }
+
+// env is the Env a run works in, saving checkpoints to m.statePath.
+func (m *machine) env() Env {
+	env := Env{Home: m.home, StowTree: filepath.Join(m.repo, "stow"), Job: m.job, Prefs: m.stores,
+		Checkpoint: func(s *State) error { return s.Save(m.statePath) },
+		Roots:      []Root{{Dir: m.repo, Tracked: func(rel string) bool { return m.tracked[filepath.ToSlash(rel)] }}}}
 	if m.overlay != "" {
 		env.Roots = append(env.Roots, Root{Dir: m.overlay, Tracked: func(string) bool { return false }})
 	}
 	if m.launchd != nil {
 		env.Launchd = m.launchd
 	}
-	report, next, err := Run(context.Background(), m.plan(), m.state, env, dryRun)
+	return env
+}
+
+func (m *machine) run(dryRun bool) *Report {
+	m.t.Helper()
+	report, next, err := Run(context.Background(), m.plan(), m.state, m.env(), dryRun)
 	require.NoError(m.t, err)
 	if !dryRun {
 		m.state = next
@@ -155,14 +176,18 @@ func TestDisablingAFeatureRemovesWhatItInstalled(t *testing.T) {
 func (m *machine) withOverlay() string {
 	m.t.Helper()
 	m.overlay = filepath.Join(filepath.Dir(m.repo), "overlays", "personal")
-	write := func(rel, content string) {
-		path := filepath.Join(m.overlay, rel)
-		require.NoError(m.t, os.MkdirAll(filepath.Dir(path), 0o755))
-		require.NoError(m.t, os.WriteFile(path, []byte(content), 0o644))
-	}
-	write("features/personal.rules/feature.toml", "id = \"personal.rules\"\ndefault = true\n[provides]\nlink = [\".claude/rules/personal.md\"]\n")
-	write("features/personal.rules/home/.claude/rules/personal.md", "rules\n")
+	m.writeOverlay("features/personal.rules/feature.toml", "id = \"personal.rules\"\ndefault = true\n[provides]\nlink = [\".claude/rules/personal.md\"]\n")
+	m.writeOverlay("features/personal.rules/home/.claude/rules/personal.md", "rules\n")
 	return filepath.Join(m.overlay, "features", "personal.rules", "home", ".claude", "rules", "personal.md")
+}
+
+// writeOverlay writes a file into the overlay's checkout, wherever m.overlay
+// points.
+func (m *machine) writeOverlay(rel, content string) {
+	m.t.Helper()
+	path := filepath.Join(m.overlay, rel)
+	require.NoError(m.t, os.MkdirAll(filepath.Dir(path), 0o755))
+	require.NoError(m.t, os.WriteFile(path, []byte(content), 0o644))
 }
 
 func TestOverlayLinksAreApplysOwn(t *testing.T) {
@@ -442,7 +467,7 @@ func TestAdoptKeepsALocalEditInTheRepository(t *testing.T) {
 	require.NoError(t, os.WriteFile(target, []byte("edited here\n"), 0o644))
 	require.Len(t, m.run(false).Problems, 1, "a local edit is drift")
 
-	report, next, err := Adopt(m.plan(), m.state, []string{target})
+	report, next, err := Adopt(context.Background(), m.plan(), m.state, []string{target}, nil)
 	require.NoError(t, err)
 	assert.Equal(t, 1, kinds(report)["adopt"])
 	m.state = next
@@ -464,8 +489,8 @@ func TestAdoptRefusesAnythingButAManagedCopy(t *testing.T) {
 	copied := m.at(".config/app/settings.json")
 	require.NoError(t, os.WriteFile(copied, []byte("edited here\n"), 0o644))
 	for _, other := range []string{m.at(".config/shell/a.sh"), m.at(".config/app/unmanaged.json")} {
-		_, _, err := Adopt(m.plan(), m.state, []string{copied, other})
-		assert.ErrorIs(t, err, ErrNotCopy, other)
+		_, _, err := Adopt(context.Background(), m.plan(), m.state, []string{copied, other}, nil)
+		assert.ErrorIs(t, err, ErrNotManaged, other)
 	}
 	content, err := os.ReadFile(filepath.Join(m.repo, "features/prefs/home/.config/app/settings.json"))
 	require.NoError(t, err)
@@ -503,4 +528,73 @@ func TestDryRunChangesNothing(t *testing.T) {
 	entries, err := os.ReadDir(m.home)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
+}
+
+func TestAHeldLinkIsLeftAloneWhileItsOwnerIsThere(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/tool/feature.toml", `id = "tool"
+default = true
+[provides]
+link = [".local/bin/tool", ".local/bin/tool-helper"]
+[provides.link_unless_exists]
+".local/bin/tool" = ["~/.local/bin/.tool"]
+`)
+	m.write("features/tool/home/.local/bin/tool", "#!/bin/sh\n")
+	m.write("features/tool/home/.local/bin/tool-helper", "#!/bin/sh\n")
+	target, owner := m.at(".local/bin/tool"), m.at(".local/bin/.tool")
+	ours := filepath.Join(m.repo, "features/tool/home/.local/bin/tool")
+	held := Waiting{Subject: target, Reason: "left alone while " + owner + " exists"}
+
+	// Another installer's copy, and the link it reaches that copy through.
+	require.NoError(t, os.MkdirAll(filepath.Join(owner, "current"), 0o700))
+	require.NoError(t, os.Symlink(".tool/current/tool", target))
+	report := m.run(false)
+	assert.Empty(t, report.Problems, "its link is not in the way while its owner is there")
+	assert.Contains(t, report.Waiting, held)
+	dest, err := os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ".tool/current/tool", dest, "left as it was")
+	assert.NotContains(t, m.state.Links, target)
+	assert.Contains(t, m.state.Links, m.at(".local/bin/tool-helper"), "only the held entry waits")
+
+	require.NoError(t, os.Remove(target))
+	report = m.run(false)
+	assert.Contains(t, report.Waiting, held)
+	_, err = os.Lstat(target)
+	assert.ErrorIs(t, err, os.ErrNotExist, "an empty place is not filled while the owner is there")
+
+	require.NoError(t, os.RemoveAll(owner))
+	report = m.run(false)
+	assert.NotContains(t, report.Waiting, held)
+	dest, err = os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ours, dest, "linked once the owner is gone")
+
+	// The owner comes back, even as a dangling link: apply's own link stays, and so does its record.
+	require.NoError(t, os.Symlink("nowhere", owner))
+	report = m.run(false)
+	assert.Empty(t, report.Actions)
+	assert.Contains(t, report.Waiting, held)
+	assert.Equal(t, ours, m.state.Links[target])
+	dest, err = os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, ours, dest)
+}
+
+func TestALinkWithoutItsHolderIsStillInTheWay(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/tool/feature.toml", `id = "tool"
+default = true
+[provides]
+link = [".local/bin/tool"]
+[provides.link_unless_exists]
+".local/bin/tool" = ["~/.local/bin/.tool"]
+`)
+	m.write("features/tool/home/.local/bin/tool", "#!/bin/sh\n")
+	require.NoError(t, os.MkdirAll(m.at(".local/bin"), 0o700))
+	require.NoError(t, os.Symlink(".tool/current/tool", m.at(".local/bin/tool")))
+	report := m.run(false)
+	require.Len(t, report.Problems, 1)
+	assert.Contains(t, report.Problems[0].Detail, "a link to .tool/current/tool is in the way")
+	assert.Empty(t, report.Waiting)
 }

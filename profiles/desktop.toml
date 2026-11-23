@@ -12,6 +12,9 @@ enable = [
   "browser.passkeys-off",
   # The G502 X PLUS's G5 button opens Mission Control (docs/KARABINER.md).
   "tool.karabiner",
+  # Muxy and its terminal font, the Muxy settings every Mac shares, and the
+  # other Macs as Muxy servers (docs/MUXY.md).
+  "tool.muxy",
   # They reach the home cluster: OpenCode's homelab gateway, and the
   # collector that forwards agent telemetry to it (D1, D31).
   "agents.opencode",

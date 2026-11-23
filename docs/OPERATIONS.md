@@ -13,6 +13,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DOTFILES_OVERLAY_DIR` | Directory path | `~/.dotfiles-overlays` | The engine's `--overlay-dir`: one overlay checkout per context, at `<dir>/<overlay>`. Sync asks the engine (`dotfiles overlays`) which to sync, so it never needs this itself |
 | `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh`, `bin/otel-agent` and `bin/agent-monitor` run the same path |
 | `DOTFILES_LAUNCHCTL` | File path | `/bin/launchctl` | The launchctl the engine runs to load and unload LaunchAgents; tests point it at a stand-in |
+| `DOTFILES_MUXY_APP` | Directory path | unset: `~/Applications/Muxy.app` if it holds the tool, else `/Applications/Muxy.app` | The Muxy app whose `Contents/MacOS/muxy` the engine runs to read and set Muxy settings; when set, the only one tried |
 | `XPC_SERVICE_NAME` | launchd label | set by launchd in a job's processes | The job a `dotfiles apply` runs in. apply never reloads or unloads that job, which would stop the run; a later apply outside it does ([LaunchAgents](#launchagents)) |
 | `DOTFILES_PROFILES` | Comma-separated names | unset | `install.sh`: the profiles to write, as `--profiles` does; without either it keeps an existing manifest or asks |
 | `SYNC_QUIET_MINUTES` | Minutes | `30` | Sync skips a repository whose newest tracked edit is younger than this, so half-finished work is not committed |
@@ -36,7 +37,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `GO_CACHE_TRIM_HOURS` | Whole hours, at least 2 | `24` | `bin/go-cache-trim`: delete Go build cache entries unused this long; set in the `tool.go-cache-trim` feature's template |
 | `DISK_HYGIENE_SCRATCH_DAYS` | Whole days, at least 1 | `7` | `bin/disk-hygiene`: delete a Claude Code session's scratch once nothing in it was used this long; set in the `macos.disk-hygiene` feature's template |
 | `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the template |
-| `DISK_HYGIENE_KEYED` | Space-separated names | `jobcrm estavelle` | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. Empty: none |
+| `DISK_HYGIENE_KEYED` | Space-separated names | setting `disk_hygiene.keyed`, empty unless a profile sets it | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. They are repository names, so an overlay's profile sets them; the environment wins over the setting. Empty: none |
 | `DISK_HYGIENE_KEEP` | Space-separated names | empty | Cache directories `bin/disk-hygiene` never deletes, for a cache that is expensive to rebuild and used less often than the window |
 | `DISK_HYGIENE_LOG_MAX_BYTES` | Whole bytes, at least 1 | `1048576` | Each LaunchAgent `dotfiles apply` installed has its stdout and stderr log cut to its newest half once larger than this |
 | `DISK_HYGIENE_TMP` | Directory path | `/private/tmp` | Where sessions started without `CLAUDE_CODE_TMPDIR` keep their scratch |
@@ -73,8 +74,9 @@ The `dotfiles` engine's flags:
 
 OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
-agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), and the agent
-telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config).
+agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), the agent
+telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config), and
+`muxy-reconcile`'s in [MUXY.md](MUXY.md#config).
 LaunchAgents do not read `~/.zshrc.local`. Set a service's variables in its
 template's `EnvironmentVariables` (`features/<id>/launchagents/`); the next
 `dotfiles apply` writes the plist and reloads the job. apply never overwrites an
@@ -161,6 +163,7 @@ profiles enable without running an installer.
 | `com.ashtonian.disk-hygiene` | `macos.disk-hygiene` (base) | Daily 04:15, or at wake | |
 | `com.ashtonian.go-cache-trim` | `tool.go-cache-trim` (base) | Hourly and at load | `/opt/homebrew/bin/go` |
 | `com.ashtonian.gpg-agent` | `tool.gpg-agent` (base) | Service, GUI login only | `/opt/homebrew/bin/gpgconf` |
+| `com.ashtonian.muxy-reconcile` | `tool.muxy` (desktop) | At load, when a server list is added or removed, when apply rewrites its generated files (`muxy.reconcile`, `muxy.exclude_servers`), and hourly | `/Applications/Muxy.app`, `/opt/homebrew/bin/python3` |
 | `com.ashtonian.codex-remote-control` | `agents.codex` (dev) | Service | `/opt/homebrew/bin/codex` |
 | `com.ashtonian.agent-monitor` | `agents.agent-monitor` (dev) | Service, while the data link resolves | `agent-monitor install`'s release |
 | `com.ashtonian.agent-monitor-gate` | `agents.agent-monitor` (dev) | Service | `agent-monitor lan enable`'s token |
@@ -379,6 +382,54 @@ started outside this login`) mean something keeps stopping the agent: look for
 `gpgconf --list-dirs agent-socket` and check that `~/.gnupg` exists with mode
 0700.
 
+### Muxy remote servers
+
+`com.ashtonian.muxy-reconcile` runs `muxy-reconcile`, which keeps the
+`[[servers]]` tables of Muxy's `settings.toml` in step with the lists in
+`~/.config/muxy/servers.d/` (each context's overlay links one). While the
+setting `muxy.reconcile` is `report`, the default, a run only logs what it would
+change (`diff:` lines, then `report: would change ...`) and writes nothing; a Mac
+moves to `apply` in its own `machine.toml`, the Mac mini first
+([Rollout](MUXY.md#rollout)). A run that finds nothing to change writes nothing
+and does not start Muxy. Its exit status: 0 in step, changed or reported, 1 Muxy
+refused the file or a command failed, 2 a bad list, `muxy.reconcile` or
+`muxy.exclude_servers` value, or the lists directory missing while entries are
+managed (nothing written), 3 Muxy saved during the run (the next run retries), 69
+Muxy.app missing. It never stops, restarts or upgrades a Muxy
+server, and the only command it sends a running app is `muxy config reload`
+([what that does](MUXY.md#what-muxys-commands-do-to-a-running-muxy)).
+
+One Mac changes what it gets in files only it has: `muxy.exclude_servers` in
+`machine.toml` leaves declared servers out, a local list in
+`~/.config/muxy/servers.d/` adds its own (and, with an exclusion, renames one),
+and `~/.ssh/config.local` changes how one is reached
+([Per-machine changes](MUXY.md#per-machine-changes)).
+
+On a Mac where Muxy's own **Install muxy-server** ran, `~/.local/bin/.muxy`
+holds the server copy that a running `muxy-server` may execute from. apply
+leaves `~/.local/bin/muxy` alone while it exists (`dotfiles doctor`: `waiting
+... left alone while ~/.local/bin/.muxy exists`). Never remove or move either
+path while a `muxy-server` runs from it (`ps -axo pid,command | grep
+'[m]uxy-server'`): that waits for a planned server restart
+([Replacing Muxy's own server copy](MUXY.md#replacing-muxys-own-server-copy)).
+
+```sh
+muxy-reconcile --mode report                               # decisions and the diff it would make; writes nothing
+tail -30 ~/Library/Logs/muxy-reconcile/muxy-reconcile.log  # one line per decision per run
+launchctl print "gui/$(id -u)/com.ashtonian.muxy-reconcile"   # last exit status
+ssh -G <alias> | grep -E '^(user|hostname|port) '          # where a listed server leads from this Mac
+```
+
+At 2am, a server Muxy shows offline is almost always one of three things:
+`~/.ssh/config.local` has its own `Host <alias>` block, which ssh reads first;
+known_hosts has no key under the HostName the alias leads to (the log says
+`no host key`; Muxy connects with `StrictHostKeyChecking=ask` and `BatchMode=yes`, so
+it refuses instead of asking; `ssh <alias> true` once fixes it); or the far
+side's `~/.local/bin/muxy` is missing or is Muxy's own copy, not the app's
+(held for a planned restart there; see above).
+The full table, and what each exit status asks for, is in
+[MUXY.md](MUXY.md#operations).
+
 ## App backups
 
 Sync does not run Mackup. The shared `.mackup.cfg` selects every detected app
@@ -519,7 +570,22 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | ------- | ------------------ |
 | `a file is in the way` | A real file sits where a link goes. Compare it with the tracked file the message names, keep what you need (in the repository if it should be shared), move the file aside, and run `dotfiles apply`. |
 | `edited here since dotfiles last wrote it` | A managed copy was changed locally, by hand or by the app that rewrites it. Keep it with `dotfiles adopt <path>`, which writes it into the tracked file (sync publishes it like any tracked edit), or delete the local file and run `dotfiles apply` to take the repository's version. |
-| `not a managed copy on this machine` (exit 64) | `dotfiles adopt` names only files an enabled feature installs as a copy; linked files are edited in place and need no adopt. Flags go before the paths. |
+| `not a managed copy or app setting on this machine` (exit 64) | `dotfiles adopt` names only files an enabled feature installs as a copy, and app settings an enabled feature owns, as `<store>:<key>` (`muxy:appearance.dark_theme`); linked files are edited in place and need no adopt. Flags go before the targets. |
+| `pref muxy:<key> -> <value> (was <other>)` on a machine's first apply | Expected: apply sets each shared key a feature owns, after saving the value it replaced, which disabling the feature puts back. A value set by hand in the app is replaced like any other. `dotfiles doctor` lists what the first apply would change, and `app-setting` lines say where each value comes from. To keep this machine's own value, add it to `machine.toml` before the first apply: `[prefs]` then `"muxy:<key>" = <value>` (see [Per-machine overrides](MACHINE-FEATURES.md#per-machine-overrides)). To make this machine's value the shared one instead, run `dotfiles adopt muxy:<key>` here before the first apply: it rewrites that line of the prefs file, sync publishes it, and the other machines take it. |
+| `update-pref muxy:<key> -> <value> (was <other>)` | The planned value moved: the prefs file changed, or a profile's or `machine.toml`'s `[prefs]` override was added, changed or removed (removing one returns to the shared value). Expected; `dotfiles status` shows which layer sets it now. |
+| `... -> <value> (was <other>); the app stored <close value>` | The app keeps the value less precisely than written (Muxy keeps a float as 32 bits: `1.3` is stored as `1.2999999523162842`). apply records what the app stored, so later runs see no change. Nothing to do. |
+| `waiting muxy:<key>: app not available: ..., so its value from before dotfiles, <value>, waits to be put back` (doctor) | The feature that owned the setting was turned off while the app was not there: uninstalled, or its bundle being replaced by an update. apply keeps the record, the only copy of the earlier value, and puts it back on a later run once the app is there; it is no failure. If the app is gone for good, run `dotfiles forget muxy:<key>`: it drops the record and prints the earlier value (`forget-pref muxy:<key> -> before dotfiles set it, it was <value>`), to set by hand with `muxy config set -- <key> <value>` should the app return. |
+| `dotfiles: not an app setting waiting to be put back: ...` from `dotfiles forget` (exit 64) | `forget` names only settings the state holds a record of and no enabled feature owns. For an owned one, disable its feature and let apply put the value back. |
+| `note: muxy:<key>: ... [prefs] sets it, but <feature>, which owns it, is off here, so it is ignored` (check), `ignored ...` (doctor) | A `machine.toml` override for a feature turned off on this machine. It changes nothing and fails nothing; delete the line, or enable the feature. |
+| `... [prefs] "muxy:<key>": no feature owns this setting` (exit 2) | An override in `machine.toml` or a profile names a setting no feature owns: a typo, or a key removed from the feature's prefs file. Fix or delete the line. |
+| `... is a dotted key, which TOML reads as a table` (exit 2) | A prefs file or `[prefs]` line names a key with an unquoted dot, such as `permissions.defaultMode = ...`, which TOML reads as a whole `permissions` table. Quote the key (`"terminal.font_size" = 14.0`). The `claude` store owns only top-level keys of `settings.json`, so a key inside an object is refused even when quoted. |
+| `muxy:<key>: changed here since dotfiles set it` (or `claude:<key>`) | The setting was changed in the app (Muxy's settings or theme picker, Claude Code's `/config` or `/theme`) after apply set it, so apply leaves it. Keep it for every machine with `dotfiles adopt muxy:<key>`, which rewrites that line of the feature's prefs file (sync publishes it); keep it for this machine only by adding it to `machine.toml`'s `[prefs]` table first, after which adopt rewrites that line instead; or set it back to the value the message names. |
+| `muxy:<key>: reading it: Muxy is not installed` | The engine runs the `muxy` inside `$DOTFILES_MUXY_APP` when it is set, else `~/Applications/Muxy.app` or `/Applications/Muxy.app`, never the one on `PATH` (a Muxy client installs its own build there on machines it connects to). Install the app (`tool.muxy` adds its cask; sync installs it after apply, so the next sync sets the settings), or disable `tool.muxy` on this machine. |
+| `muxy:<key>: saved, but the running app did not apply it` | Muxy saved the value (or the unset), but the running app could not reload its settings, usually because it is older than the installed app (an update is waiting for a relaunch). Nothing is lost: the app reads the file when it next starts, and the next apply finds the value saved and reports nothing. Leave it for the next relaunch. Never use **Restart Server** or **Stop Server** for this: they end that server's terminals. Quitting the app keeps terminals only while the server setting **Keep terminals running after quitting** is on, so check it before quitting a Muxy whose terminals must survive, and never use **End All Sessions and Quit**. |
+| `muxy:<key>: setting it: ...` | Muxy refused the value; the message is Muxy's own (an unknown key, or the wrong type). Fix the line in `features/<id>/muxy.toml`; `muxy config list` shows every key and its current value. |
+| `muxy config list: no answer within 15s` | The Muxy tool hung. Check that the app opens; raise `--app-timeout` only for a machine that is known to be slow. |
+| `claude:<key>: reading it: ... not a JSON object` | `~/.claude/settings.json` does not parse. Fix it (`jq . ~/.claude/settings.json` shows where), or let Claude Code rewrite it with `/config`; the engine never writes a file it cannot read. |
+| `no longer managed, but changed since dotfiles set it` | A feature that owned an app setting was disabled, or the key was removed from its prefs file, and the setting had changed in the app since apply set it, so apply left it as it is rather than putting back the earlier value. Nothing to do unless you want the old value back. |
 | `move this line before the first Host or Match line` | `~/.ssh/config` existed before the stub and its `Include dotfiles.conf` comes after a `Host` or `Match` line, where it applies only inside that block. Move it above the first one. |
 | `left in the retired stow tree and not installed any more` | An untracked file is still under `stow/` and nothing in `$HOME` links to it. It is yours: move it where it belongs (often the same path under `$HOME`), or delete it. `/stow/` is gitignored, so it is never published. |
 | `XDG_CONFIG_HOME: it is ..., but dotfiles installs into ~/.config` | git and other tools read their config from `$XDG_CONFIG_HOME`, so they miss the shared files. Unset it (usually in `~/.zshrc.local`) or set it to `~/.config`. |
@@ -527,13 +593,15 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | `.bashrc: add this line` on Linux | The distribution's `~/.bashrc` from `/etc/skel` existed first. Add the line at the top, above its `case $- in` (or `[ -z "$PS1" ] && return`) guard, which returns early in non-interactive shells. Login bash loads `env.sh` through `~/.bash_profile` either way. |
 | `skipped until these settings have values` | A required setting has no value. Set it in a profile or `machine.toml`; secrets are `{ secret = "op://..." }` references. |
 | `no machine manifest at ...` (exit 2) | This machine has no `~/.config/dotfiles/machine.toml`. Run `dotfiles init --profiles <names>` with this machine's profiles (see the README's machine table); apply refuses to guess, since no profiles would remove everything they install. |
+| `Tracked files name what an overlay keeps private` in `logs/sync.log` | A tracked line in dotfiles names something on an overlay's `denylist.txt`; the lines follow the message. Reword it generically or move it into that overlay (a feature, profile setting or `docs/` there), commit, and let the next sync publish. Nothing was committed or pushed. `bin/check-private-names` runs the same check by hand. |
 | `overlay not cloned: <name> is not at ...` (exit 2) | `machine.toml` lists an overlay that has no checkout. Clone that context's overlay repository to the path named, or remove the overlay from `overlays` if this machine left the context. Apply stops rather than run without it, which would remove what its features install. Sync logs the same as `lists overlay <name>, which is not cloned`. |
 | `... is in overlay <name>, so its name must be ...` or `... in the repository starts with the name of overlay <name>` (exit 2) | A feature or profile is in the wrong checkout. An overlay's feature IDs and profile names start with the overlay's name and a dot (or are the name), and the repository's never do. Rename the directory and its `id`. |
 | `a link to ... is in the way` | A link that points outside the repository sits where a link, copy or stub goes. Check what it points at, remove it if it is stale, and run `dotfiles apply`. |
 | `unfold` and `move-home` in the output | Expected once per machine: a directory the old stow layout had linked into the repository becomes a real directory, and the untracked files tools wrote through it (such as gh's `hosts.yml`) move into it. Tracked files are never moved. A leftover `<dir>.dotfiles-unfold-<pid>` directory means a run died mid-unfold: compare it with `<dir>`, move any missing file into `<dir>`, then delete it. |
 | Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |
 | `another dotfiles apply holds ...apply.lock` | Another run is in progress (sync, or a manual run). Wait, or raise `--lock-wait`. The lock is released when that process exits; never delete the file by hand. |
-| `state ... has version N` | The state file is from a different engine build. Rebuild `dotfiles` from the current checkout. |
+| `state ... has version N; this dotfiles build reads versions 1 to 2` | A newer engine wrote the state file (version 2 added the app settings' records). This build stops rather than save over it and lose what it does not know. Update the checkout (`git pull`) and rebuild `dotfiles`. Never delete or hand-edit the file to get past it: it holds the values teardown puts back. |
+| `state ... has no version; dotfiles did not write it` | Something other than dotfiles wrote `~/.local/state/dotfiles/applied.json`, or it was edited by hand. Restore it from a backup if there is one. Moving it aside makes the next apply treat every installed file as unknown (reported, never overwritten) and forget the app settings' earlier values. |
 | `waiting <label>: installs once <path> exists` (doctor) | Expected until the agent's setup step runs: install the package, or run the step the [LaunchAgents table](#launchagents) names. The next apply installs and loads it. |
 | `waiting <label>: reloads ...` or `unloads ...` (doctor) | Expected: the job is running, so apply left the reload or removal for a later run. If it stays for days, `launchctl print "gui/$(id -u)/<label>"` shows whether a run is stuck. |
 | `<label>.plist: edited here since dotfiles last wrote it` | Someone changed the installed plist; launchd keeps running that version. Move the change into the template in `features/<id>/launchagents/` (every Mac gets it), or delete the installed file; the next apply writes the template and reloads the job. |
