@@ -128,6 +128,15 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - **Never use NATS JetStream KV**, and never use a message bus as a state store. NATS is a message bus only.
 - Shared or runtime state (feature flags, runtime config, cross-replica coordination) goes in the KV stores and databases the system already runs, such as Redis or Postgres. Don't add a new store or new infrastructure coupling for it without asking.
 
+## Personal and client boundaries
+
+- My personal work and each client are separate contexts. A machine belongs to the contexts its uncommitted `~/.config/dotfiles/machine.toml` lists, and a client's own machine belongs to that client alone. Nothing crosses between contexts unless I ask.
+- Public repositories reach every machine and anyone on the internet. They name no client, organization, private repository, internal host or project: not in code, config, docs, examples, tests or commit messages, this file included.
+- A context's facts live in its private overlay: repo lists, gitstead config and manifest, workspace and agent counts, Muxy servers, and agent rules and MCP settings that name projects. A machine gets only its own contexts' overlays and credentials; a client's machine holds nothing that reaches my personal repositories or another client's.
+- Before changing anything that reaches several machines (a dotfiles feature, profile or default; an overlay; gitstead config or manifest; shell history or app settings that sync), trace where it lands, including data a machine syncs back. If it would leave its context, change the design.
+- A name found in a public repository moves to its overlay in the same change that removes it, so whatever relied on it keeps working.
+- When it's unclear which context something belongs to, ask before writing it anywhere shared.
+
 ## Bounded growth, built for scale — hard rule
 
 - **Everything that persists records has a growth bound from its first commit.** That covers receipts, logs, ledgers, history and state files, lock records, caches, queues and CI artifacts. The bound is a retention period, a count or size cap, rotation or compaction, and the code that enforces it ships in the same change as the code that writes. "It's small for now" is not a bound. No one-file-per-event directory that nothing prunes, and no append-only file that nothing trims.
