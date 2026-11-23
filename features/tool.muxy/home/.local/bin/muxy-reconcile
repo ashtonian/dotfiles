@@ -16,6 +16,13 @@ Each context's overlay links one list into MUXY_RECONCILE_SERVERS_DIR
     # ssh_command = "orb ssh vm"  optional: Muxy connects through this command;
     #                             ssh then only identifies the machine
 
+A Mac leaves declared servers out with the dotfiles setting
+muxy.exclude_servers: space-separated <list>/<ssh> names, such as
+personal/laptop (the list's file name without .toml, and the server's ssh
+destination). A name that matches no declared server stops the run before it
+writes anything. Excluding a server and declaring it again in a local list
+changes its name or group on this Mac only.
+
 A run looks every destination up with `ssh -G` (user, port, HostName, the
 known_hosts files), `ssh-keygen -F` (the host keys those files hold for it) and
 the system resolver. It leaves out the server that is this Mac (same user, and
@@ -41,8 +48,13 @@ MUXY_RECONCILE_SSH (default /usr/bin/ssh), MUXY_RECONCILE_SELF_ADDRESSES
 (space-separated; default this Mac's interface addresses from ifconfig),
 MUXY_RECONCILE_HOST_KEYS (this Mac's sshd public keys, space-separated files or
 patterns; default /etc/ssh/ssh_host_*_key.pub),
-MUXY_RECONCILE_TIMEOUT (seconds per command, default 30). DOTFILES_MUXY_APP
-selects the Muxy app for the muxy wrapper beside this script.
+MUXY_RECONCILE_TIMEOUT (seconds per command, default 30),
+MUXY_RECONCILE_EXCLUDE (the muxy.exclude_servers setting; when it is not set,
+the value dotfiles apply generated, read with lib_sh/machine-setting.sh, since
+launchd does not load ~/.config/dotfiles/generated/env.sh).
+DOTFILES_MUXY_APP selects the Muxy app for the muxy wrapper beside this
+script; the script runs that wrapper from the repository, never
+~/.local/bin/muxy.
 
 Exit status: 0 in step, 1 Muxy refused the result or a command failed,
 2 usage or a bad server list or state file, 3 Muxy or another run was saving
@@ -90,6 +102,11 @@ DEFAULT_SSH = '/usr/bin/ssh'
 DEFAULT_SSH_KEYGEN = '/usr/bin/ssh-keygen'
 DEFAULT_HOST_KEYS = '/etc/ssh/ssh_host_*_key.pub'
 DEFAULT_TIMEOUT_SECONDS = 30
+EXCLUDE_ENV = 'MUXY_RECONCILE_EXCLUDE'
+EXCLUDE_SETTING = 'muxy.exclude_servers'
+# The checkout this script is linked from:
+# <repository>/features/tool.muxy/home/.local/bin/muxy-reconcile.
+REPOSITORY = Path(__file__).resolve().parents[5]
 LOCK_WAIT_SECONDS = 10
 RUN_LOCK_WAIT_SECONDS = 60
 SSH_PORT = 22
@@ -382,11 +399,53 @@ class Declared:
         return entry
 
 
-def read_server_lists(directory):
-    """Every declared server, in file-name order, then file order."""
+def parse_exclusions(raw):
+    """The (list, destination) pairs a muxy.exclude_servers value names."""
+    excluded = set()
+    for token in raw.split():
+        list_name, _, destination = token.partition('/')
+        if not list_name or not destination:
+            raise ConfigError(f'{EXCLUDE_SETTING} ({EXCLUDE_ENV}): {token!r} is not <list>/<ssh>, '
+                              'such as personal/laptop')
+        excluded.add((list_name, destination))
+    return frozenset(excluded)
+
+
+def machine_setting(name, timeout):
+    """A dotfiles setting's value on this Mac, read with the repository's
+    lib_sh/machine-setting.sh, as its other LaunchAgent scripts read theirs:
+    launchd does not load the env.sh that dotfiles apply generates. Empty when
+    apply has not written it."""
+    helper = REPOSITORY / 'lib_sh/machine-setting.sh'
+    try:
+        p = subprocess.run(['/bin/bash', '-c', 'source "$0" && machine_setting "$1"', str(helper), name],
+                           capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
+    except subprocess.TimeoutExpired as e:
+        raise Failure(f'reading the dotfiles setting {name}: no answer within {timeout}s') from e
+    if p.returncode != 0:
+        raise Failure(f'reading the dotfiles setting {name} with {helper}: bash exited {p.returncode}: '
+                      f'{p.stderr.strip()}')
+    return p.stdout
+
+
+def read_exclusions(timeout):
+    """The servers muxy.exclude_servers leaves out: the environment's value
+    when it is set (the LaunchAgent's EnvironmentVariables, a test), else the
+    one dotfiles apply generated."""
+    raw = os.environ.get(EXCLUDE_ENV)
+    if raw is None:
+        raw = machine_setting(EXCLUDE_ENV, timeout)
+    return parse_exclusions(raw)
+
+
+def read_server_lists(directory, excluded=frozenset()):
+    """Every declared server, in file-name order, then file order, and the ones
+    excluded names, apart."""
     declared = []
     if not directory.is_dir():
-        return declared
+        if excluded:
+            unmatched(excluded, directory)
+        return declared, []
     for path in sorted(directory.glob('*.toml')):
         if path.name.startswith('.'):
             continue
@@ -419,12 +478,25 @@ def read_server_lists(directory):
                 raise ConfigError(f'{where}: ssh {server["ssh"]!r} must be one destination, '
                                   'without spaces, control characters or a leading -')
             declared.append(Declared(path.name, server['name'], server['ssh'], command, group))
+    kept = [d for d in declared if (Path(d.source).stem, d.ssh) not in excluded]
+    left_out = [d for d in declared if (Path(d.source).stem, d.ssh) in excluded]
+    # A typo must not add the very server it was meant to leave out.
+    missing = excluded - {(Path(d.source).stem, d.ssh) for d in left_out}
+    if missing:
+        unmatched(missing, directory)
+    # After exclusions, so a local list can declare an excluded destination again.
     seen = {}
-    for d in declared:
+    for d in kept:
         if d.ssh in seen:
             raise ConfigError(f'ssh {d.ssh!r} is declared in both {seen[d.ssh]} and {d.source}')
         seen[d.ssh] = d.source
-    return declared
+    return kept, left_out
+
+
+def unmatched(pairs, directory):
+    names = ', '.join(f'{list_name}/{destination}' for list_name, destination in sorted(pairs))
+    raise ConfigError(f'{EXCLUDE_SETTING} names {names}, which no list in {directory} declares '
+                      '(<list> is the file name without .toml, <ssh> the server\'s ssh); nothing written')
 
 
 # ---------------------------------------------------------------- resolution
@@ -600,14 +672,16 @@ class Plan:
     counts: dict
 
     def summary(self):
-        order = ('added', 'adopted', 'updated', 'removed', 'unchanged', 'not managed', 'this Mac', 'unresolved',
-                 'no host key')
+        order = ('added', 'adopted', 'updated', 'removed', 'unchanged', 'not managed', 'this Mac', 'excluded',
+                 'unresolved', 'no host key')
         return ', '.join(f'{self.counts[k]} {k}' for k in order if self.counts.get(k))
 
 
-def plan(settings, declared, endpoints, self_endpoint, previous, new_id=lambda: secrets.token_hex(16)):
+def plan(settings, declared, endpoints, self_endpoint, previous, excluded=(), new_id=lambda: secrets.token_hex(16)):
     """What [[servers]] should hold. endpoints maps every destination (declared
-    and existing) to its Endpoint; previous is the state's id -> record."""
+    and existing) to its Endpoint; previous is the state's id -> record;
+    excluded are the declared servers muxy.exclude_servers leaves out, which
+    count as undeclared."""
     existing = settings.servers
     managed_before = {e['id'] for e in existing if e.get('id') in previous}
     counts = {}
@@ -616,6 +690,9 @@ def plan(settings, declared, endpoints, self_endpoint, previous, new_id=lambda: 
     def note(kind, message):
         counts[kind] = counts.get(kind, 0) + 1
         actions.append(f'{kind}: {message}')
+
+    for d in excluded:
+        note('excluded', f'{d.name} ({Path(d.source).stem}/{d.ssh}): {EXCLUDE_SETTING} leaves it out on this Mac')
 
     def is_self(d):
         e = endpoints[d.ssh]
@@ -912,11 +989,14 @@ def reconcile(dry_run, log):
     resolver = Resolver(os.environ.get('MUXY_RECONCILE_SSH') or DEFAULT_SSH, DEFAULT_SSH_KEYGEN, timeout)
     settings_path = profile / 'settings.toml'
 
+    # Read first: a bad value is reported even before Muxy has a profile.
+    exclusions = read_exclusions(timeout)
+
     with locked(state_path.with_name('lock'), RUN_LOCK_WAIT_SECONDS, 'another muxy-reconcile'):
         if not settings_path.exists():
             return f'{settings_path} does not exist yet (open Muxy once); nothing to do'
         settings = read_settings(settings_path)
-        declared = read_server_lists(lists)
+        declared, excluded = read_server_lists(lists, exclusions)
         state = State(state_path)
         previous = state.managed(settings_path)
 
@@ -929,7 +1009,7 @@ def reconcile(dry_run, log):
         endpoints = resolver.resolve([d.ssh for d in declared],
                                      [x['ssh'] for x in settings.servers if isinstance(x.get('ssh'), str)])
 
-        result = plan(settings, declared, endpoints, self_endpoint, previous)
+        result = plan(settings, declared, endpoints, self_endpoint, previous, excluded)
         for action in result.actions:
             log.write(action)
             if dry_run:

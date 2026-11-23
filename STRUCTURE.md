@@ -92,7 +92,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
 | `tool.karabiner` | desktop | darwin | copies `~/.config/karabiner/karabiner.json`; Brewfile: 1 cask |
 | `tool.mise` | base | all | `~/.config/mise/conf.d/dotfiles.toml` (the pinned Go and default Node); settings `go.toolchain` (`GOTOOLCHAIN`) and `mise.canary` |
-| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy`, `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); Brewfile: 1 brew |
+| `tool.muxy` | desktop | darwin | `~/.local/bin/muxy` (held while `~/.local/bin/.muxy` exists), `~/.local/bin/muxy-reconcile`; LaunchAgent `com.ashtonian.muxy-reconcile` (with Muxy.app and Homebrew's python3); setting `muxy.exclude_servers`; Brewfile: 1 brew |
 
 Edit linked files in place. Add, remove or move files, then run
 `dotfiles apply`; a file in the way is reported, never overwritten. See
@@ -205,7 +205,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |
-| com.ashtonian.muxy-reconcile | At load, when `~/.config/muxy/servers.d` gains or loses a list, and hourly, once Muxy.app and Homebrew's python3 exist | `~/Library/Logs/muxy-reconcile/muxy-reconcile.log`, `launchd.{out,err}` |
+| com.ashtonian.muxy-reconcile | At load, when `~/.config/muxy/servers.d` gains or loses a list, when apply rewrites `~/.config/dotfiles/generated`, and hourly, once Muxy.app and Homebrew's python3 exist | `~/Library/Logs/muxy-reconcile/muxy-reconcile.log`, `launchd.{out,err}` |
 
 Templates are rendered copies, not links. `dotfiles apply` (every sync) writes a
 changed template and reloads the job, except the job it runs in and a scheduled

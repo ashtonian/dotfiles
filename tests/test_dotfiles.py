@@ -1240,19 +1240,40 @@ class RealFeatures(Fixture):
             self.assertIn(f'waiting     {label}: installs once', self.dotfiles('doctor').stdout)
 
     @unittest.skipUnless(sys.platform == 'darwin', 'tool.muxy is a macOS feature')
-    def test_a_muxy_installed_by_muxy_is_reported_not_replaced(self):
-        # What Muxy's "Install muxy-server" leaves: a link into its own copy.
-        own = self.home / '.local/bin/.muxy/current/muxy'
+    def test_a_muxy_installed_by_muxy_is_left_alone_while_its_server_copy_is_there(self):
+        # What Muxy's "Install muxy-server" leaves: its own copy, which a
+        # running muxy-server executes from, and a link into it.
+        copy = self.home / '.local/bin/.muxy'
+        own = copy / 'pair-2.1.0.abcdef/muxy'
         own.parent.mkdir(parents=True)
         own.write_text('#!/bin/sh\n')
-        (self.home / '.local/bin/muxy').symlink_to('.muxy/current/muxy')
+        (copy / 'current').symlink_to('pair-2.1.0.abcdef')
+        link = self.home / '.local/bin/muxy'
+        link.symlink_to('.muxy/current/muxy')
+        held = f'waiting     {link}: left alone while {copy} exists\n'
+
         p = self.dotfiles('init', '--profiles', 'base,dev,desktop')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         p = self.dotfiles('apply')
-        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
-        self.assertIn('a link to .muxy/current/muxy is in the way; remove it to let dotfiles manage this file',
-                      p.stdout + p.stderr)
-        self.assertEqual(os.readlink(self.home / '.local/bin/muxy'), '.muxy/current/muxy', 'left as it was')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(os.readlink(link), '.muxy/current/muxy', 'left as it was')
+        self.assertEqual(own.read_text(), '#!/bin/sh\n')
+        self.assertTrue((self.home / '.local/bin/muxy-reconcile').is_symlink(), 'the rest of the feature applies')
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn(held, doctor.stdout)
+
+        # Even with the link gone, its place stays empty while the copy is there.
+        link.unlink()
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(link.exists() or link.is_symlink())
+
+        # After a planned server restart the copy is moved aside, and apply links the wrapper.
+        copy.rename(self.path / 'muxy-server-copy')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(link.resolve(), FEATURES / 'tool.muxy/home/.local/bin/muxy')
 
     def test_apply_takes_over_the_retired_installers_agents(self):
         stale = '<?xml version="1.0"?>\n<plist version="1.0"><dict><key>Label</key><string>{}</string></dict></plist>\n'
@@ -3098,7 +3119,9 @@ fi''')
                         XDG_STATE_HOME=str(self.path / 'state'), MUXY_RECONCILE_LOG=str(self.log),
                         MUXY_RECONCILE_SSH=str(self.bin / 'ssh'), FAKE_SSH_HOSTS=str(self.path / 'hosts'),
                         MUXY_RECONCILE_SELF_ADDRESSES=self.SELF, FAKE_KNOWN_HOSTS=str(self.known_hosts),
-                        MUXY_RECONCILE_HOST_KEYS=str(Path(self.keys.name) / 'laptop.pub'))
+                        MUXY_RECONCILE_HOST_KEYS=str(Path(self.keys.name) / 'laptop.pub'),
+                        # Set, so no run reads this Mac's own generated settings.
+                        MUXY_RECONCILE_EXCLUDE='')
         self.env.pop('DOTFILES_MUXY_APP', None)
 
     def write_settings(self, *servers):
@@ -3315,6 +3338,83 @@ fi''')
                 self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
                 self.assertIn(message, p.stderr)
                 self.assertEqual(self.settings.read_bytes(), before)
+
+    @needs_muxy
+    def test_an_excluded_server_is_left_out_and_its_entry_removed(self):
+        self.write_settings()
+        self.declare_macs()
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([s['ssh'] for s in self.servers()], ['desk', 'tower'])
+
+        self.env['MUXY_RECONCILE_EXCLUDE'] = 'personal/tower'
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 removed, 1 unchanged, 1 this Mac, 1 excluded', p.stdout)
+        self.assertEqual([s['ssh'] for s in self.servers()], ['desk'])
+        self.assertIn('excluded: tower (personal/tower): muxy.exclude_servers leaves it out on this Mac',
+                      self.log.read_text())
+
+        self.env['MUXY_RECONCILE_EXCLUDE'] = ''
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual([s['ssh'] for s in self.servers()], ['desk', 'tower'], 'back once no longer excluded')
+
+    @needs_muxy
+    def test_a_server_excluded_and_declared_again_locally_keeps_its_entry(self):
+        self.write_settings()
+        self.declare_macs()
+        self.assertEqual(self.run_tool().returncode, 0)
+        tower_id = self.servers()[1]['id']
+
+        # This Mac's own name and group for one server of a shared list.
+        self.env['MUXY_RECONCILE_EXCLUDE'] = 'personal/tower'
+        self.declare({'name': 'Build tower', 'ssh': 'tower'}, name='local', group='Here')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('1 updated', p.stdout)
+        tower = next(s for s in self.servers() if s['ssh'] == 'tower')
+        self.assertEqual(tower, {'group': 'Here', 'id': tower_id, 'name': 'Build tower', 'ssh': 'tower'},
+                         'the same entry, so its tabs stay')
+
+    def test_an_exclusion_that_matches_no_server_writes_nothing(self):
+        for value, message in (('personal/towr', 'muxy.exclude_servers names personal/towr, which no list in'),
+                               ('work/tower', 'muxy.exclude_servers names work/tower'),
+                               ('tower', "'tower' is not <list>/<ssh>"),
+                               ('personal/', "'personal/' is not <list>/<ssh>")):
+            with self.subTest(value=value):
+                before = self.write_settings()
+                self.declare_macs()
+                self.env['MUXY_RECONCILE_EXCLUDE'] = value
+                p = self.run_tool()
+                self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+                self.assertIn(message, p.stderr)
+                self.assertEqual(self.settings.read_bytes(), before, 'a typo never adds what it meant to leave out')
+                self.assertFalse(self.state.exists())
+
+    def test_the_exclusion_is_read_from_what_dotfiles_apply_generated(self):
+        # As under launchd, which does not load env.sh: the variable is unset.
+        home = self.path / 'home'
+        generated = home / '.config/dotfiles/generated'
+        generated.mkdir(parents=True)
+        (generated / 'env.sh').write_text(
+            '[ -n "${MUXY_RECONCILE_EXCLUDE:-}" ] || MUXY_RECONCILE_EXCLUDE=\'personal/desk\'; '
+            'export MUXY_RECONCILE_EXCLUDE # muxy.exclude_servers\n')
+        self.env.update(HOME=str(home))
+        self.env.pop('MUXY_RECONCILE_EXCLUDE')
+        self.write_settings()
+        self.declare({'name': 'Desk', 'ssh': 'desk'}, {'name': 'Laptop', 'ssh': 'laptop'})
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(p.stdout, 'muxy-reconcile: in step: 1 this Mac, 1 excluded\n',
+                         'the desk is left out, so nothing needs writing and Muxy never runs')
+
+        (generated / 'env.sh').write_text(
+            '[ -n "${MUXY_RECONCILE_EXCLUDE:-}" ] || MUXY_RECONCILE_EXCLUDE=\'personal/dsk\'; '
+            'export MUXY_RECONCILE_EXCLUDE # muxy.exclude_servers\n')
+        p = self.run_tool()
+        self.assertEqual(p.returncode, 2, p.stdout + p.stderr)
+        self.assertIn('names personal/dsk', p.stderr)
 
     def test_a_destination_declared_twice_is_refused(self):
         self.write_settings()

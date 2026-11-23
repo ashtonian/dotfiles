@@ -563,17 +563,23 @@ Feature `tool.muxy` (desktop profile) makes each Mac's Muxy list the other Macs 
 every context it works in as remote servers. Each context's overlay names its Macs:
 `Host` aliases in an `ssh_config` fragment, and a list linked to
 `~/.config/muxy/servers.d/<context>.toml`. `muxy-reconcile`, run by the LaunchAgent
-`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, and hourly,
+`com.ashtonian.muxy-reconcile` at load, when a list is added or removed, when apply
+rewrites its generated files, and hourly,
 rewrites only the `[[servers]]` tables of Muxy's `settings.toml`: it leaves out the Mac
 it runs on, keeps the ids of entries that already reach the same Mac (Muxy ties tabs to
 them), keeps entries added by hand, and writes only what Muxy's own parser accepts.
 `~/.local/bin/muxy` runs the app's own `muxy`, which is also what Muxy on the other Macs
-starts over SSH. Once per Mac:
+starts over SSH. While Muxy's own server copy `~/.local/bin/.muxy` exists, apply leaves
+`~/.local/bin/muxy` alone (a running server may execute from it); the copy is retired by
+hand at a planned server restart only. Neither apply nor `muxy-reconcile` stops, restarts
+or upgrades a Muxy server. One Mac leaves out, adds or renames servers, or changes how one
+is reached, in files only it has (`muxy.exclude_servers` in `machine.toml`, a local list,
+`~/.ssh/config.local`). Once per Mac:
 
 ```sh
-rm -f ~/.local/bin/muxy && rm -rf ~/.local/bin/.muxy   # only if apply reports it in the way
-ssh <alias> true                                       # once per listed Mac: accept its host key
-muxy-reconcile --dry-run                               # what it would change, checked by Muxy
+dotfiles doctor            # "waiting ~/.local/bin/muxy": Muxy's own server copy is here; leave it
+ssh <alias> true           # once per listed Mac: accept its host key
+muxy-reconcile --dry-run   # what it would change, checked by Muxy
 ```
 
 The algorithm, configuration, exit statuses and troubleshooting:
