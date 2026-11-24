@@ -199,6 +199,8 @@ To turn an agent off on one Mac, disable its feature in
 `~/.config/dotfiles/machine.toml` (`[features] disable = ["dotfiles.update"]`)
 and run `dotfiles apply`.
 
+The opt-in [Gas City fleet guide](features/agents.gascity/README.md) covers shared issue queues, fixed checkouts, cross-repo dependencies, Claude implementation and Astra review across Macs.
+
 ## Feature engine
 
 `cmd/dotfiles` is the engine the [machine features design](docs/MACHINE-FEATURES.md)
