@@ -140,7 +140,7 @@ drives() {
 # the drive is mounted. A cache found as a real directory (never moved, or its
 # tool deleted the link and started over) gives way to the link and is deleted,
 # not copied: a cache rebuilds, and a copy of one a tool is writing can be
-# torn. A link it made whose directory prune_cache removed gets the directory
+# torn. A cache a running process has open waits for a later run. A link it made whose directory prune_cache removed gets the directory
 # back; any other link stays as it is.
 relocate_caches() {
     local entry rel name src dst aside
@@ -175,6 +175,13 @@ relocate_caches() {
         fi
         # Not there: the tool has not run on this machine, or it is not a directory.
         [[ -d $src ]] || continue
+        # A daemon holding a database open there (an MCP server's index) would
+        # go on writing to a file the move deletes; a later run finds it idle.
+        # lsof +D exits 1 even when it lists a process, so its output decides.
+        if [[ -n $(lsof -t +D "$src" 2>/dev/null) ]]; then
+            echo "$(now) cache $src is open in a running process; it moves on a later run"
+            continue
+        fi
         if $dry_run; then
             echo "$(now) would move cache $src to $dst"
             continue

@@ -3619,6 +3619,20 @@ class DiskHygiene(Fixture):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(sorted(f.name for f in target.iterdir()), ['new.idx'])
 
+    def test_a_cache_a_running_process_has_open_waits(self):
+        self.cache_drive('Library/Caches/index')
+        index = self.tree(self.home / 'Library/Caches/index', ('db.sqlite',))
+        holder = subprocess.Popen([sys.executable, '-c', 'import sys, time; f = open(sys.argv[1]); print("open", flush=True); time.sleep(60)',
+                                   str(index / 'db.sqlite')], stdout=subprocess.PIPE, text=True)
+        self.addCleanup(holder.wait)
+        self.addCleanup(holder.kill)
+        self.assertEqual(holder.stdout.readline().strip(), 'open')
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(index.is_symlink())
+        self.assertTrue((index / 'db.sqlite').exists())
+        self.assertIn(f'cache {index} is open in a running process', p.stdout)
+
     def test_caches_stay_while_the_cache_drive_is_not_mounted(self):
         self.env.update(DISK_HYGIENE_CACHE_DRIVE=str(self.volumes / 'Gone'), DISK_HYGIENE_RELOCATE='Library/Caches/gopls')
         gopls = self.tree(self.home / 'Library/Caches/gopls')
