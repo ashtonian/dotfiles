@@ -96,13 +96,21 @@ Before assigning a *fresh* slot, compare its exact fetch URL and check its worki
 
 ```sh
 slot=$(gitstead path parser 1)       # or set slot to an existing path
-fleet-slot-check "$slot" https://github.com/example/parser.git
-bd -C "$BOARD" --actor builder-a-parser-one update "$ISSUE_ID" --claim
+fleet-slot-check "$slot" https://github.com/example/parser.git &&
+  bd -C "$BOARD" --actor builder-a-parser-one update "$ISSUE_ID" --claim
 ```
 
-From the city shell, `command gc --city "$CITY" session new parser-one --no-attach` starts the prepared template after the city is running. Keep the returned session ID for the handoff and subsequent attaches.
+A successful preflight prints the checkout's HEAD. The board claim reserves the issue. Use a unique actor per slot and one session per copy. After the claim succeeds, run these in the city shell:
 
-A successful preflight prints the checkout's HEAD. It does not reserve the copy. Use a unique actor per slot and one session per copy. After the atomic claim succeeds, start the city with `command gc start "$CITY"` and open its coordinator with `command gc --city "$CITY" session attach mayor`. Record the slot, branch, bead and draft PR on the board. On another host use a different actor and claim a different ready item. Keep a live claim current with `bd -C "$BOARD" --actor builder-a-parser-one heartbeat "$ISSUE_ID"` at intervals shorter than its lease. Stop on loss of ownership. If a claim fails, inspect its owner before launching. For parallel work within one repo, split independent acceptance criteria across beads and assign each its own copy.
+```sh
+command gc start "$CITY"
+command gc --city "$CITY" session new parser-one --no-attach
+command gc --city "$CITY" session list
+```
+
+Give the returned session the claimed issue, branch and acceptance criteria. Attach with `command gc --city "$CITY" session attach "$SESSION_ID"`. Record the slot, session ID, branch, bead and draft PR on the board. To speak to the city coordinator, attach to `mayor`.
+
+On another host use a different actor and claim a different ready item. Keep a live claim current with `bd -C "$BOARD" --actor builder-a-parser-one heartbeat "$ISSUE_ID"` at intervals shorter than its lease. Stop on loss of ownership. If a claim fails, inspect its owner before launching. For parallel work within one repo, split independent acceptance criteria across beads and assign each its own copy.
 
 A morning target across three four-slot hosts might be three parser implementers, three gateway implementers, four library/framework implementers and two Astra reviews. Those are **twelve task slots**. Subtract any standing agents, manual sessions and unavailable hosts from the budget first. Give smaller hosts bounded edits and send heavy Go race tests or generation to CI. Increase to five or six sessions only where measured memory, disk, review throughput and account limits permit.
 
