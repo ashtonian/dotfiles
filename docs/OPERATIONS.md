@@ -288,7 +288,9 @@ and repository scripts leave behind, so each run deletes:
   `DISK_HYGIENE_RELOCATE` found as a real directory: it is renamed aside, a
   link to `<drive>/cache/xdg/<name>` takes its place, and the internal copy is
   deleted rather than copied (a cache rebuilds; a copy of one a tool is writing
-  can be torn). Go tools ignore `XDG_CACHE_HOME` on macOS, so the link is how
+  can be torn). A cache a running process has open, such as an MCP server's
+  index database, is left for a later run (`lsof +D`), which logs `is open in a
+  running process`. Go tools ignore `XDG_CACHE_HOME` on macOS, so the link is how
   their caches leave the internal disk. Living under `cache/xdg`, the moved
   caches are pruned like the drive sessions' caches; when that pruning removes
   one whole, the run recreates its directory so the link never dangles. Links
