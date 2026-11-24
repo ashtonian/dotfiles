@@ -10,9 +10,11 @@
 _gpt_session() {
   local model=$1 effort=$2
   shift 2
+  local endpoint
+  endpoint=$("${DOTFILES:-$HOME/.dotfiles}/bin/codex-app-server" --print-endpoint) || return
   local -a connectors=()
   [[ ${CODEX_CONNECTORS:-0} == 1 ]] || connectors=(--disable apps)
-  codex --remote unix:// -C "$PWD" --model "$model" -c model_reasoning_effort="$effort" \
+  codex --remote "$endpoint" -C "$PWD" --model "$model" -c model_reasoning_effort="$effort" \
     "${connectors[@]}" --yolo "$@"
 }
 

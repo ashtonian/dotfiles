@@ -461,7 +461,7 @@ leftover cask: `brew uninstall --cask claude-code`.
 
 The model and effort defaults are listed above. The launchers forward additional
 arguments. Both GPT launchers require the local Codex app
-server to be running on its default Unix socket: the
+server to be running on its dedicated Unix socket: the
 `com.ashtonian.codex-remote-control` LaunchAgent (see LaunchAgents). Claude's model aliases track the
 provider's model mapping; the Codex model strings are pinned in these wrappers.
 Availability and supported effort levels depend on the authenticated provider.
@@ -474,7 +474,11 @@ Every session these launchers start bypasses permissions, so connector content
 default. `CLAUDE_CONNECTORS=1 claudemore` brings the claude.ai connectors back
 for that one launch, and `CODEX_CONNECTORS=1 gptmore` the ChatGPT apps. Codex
 receives `--disable apps` from an attached client as a thread setting, so it
-holds for that session only.
+holds for that session only. The server and launchers use
+`$CODEX_HOME/dotfiles-app-server.sock` (`CODEX_HOME` defaults to `~/.codex`),
+with the endpoint defined by `bin/codex-app-server --print-endpoint`.
+Codex reserves its default `unix://` socket for its own managed daemon and
+requires explicit feature flags to match that daemon's shared settings.
 
 ### Subagents and the delegation policy
 

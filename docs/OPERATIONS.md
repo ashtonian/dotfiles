@@ -60,6 +60,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `CLAUDE_CONNECTORS` | `1` or unset | unset | `claudemore`/`claudemax`: `1` keeps the claude.ai connectors (Gmail, Calendar, Drive, Docs) for that launch. Otherwise the launcher sets `ENABLE_CLAUDEAI_MCP_SERVERS=false` |
 | `ENABLE_CLAUDEAI_MCP_SERVERS` | `false` or unset | `false` in every session `claudemore`/`claudemax` start without `CLAUDE_CONNECTORS=1` | Claude Code fetches no claude.ai connectors. A running session keeps what it started with |
 | `CODEX_CONNECTORS` | `1` or unset | unset | `gptmore`/`gptmax`: `1` keeps the ChatGPT apps (connectors) for that launch. Otherwise the launcher passes `--disable apps`, which the app-server applies to that session |
+| `CODEX_HOME` | Directory path | `~/.codex` | Codex's config and state directory. `bin/codex-app-server` and the GPT launchers use its `dotfiles-app-server.sock`; a custom value must match in the service and client environments |
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | `1` in interactive zsh (feature `agents.claude`'s fragment) | Turns on Claude Code's agent teams for sessions started from a terminal |
 | `REPO_GUARD_LIST` | File path | unset: every `~/.config/repo-guard/protected.d/*.txt` | repo-guard's protected repositories, one `owner/name` per line; when set, the only list read. Empty protects nothing. Set it in the environment a session starts with; the hook reads the harness's environment, not a command's. A Codex session on the app-server gets the server's environment, so there it cannot be set per session |
 | `DOTFILES_ENV_PATH` | PATH value | set by `env.sh` | The PATH `env.sh` last composed. A nested shell whose PATH still ends with it keeps PATH unchanged, so directories a command put first stay first; do not set it by hand |
@@ -374,13 +375,22 @@ There is no metrics endpoint for sync or updates.
 ### Codex service
 
 The service runs `bin/codex-app-server`, which starts codex `app-server
---remote-control --listen unix://` with the delegation policy
+--remote-control` on `$CODEX_HOME/dotfiles-app-server.sock` (`CODEX_HOME`
+defaults to `~/.codex`) with the delegation policy
 (`~/.config/agent-delegation/policy.md`) as every session's developer
-instructions. `gptmore` and `gptmax` attach to that socket. Their `-C "$PWD"`
+instructions. `bin/codex-app-server --print-endpoint` prints the endpoint
+without starting the server. `gptmore` and `gptmax` use it to attach to the
+same socket. Their `-C "$PWD"`
 selects the project directory instead of the service's home working directory.
 The policy is read when the service starts: after changing it, restart the
 service with `kickstart -k` below (that interrupts its sessions). A missing
 policy is logged to the service's stderr and the service starts without it.
+
+The dedicated socket keeps this launchd-managed service separate from
+Codex's managed background daemon. On Codex's default `unix://` endpoint,
+explicit feature overrides such as `--disable apps` must match the daemon's
+shared settings. On this service's endpoint, the client sends them as thread
+settings, preserving the per-launch `CODEX_CONNECTORS` choice.
 
 The stable launcher copies the installed Homebrew release into
 `~/.local/libexec/codex-stable/`, verifies its signature, and executes the fixed
@@ -396,6 +406,11 @@ tail -50 ~/Library/Logs/CodexHomebrew/remote-control.stderr.log
 # Interrupts sessions served by this process.
 launchctl kickstart -k "gui/$(id -u)/com.ashtonian.codex-remote-control"
 ```
+
+After updating the socket configuration, run `dotfiles apply`, restart the
+service once, and open a new shell (or source
+`~/.config/dotfiles/generated/zshrc.zsh`). Use `gptmore resume <id>` or
+`gptmax resume <id>` to reconnect a saved session to this service.
 
 For Too many open files errors, inspect the loaded job's maxfiles value. The
 template sets a soft limit of 65,536. `dotfiles apply` reloads the job when the
@@ -756,6 +771,7 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | Codex's `spawn_agent` offers no `scout` or `reader` role | `~/.codex/agents/scout.toml` and `reader.toml` must link into `features/agents.delegation/home/`. A malformed role file is skipped with a startup warning (`Ignoring malformed agent role definition`); `codex debug prompt-input hi \| grep -o -E '(scout\|reader): \{'` prints one line per role that loaded. |
 | A launched session still shows `mcp__claude_ai_*` tools | It was started with `CLAUDE_CONNECTORS=1`, by plain `claude`, or before this launcher. Check with `ps -E -o command= -p <pid> \| tr ' ' '\n' \| grep ENABLE_CLAUDEAI`; restart it with `claudemore`. |
 | A `gptmore` session still has ChatGPT app tools | It was started with `CODEX_CONNECTORS=1`, by plain `codex`, or before this launcher. `ps -o command= -p <pid>` of the client shows `--disable apps` when the launcher left them out; restart it with `gptmore`. |
+| `Background server has incompatible feature settings` / `This session requires apps to be disabled` | Check the client's `--remote` argument: `gptmore` and `gptmax` use the dedicated endpoint printed by `~/.dotfiles/bin/codex-app-server --print-endpoint`. A client using `unix://` is checking Codex's shared daemon settings. Run `dotfiles apply`, restart the Codex service when its sessions are idle, and open a new shell to load the updated launchers. |
 | A command is denied with `Changes to <owner>/<name> need the user's explicit permission` | repo-guard matched a protected repository: the command names it, or runs in or points git at a clone of it. `claude plugin list` shows `repo-guard@skills-dir`; Codex's `/hooks` shows the `PreToolUse` hook from `/etc/codex/config.toml` as managed. The lists are `~/.config/repo-guard/protected.d/*.txt`. If the change is permitted, run it yourself, or start a Claude Code session with `REPO_GUARD_LIST=` (empty). If the repository should not be protected, remove it from its overlay's list. |
 | Codex runs a protected write without a denial | Codex's `/hooks` must list the repo-guard hook with source system. If it is missing, `bin/dotfiles-agents check` reports `/etc/codex/config.toml` missing or changed: run `dotfiles-agents install`. If it is listed, `ls -l ~/.local/bin/repo-guard` must resolve into `features/agents.repo-guard/` (without it the hook passes): `dotfiles apply`. A hook that ran past 10 s lets the call through; the session shows it as a failed hook. |
 | `PreToolUse:Bash hook error` naming `repo-guard: <list>:<n>: '<line>' is not owner/name` | A protected list has a bad line, so every write-shaped command is blocked. Fix the line in the overlay that owns the list; reads keep working meanwhile. `cannot read the protected list` means a listed file is unreadable or `REPO_GUARD_LIST` names a missing file. |
