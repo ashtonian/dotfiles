@@ -791,10 +791,6 @@ ok
 # defaults write com.apple.dock persistent-others -array-add '{tile-data={}; tile-type="spacer-tile";}'
 # ok
 
-running "Add a 'Recent Applications' stack to the Dock"
-defaults write com.apple.dock persistent-others -array-add '{ "tile-data" = { "list-type" = 1; }; "tile-type" = "recents-tile"; }'
-ok
-
 # Hot corners
 # Possible values:
 #  0: no-op
@@ -820,32 +816,14 @@ ok
 # defaults write com.apple.dock wvous-bl-modifier -int 0
 # ok
 
-## dockutil comes from the brew.macos feature
-running "Make dock empty."
-dockutil --remove all --allhomes
-ok
-
-# add apps
-running "Add apps to dock."
-dockutil --add '/System/Applications/System Settings.app' --allhomes --no-restart
-dockutil --add '/Applications/Muxy.app' --allhomes --no-restart
-dockutil --add '/Applications/Visual Studio Code.app' --allhomes --no-restart
-dockutil --add '/Applications/Brave Browser.app' --allhomes --no-restart
-dockutil --add '/Applications/Notion.app' --allhomes --no-restart
-dockutil --add '/System/Applications/Calendar.app' --allhomes --no-restart
-dockutil --add '/System/Applications/Contacts.app' --allhomes --no-restart
-dockutil --add '/Applications/Signal.app' --allhomes --no-restart
-dockutil --add '/Applications/Spotify.app' --allhomes
-ok
-
-# // TODO: folder for chat apps
-
-running "add folders to dock"
-dockutil --add '~/' --view grid --sort name  --no-restart
-dockutil --add '/Applications' --view grid --display folder --allhomes --sort name --no-restart
-dockutil --add '/Applications/Utilities' --view grid --display folder --allhomes --sort name --no-restart
-dockutil --add '~/Downloads' --view grid --display folder --allhomes --sort dateadded
-ok
+for preference in dock sidebar associations; do
+    running "Configure this user's desktop ($preference)"
+    if "${0:A:h}/bin/configure-desktop" "$preference"; then
+        ok
+    else
+        warn "$preference setup needs attention; retry bin/configure-desktop $preference"
+    fi
+done
 
 ### have a look at potential menu bar options
 # ls /System/Library/CoreServices/Menu\ Extras/
@@ -1427,7 +1405,6 @@ for app in "Activity Monitor" \
 	"Address Book" \
 	"Calendar" \
 	"Contacts" \
-	"Dock" \
 	"Finder" \
 	"Mail" \
 	"Photos" \
@@ -1453,27 +1430,8 @@ fi
 
 
 
-#TODO: runn all apps
+# First-login steps are in README.md#first-login.
 #TODO: fix login items
-#TODO: finder siderbar
-
-# TODO:s
-# * finder sidebar
-#   * rm tags section
-#   * add 'OS X' aka local mac install drive to finder sidebar
-#   * adjust favorites
-#     * [FinderSidebarEditor](https://github.com/robperc/FinderSidebarEditor)
-#     * (home folder)
-#     * Projects
-#     * Recents
-#     * Downloads
-#     * Desktop
-#     * Documents
-#     * Applications
-#     * Utilities
-#     * cloud accounts...
-#     * run monolingual
-# * after init.sh option to remove dockutil and others
 #
 # * defaults write com.agilebits.onepassword7 "ShortcutRecorder BrowserActivation" -dict "keyChars" -string '\' "keyCharsIgnoringModifiers" -string '\' "keyCode" -int 42 "modifierFlags" -int 1048576 "modifiers" -int 256 "ShortcutRecorder GlobalLock", "ShortcutRecorder GlobalActivation", and "ShortcutRecorder BrowserActivation"
 # * Last login: Sun Jan 24 18:55:04 on ttys000

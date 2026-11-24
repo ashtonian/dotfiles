@@ -293,6 +293,7 @@ main() {
     info "Next steps:"
     echo "  1. Restart your terminal"
     echo "  2. Run '~/.dotfiles/sync.sh' to start syncing"
+    echo "  3. Follow the first-login checklist in $DOTFILES_DIR/README.md"
     echo ""
 }
 
