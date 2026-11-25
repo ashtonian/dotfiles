@@ -891,6 +891,64 @@ class SyncOverlays(SignedRepo):
         self.assertEqual(self.engine_calls(), [])
 
 
+class SyncWithoutIdentity(SignedRepo):
+    """sync_git_repo on a repository that cannot sign: it receives, and publishes nothing."""
+
+    def setUp(self):
+        super().setUp()
+        origin = self.path / 'origin.git'
+        subprocess.run(['git', 'init', '-q', '--bare', '-b', 'master', str(origin)], check=True, env=self.env)
+        self.git('remote', 'add', 'origin', str(origin))
+        self.git('push', '-q', '-u', 'origin', 'master')
+        self.other = self.path / 'other'
+        subprocess.run(['git', 'clone', '-q', str(origin), str(self.other)], check=True, env=self.env)
+
+    def upstream_commit(self, name):
+        """Another machine publishes NAME, a new file."""
+        (self.other / name).write_text('upstream\n')
+        for args in (['add', name],
+                     ['-c', 'user.name=Other', '-c', 'user.email=other@example.com', '-c', 'commit.gpgsign=false',
+                      'commit', '-q', '-m', 'upstream ' + name],
+                     ['push', '-q', 'origin', 'master']):
+            subprocess.run(['git', '-C', str(self.other), *args], check=True, env=self.env)
+        return subprocess.run(['git', '-C', str(self.other), 'rev-parse', 'HEAD'], env=self.env, check=True,
+                              capture_output=True, text=True).stdout
+
+    def sync(self):
+        return self.bash('sync_git_repo "$1"', str(self.repo))
+
+    def test_fast_forwards_to_what_brings_the_identity(self):
+        upstream = self.upstream_commit('identity')
+        self.git('config', '--unset', 'user.email')
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('receiving only', p.stdout)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), upstream)
+
+    def test_local_edits_wait_for_the_identity_and_fail_the_run(self):
+        upstream = self.upstream_commit('identity')
+        self.edit('tracked')
+        self.git('config', '--unset', 'user.signingkey')
+        p = self.sync()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('committing them needs a signing identity', p.stdout)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), upstream, 'what does not touch the edit still arrives')
+        self.assertEqual(self.git('status', '--porcelain', '--untracked-files=no'), ' M tracked\n')
+
+    def test_a_diverged_branch_is_left_as_it_is(self):
+        self.upstream_commit('identity')
+        (self.repo / 'local').write_text('local\n')
+        self.git('add', 'local')
+        self.git('commit', '-q', '-m', 'local')
+        before = self.git('rev-parse', 'HEAD')
+        self.git('config', '--unset', 'user.email')
+        p = self.sync()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('cannot fast-forward', p.stdout)
+        self.assertEqual(self.git('rev-parse', 'HEAD'), before)
+        self.assertEqual(self.git('status', '--porcelain'), '')
+
+
 class PrivateNames(SignedRepo):
     """The public checkout names nothing an overlay's denylist.txt keeps private."""
 
