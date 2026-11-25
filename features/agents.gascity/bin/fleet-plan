@@ -1,0 +1,87 @@
+#!/usr/bin/env python3
+"""Print or verify a human's approval of one GitHub plan comment."""
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+
+
+def github(path, paginate=False):
+    command = ["gh", "api", "--hostname", "github.com"]
+    if paginate:
+        command += ["--paginate", "--slurp"]
+    return json.loads(subprocess.check_output(command + [path]))
+
+
+def decision(comments, owner, plan):
+    digest = hashlib.sha256(plan["body"].encode("utf-8")).hexdigest()
+    approve = f"/fleet approve {plan['id']} {digest}"
+    hold = f"/fleet hold {plan['id']}"
+    latest = None
+    for comment in comments:
+        user = comment.get("user") or {}
+        body = (comment.get("body") or "").strip()
+        if user.get("id") != owner or user.get("type") != "User" or comment.get("performed_via_github_app"):
+            continue
+        if body == hold or re.fullmatch(rf"/fleet approve {plan['id']} [a-f0-9]{{64}}", body):
+            if latest is None or comment["id"] > latest["id"]:
+                latest = comment
+    if latest is None or latest["body"].strip() != approve:
+        return approve, None
+    # Editing another user's comment can preserve the original author ID.
+    if latest["created_at"] != latest["updated_at"] or latest["created_at"] < plan["updated_at"]:
+        return approve, None
+    return approve, latest
+
+
+def positive(value):
+    value = int(value)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("expected a positive GitHub ID or issue number")
+    return value
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("show", "check"))
+    parser.add_argument("repo", help="GitHub owner/repository")
+    parser.add_argument("issue", type=positive)
+    parser.add_argument("plan", type=positive, help="numeric ID of the comment containing the plan")
+    parser.add_argument("--owner-id", type=positive, help="trusted human's numeric GitHub account ID")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repo, flags=re.ASCII) or any(v in (".", "..") for v in args.repo.split("/")):
+        parser.error("invalid owner/repository")
+    if args.action == "check" and args.owner_id is None:
+        parser.error("check requires --owner-id from the operator's trusted configuration")
+    issue_path = f"repos/{args.repo}/issues/{args.issue}"
+    issue = github(issue_path)
+    if issue["state"] != "open":
+        sys.exit("issue is closed")
+    pages = github(issue_path + "/comments?per_page=100", paginate=True)
+    comments = [c for page in pages for c in page]
+    plan = next((c for c in comments if c["id"] == args.plan), None)
+    if not plan or not (plan.get("body") or "").strip():
+        sys.exit("plan comment missing or empty on this issue")
+    approve, approval = decision(comments, args.owner_id, plan)
+    if args.action == "show":
+        # Render untrusted comment text without interpreting terminal controls.
+        # Each line is quoted so text in the proposal is distinct from the decision.
+        for line in plan["body"].split("\n"):
+            shown = "".join(c if c.isprintable() else ascii(c)[1:-1] for c in line)
+            print("> " + shown)
+        print()
+        print(approve)
+    elif approval:
+        print(f"{approve} {approval['html_url']}")
+    else:
+        sys.exit("awaiting owner approval for this plan revision")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        sys.exit("could not verify the plan with GitHub; hold dispatch")
