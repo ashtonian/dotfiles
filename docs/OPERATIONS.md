@@ -455,10 +455,17 @@ in `dotfiles doctor` rather than syncing outside the lock.
 The label is the one `gitstead install-agent` gives its default schedule, so a
 Mac runs one or the other, never both. On a Mac where gitstead installed its own
 schedule, remove it before the first apply with this feature, so gitstead's
-state stops recording a job it no longer owns:
+state stops recording a job it no longer owns. First check that no sync is
+running, since uninstalling ends one mid-run:
 
 ```sh
-pgrep -fl 'gitstead sync' || gitstead install-agent --uninstall
+pgrep -fl 'gitstead sync'
+```
+
+When that prints nothing:
+
+```sh
+gitstead install-agent --uninstall
 dotfiles apply
 launchctl print "gui/$(id -u)/com.ashtonian.gitstead" | grep -E 'state|program|last exit'
 ```
