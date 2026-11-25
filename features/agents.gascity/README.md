@@ -1,6 +1,6 @@
 # Running a Gas City fleet
 
-Use one Gas City city per execution host and one shared Beads board per group that may see the same work. A city owns local sessions, prompts and recovery. The shared board tells operators which issue is ready, who claimed it and which change unblocks the next repo. GitHub owns the issue, PR, CI and release. You supply one checkout per active agent, including reviewers.
+The orchestrator is Gas City (`gc`). Its bundled `gastown` template supplies roles and workflows. Use one Gas City city per execution host and one shared Beads board per group that may see the same work. A city owns local sessions, prompts and recovery. The shared board tells operators which issue is ready, who claimed it and which change unblocks the next repo. GitHub owns the issue, PR, CI and release. You supply one checkout per active agent, including reviewers.
 
 ## Install on each participating Mac
 
@@ -48,6 +48,44 @@ option_defaults = { permission_mode = "suggest", model = "gpt-6.2-astra" }
 ```
 
 Use an implementation identity without branch-protection bypass, and require review on the target branch. Give the reviewer read access. Inspect the resolved configuration with `command gc --city "$CITY" config show`, including pack providers, permission modes, startup hooks, standing sessions and refinery/landing orders. Disable auto-landing and additional worker pools before pointing the city at real repos. Count coordinator, patrol and review sessions against the host budget. Start with a disposable copy and one named worker.
+
+For a manual pilot using the stock v1.5.1 Gas Town pack, add these overrides to the stopped city's `city.toml`. Make Mayor available on demand, and reserve the other seats for explicit dispatch. A zero-agent start preview alone can miss a pool that scales up after the first reconciliation.
+
+```toml
+[[patches.named_session]]
+template = "gastown.mayor"
+mode = "on_demand"
+
+[[patches.named_session]]
+template = "gastown.deacon"
+mode = "on_demand"
+
+[[patches.named_session]]
+template = "gastown.boot"
+mode = "on_demand"
+
+[[patches.agent]]
+name = "bd.dog"
+suspended = true
+
+[[patches.agent]]
+name = "gastown.dog"
+suspended = true
+
+[[patches.agent]]
+name = "core.control-dispatcher"
+suspended = true
+
+[[patches.agent]]
+name = "gastown.deacon"
+suspended = true
+
+[[patches.agent]]
+name = "gastown.boot"
+suspended = true
+```
+
+Validate the effective configuration and inspect `gc session list` after the supervisor's first reconciliation. If enabling automatic pack workflows later, explicitly restore their workers and budget those sessions.
 
 For the first pilot, leave product rigs unregistered so their refinery, witness and polecat templates are never activated. For a city-local worker, place this in `agents/parser-one/agent.toml` under the city. Substitute an absolute path on **that host**. Give the reviewer its own copy. Keep checkout-creation and checkout-reset hooks off the supplied copies.
 
