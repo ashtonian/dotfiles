@@ -1,0 +1,104 @@
+#!/usr/bin/env python3
+"""Apply one part of the optional macOS desktop setup as the logged-in user."""
+import argparse
+import os
+from pathlib import Path
+import pwd
+import shutil
+import subprocess
+import sys
+import tempfile
+
+
+HOME = Path.home()
+APPS = Path('/Applications')
+SYSTEM_APPS = Path('/System/Applications')
+
+
+def run(*args, **kwargs):
+    return subprocess.run(args, check=True, **kwargs)
+
+
+def dock():
+    if not shutil.which('dockutil'):
+        raise RuntimeError('dockutil is missing. Install the brew.macos packages first.')
+    apps = [SYSTEM_APPS / 'System Settings.app', APPS / 'Muxy.app',
+            APPS / 'Visual Studio Code.app', APPS / 'Brave Browser.app',
+            APPS / 'Notion.app', SYSTEM_APPS / 'Calendar.app',
+            SYSTEM_APPS / 'Contacts.app', APPS / 'Signal.app', APPS / 'Spotify.app']
+    apps = [app for app in apps if app.is_dir()]
+    if not apps:
+        raise RuntimeError('None of the configured Dock apps are installed.')
+    folders = [p for p in (HOME, APPS, APPS / 'Utilities', HOME / 'Downloads') if p.is_dir()]
+
+    # Keep a restorable snapshot until every tile has been written. dockutil
+    # edits one tile at a time and otherwise restarts the Dock after each edit.
+    snapshot = run('defaults', 'export', 'com.apple.dock', '-', stdout=subprocess.PIPE).stdout
+    if not snapshot:
+        raise RuntimeError('Could not back up the Dock.')
+    try:
+        run('dockutil', '--remove', 'all', '--no-restart')
+        for app in apps:
+            run('dockutil', '--add', app, '--no-restart')
+        for folder in folders:
+            sort = 'dateadded' if folder == HOME / 'Downloads' else 'name'
+            run('dockutil', '--add', folder, '--view', 'grid', '--sort', sort,
+                '--display', 'folder', '--no-restart')
+    except (subprocess.CalledProcessError, OSError, KeyboardInterrupt):
+        try:
+            run('defaults', 'import', 'com.apple.dock', '-', input=snapshot)
+        except (subprocess.CalledProcessError, OSError):
+            with tempfile.NamedTemporaryFile(prefix='dock-backup-', suffix='.plist', delete=False) as f:
+                f.write(snapshot)
+            raise RuntimeError(f'Could not restore the Dock. Backup saved at {f.name}') from None
+        raise
+    # A future login loads the new tiles if the Dock is not running yet.
+    result = subprocess.run(['killall', '-u', pwd.getpwuid(os.getuid()).pw_name, 'Dock'])
+    if result.returncode not in (0, 1):
+        result.check_returncode()
+
+
+def associations():
+    handlers = [
+        ('Visual Studio Code.app', 'com.microsoft.VSCode',
+         'txt md json yaml yml toml xml py go js ts sh c h cpp hpp swift'),
+        ('IINA.app', 'com.colliderli.iina', 'mkv mp3 mp4 mov m4v flac'),
+    ]
+    failed = []
+    for app, bundle, extensions in handlers:
+        if not (APPS / app).is_dir():
+            print(f'Skipping file associations for {app} (app missing).')
+            continue
+        for ext in extensions.split():
+            try:
+                run('duti', '-s', bundle, '.' + ext, 'all')
+            except subprocess.CalledProcessError:
+                failed.append('.' + ext)
+    if failed:
+        raise RuntimeError('Could not set defaults for ' + ', '.join(failed))
+
+
+def sidebar():
+    source = Path(__file__).resolve().parents[1] / 'lib_sh/finder-favorites.m'
+    projects = HOME / 'projects'
+    if not projects.is_dir():
+        projects = HOME / 'Projects'
+    folders = [HOME, projects, HOME / 'Downloads', HOME / 'Desktop', HOME / 'Documents',
+               APPS, APPS / 'Utilities']
+    with tempfile.TemporaryDirectory() as build:
+        helper = Path(build) / 'finder-favorites'
+        run('xcrun', 'clang', '-fobjc-arc', '-Wno-deprecated-declarations',
+            '-framework', 'Foundation', '-framework', 'CoreServices', source, '-o', helper)
+        run(helper, *(p for p in folders if p.is_dir()))
+
+
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('preference', choices=['dock', 'sidebar', 'associations'])
+    args = parser.parse_args()
+    if sys.platform != 'darwin' or os.geteuid() == 0:
+        parser.exit(1, 'Run configure-desktop as your macOS user.\n')
+    try:
+        {'dock': dock, 'sidebar': sidebar, 'associations': associations}[args.preference]()
+    except (OSError, subprocess.CalledProcessError, RuntimeError) as exc:
+        sys.exit(f'{args.preference}: {exc}')

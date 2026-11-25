@@ -37,6 +37,34 @@ The final prompt offers `config.sh`, which applies broad system/app preferences
 installs packages again, and may restart apps or offer a reboot. Review it before
 accepting; it is optional. Open a new terminal after installation.
 
+## First login
+
+- **Dock and Finder.** The optional macOS setup replaces the current user's Dock
+  with the configured apps present on this Mac and adds existing folders to
+  Finder Favorites (home, projects, Downloads, Desktop, Documents, Applications
+  and Utilities). To repeat just one step, run `~/.dotfiles/bin/configure-desktop dock`
+  or `~/.dotfiles/bin/configure-desktop sidebar`. In Finder > Settings > Sidebar,
+  select Recents, disks and cloud locations as needed. Add any other project or
+  cloud folder with Finder > File > Add to Sidebar.
+- **Default apps.** With VS Code installed, common text, markup and source files
+  open there. With IINA installed, MKV, MP3, MP4, MOV, M4V and FLAC files open
+  in IINA. Run `~/.dotfiles/bin/configure-desktop associations` after installing
+  either app later. Check an extension with `duti -x mp4`.
+- **Browsers.** In Safari > Settings > Extensions, enable the installed extensions
+  you use and review their website access. Follow the [passkey setup](docs/PASSKEYS.md)
+  for password-manager prompts. In Brave, open Settings > Sync
+  and join your existing sync chain using another device.
+- **Apps and permissions.** Open Slack to sign in and MeetingBar to select
+  calendars. Approve requested access for the features you use in
+  System Settings > Privacy & Security. If you use the Dracula theme in Beyond Compare, import the
+  [color settings](https://github.com/dracula/beyond-compare-4) in the app.
+  Reduce Motion is in System Settings > Accessibility > Display.
+- **GitHub and profiles.** The initial HTTPS clone works anonymously. For pushes
+  and signing, follow [Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing).
+  If your organization supplied a configuration profile, open its `.mobileconfig`
+  and review it in System Settings > General > Device Management.
+  [Apple’s profile installation guide](https://support.apple.com/guide/mac-help/mh35561/mac)
+
 ## External Dependencies
 
 The installer targets macOS and installs Xcode Command Line Tools and Homebrew
