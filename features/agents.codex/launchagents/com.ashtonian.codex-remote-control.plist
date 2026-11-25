@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <!--
-  The local Codex app-server with remote control, on its own Unix socket: the
+  The local Codex app-server with remote control, on its default Unix socket: the
   server `gptmore` / `gptmax` connect to. bin/codex-app-server gives its sessions
   the delegation policy and runs codex from a fixed path, so its macOS privacy
   grants survive codex upgrades (see that script).
