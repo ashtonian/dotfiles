@@ -517,7 +517,22 @@ Codex has no counterpart: its transcripts record usage in another shape, and
 nothing reads them yet.
 
 `~/.claude/statusline-p10k.sh`, the status line `settings.json` runs, is linked
-by `agents.claude`.
+by `agents.claude`, which also owns the `settings.json` keys every machine
+shares ([features/agents.claude/claude.toml](features/agents.claude/claude.toml)):
+
+| Key | Value | Why |
+| --- | --- | --- |
+| `model` | `opus` | What a plain `claude` starts with; the launchers pass their own |
+| `effortLevel` | `xhigh` | The launchers' effort, for a plain `claude` too |
+| `autoCompactEnabled`, `autoCompactWindow` | `true`, `400000` | Compact long before the 1M window fills |
+| `statusLine` | `bash ~/.claude/statusline-p10k.sh` | The linked status line |
+| `skipDangerousModePermissionPrompt` | `true` | The launchers start in bypass mode |
+| `agentPushNotifEnabled` | `true` | Push notifications for agent sessions |
+
+Hooks, `env`, permissions, plugins and MCP approvals stay each machine's own:
+they name what that machine runs (the agent dashboard, iTerm, telemetry). A
+`[prefs]` entry in `machine.toml` gives one machine its own value, as
+`"claude:effortLevel" = "high"`.
 
 ### Repository guard
 

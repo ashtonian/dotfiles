@@ -1523,7 +1523,11 @@ else:
         settings.parent.mkdir()
         settings.write_text('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "dark-ansi"\n}\n')
         self.converge('base,dev')
-        self.assertEqual(settings.read_text(), '{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula"\n}\n')
+        shared = tomllib.loads((FEATURES / 'agents.claude/claude.toml').read_text())
+        self.assertEqual(json.loads(settings.read_text()), {'hooks': {'Stop': []}, 'theme': 'custom:dracula'} | shared,
+                         "the shared keys are set and the machine's own hooks stay")
+        self.assertTrue(settings.read_text().startswith('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula",\n'),
+                        'keys already there keep their order and formatting')
         theme = self.home / '.claude/themes/dracula.json'
         self.assertFalse(theme.is_symlink(), 'Claude Code rewrites its themes, so the theme is a managed copy')
         self.assertEqual(json.loads(theme.read_text())['name'], 'Dracula')
