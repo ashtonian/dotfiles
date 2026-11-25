@@ -239,19 +239,41 @@ repo_busy() {
     return 1
 }
 
+# signing_ready: the repository can make signed commits. Explicit -S signs them
+# even where commit.gpgsign is unset or false.
 signing_ready() {
-    local name email key program enabled
+    local name email key program
     name=$(git config --get user.name) || name=''
     email=$(git config --get user.email) || email=''
     key=$(git config --get user.signingkey) || key=''
     program=$(git config --get gpg.program) || program='gpg'
-    enabled=$(git config --get commit.gpgsign) || enabled='unset'
-    if [[ -z "$name" || -z "$email" || -z "$key" ]] || ! command -v "$program" >/dev/null; then
-        log "ERROR: Configure Git user.name, user.email, user.signingkey and a working gpg.program before syncing"
-        return 1
+    [[ -n "$name" && -n "$email" && -n "$key" ]] && command -v "$program" >/dev/null
+}
+
+# receive_only REPO_DIR BRANCH HAS_REMOTE: sync a repository that cannot sign.
+# Receiving needs no identity, and a machine whose identity comes from an
+# overlay gets it only by receiving that overlay first: a fast-forward brings
+# it, and the apply after the merges installs it. Whatever needs a commit
+# (local edits, local commits, a branch that diverged) waits for the identity
+# and fails the run.
+receive_only() {
+    local repo_dir="$1" branch="$2" has_remote="$3" result=0
+    log "WARN: ${repo_dir##*/} has no signing identity (Git user.name, user.email, user.signingkey and a working gpg.program); receiving only"
+    if [[ "$has_remote" == true ]]; then
+        if [[ "$repo_dir" == "$DOTFILES_DIR" ]] && ! upstream_ready "origin/$branch"; then return 1; fi
+        if ! run_logged git merge --ff-only "origin/$branch"; then
+            log "ERROR: ${repo_dir##*/} cannot fast-forward to origin/$branch; merging needs a signing identity"
+            result=1
+        elif [[ -n "$(git rev-list --max-count=1 "origin/$branch..HEAD")" ]]; then
+            log "ERROR: ${repo_dir##*/} has local commits; publishing them needs a signing identity"
+            result=1
+        fi
     fi
-    # Explicit -S is required even when commit.gpgsign is unset or false.
-    [[ -n "$enabled" ]]
+    if [[ -n "$(git status --porcelain --untracked-files=no)" ]]; then
+        log "ERROR: ${repo_dir##*/} has local edits; committing them needs a signing identity"
+        result=1
+    fi
+    return "$result"
 }
 
 scan_dotfiles() {
@@ -366,7 +388,6 @@ sync_git_repo() (
     repo_idle || return
     if repo_busy; then return 0; fi
     branch=$(git symbolic-ref --quiet --short HEAD) || { log "ERROR: Detached HEAD; skipping sync"; return 1; }
-    signing_ready || return
     log "INFO: Syncing ${repo_dir##*/}"
 
     local has_remote=false
@@ -377,6 +398,10 @@ sync_git_repo() (
             return 1
         fi
         run_logged git fetch origin || return
+    fi
+    if ! signing_ready; then
+        receive_only "$repo_dir" "$branch" "$has_remote"
+        return
     fi
     changes=$(git status --porcelain --untracked-files=no) || return
     untracked=$(git ls-files --others --exclude-standard | wc -l | tr -d ' ') || return
