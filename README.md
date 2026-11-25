@@ -487,7 +487,7 @@ Claude Code and Codex follow one set of rules, kept once:
 | Source | Owner | Claude Code reads it as | Codex reads it in `~/.codex/AGENTS.md` |
 | --- | --- | --- | --- |
 | `features/agents.rules/home/.claude/CLAUDE.md`, every agent's rules | `agents.rules` | `~/.claude/CLAUDE.md` | First |
-| `features/agents.codex/agent-rules.md`, Codex's own | `agents.codex` | Not at all | Second |
+| `features/agents.codex/codex-rules.md`, Codex's own | `agents.codex` | Not at all | Second |
 | An overlay's rules file, such as `~/.claude/rules/personal.md` | The overlay's `<context>.claude` | `~/.claude/rules/<context>.md` | After them, in feature order |
 | `features/agents.claude/home/.claude/rules/claude-code.md`, Claude Code's own | `agents.claude` | `~/.claude/rules/claude-code.md` | Not at all |
 

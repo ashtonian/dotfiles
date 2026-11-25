@@ -7,7 +7,7 @@ requires = ["agents.delegation", "agents.agent-mcp", "agents.rules"]
 
 [provides]
 zshrc = "zshrc.zsh" # gptmore, gptmax
-agent_rules = "agent-rules.md"
+agent_rules = "codex-rules.md"
 # Codex reads one global instructions file and has no include.
 link_generated = { ".codex/AGENTS.md" = "AGENTS.md" }
 
