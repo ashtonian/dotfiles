@@ -176,6 +176,7 @@ profiles enable without running an installer.
 | `com.dotfiles.sync` | `dotfiles.sync` (base) | Every 4 hours and at load | |
 | `com.dotfiles.update` | `dotfiles.update` (base) | Fridays 09:00, or at wake | |
 | `com.ashtonian.disk-hygiene` | `macos.disk-hygiene` (base) | Daily 04:15, or at wake | |
+| `com.ashtonian.gitstead` | `tool.gitstead` (dev) | Every 15 minutes and at load, through `gate-lock run` ([gitstead sync](#gitstead-sync)) | `/opt/homebrew/bin/gitstead`, `~/.local/bin/gate-lock` |
 | `com.ashtonian.go-cache-trim` | `tool.go-cache-trim` (base) | Hourly and at load | `/opt/homebrew/bin/go` |
 | `com.ashtonian.gpg-agent` | `tool.gpg-agent` (base) | Service, GUI login only | `/opt/homebrew/bin/gpgconf` |
 | `com.ashtonian.muxy-reconcile` | `tool.muxy` (desktop) | At load, when a server list is added or removed, when apply rewrites its generated files (`muxy.reconcile`, `muxy.exclude_servers`), and hourly | `/Applications/Muxy.app`, `/opt/homebrew/bin/python3` |
@@ -219,6 +220,7 @@ macOS asks once for some of these jobs; answer on the Mac's screen:
 | Agent | Prompt or grant |
 | ----- | --------------- |
 | `com.dotfiles.sync`, `com.dotfiles.update`, `com.ashtonian.disk-hygiene` | Allow `bash` to access files on a removable volume (Go caches on a drive, the drives' `tmp` and `cache/xdg`) |
+| `com.ashtonian.gitstead` | Allow `bash` (the gate lock) and `gitstead` to access files on a removable volume, where the Studio and the mini keep their repositories |
 | `com.ashtonian.codex-remote-control` | Full Disk Access for `~/.local/libexec/codex-stable/bin/codex` ([Codex service](#codex-service)) |
 | `com.ashtonian.opencode` | Full Disk Access for `~/.local/libexec/opencode-stable/bin/opencode` |
 | `com.ashtonian.agent-monitor` | Allow node to access the data volume; the gate: allow node to accept incoming connections |
@@ -430,6 +432,54 @@ drop, inspect the log and `launchctl list` for duplicate jobs before removing a
 specific stale job. OpenCode has separate [operations instructions](../features/agents.opencode/README.md#operations),
 and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
 [telemetry collector](AGENT-TELEMETRY.md#operations).
+
+### gitstead sync
+
+`com.ashtonian.gitstead` runs `gitstead sync --quiet` every 15 minutes and at
+load: it fetches and fast-forwards the repositories gitstead tracks, backs up
+uncommitted work, and keeps workspaces and archives in shape (gitstead's
+[operations guide](https://github.com/ashtonian/gitstead/blob/master/docs/OPERATIONS.md)).
+The job runs it as `gate-lock run gitstead-sync -- gitstead sync --quiet` with
+`GATE_LOCK_WAIT=1`, so its fetches, repacks and maintenance queue behind
+benchmarks and full gates on the host lock, and launchd starts no second run
+while one waits. `GATE_LOCK_COMMAND_TIMEOUT=3600` ends a run that hangs past
+gitstead's own per-repository timeouts (exit 124); the next interval starts a
+fresh one.
+
+The job is held until both `/opt/homebrew/bin/gitstead` (this feature's cask)
+and `~/.local/bin/gate-lock` exist. The gate lock's own installer (`install.sh` in
+its repository, which `gate-lock` names when no version is installed) puts the
+shim there, once per Mac; a Mac without it shows `waiting com.ashtonian.gitstead`
+in `dotfiles doctor` rather than syncing outside the lock.
+
+The label is the one `gitstead install-agent` gives its default schedule, so a
+Mac runs one or the other, never both. On a Mac where gitstead installed its own
+schedule, remove it before the first apply with this feature, so gitstead's
+state stops recording a job it no longer owns. First check that no sync is
+running, since uninstalling ends one mid-run:
+
+```sh
+pgrep -fl 'gitstead sync'
+```
+
+When that prints nothing:
+
+```sh
+gitstead install-agent --uninstall
+dotfiles apply
+launchctl print "gui/$(id -u)/com.ashtonian.gitstead" | grep -E 'state|program|last exit'
+```
+
+Output and errors go to `~/.local/share/gitstead/gitstead.log`, gitstead's
+usual scheduled-sync log; with `--quiet` it holds only problems. `bin/disk-hygiene`
+caps it with the other LaunchAgent logs.
+
+| Symptom | Check | Then |
+| ------- | ----- | ---- |
+| `dotfiles doctor` lists `waiting com.ashtonian.gitstead` | `ls -l ~/.local/bin/gate-lock /opt/homebrew/bin/gitstead` | Run the gate lock's `./install.sh` from its checkout, or `brew install --cask ashtonian/tap/gitstead`; the next apply loads the job |
+| Repos stop moving; no new lines in the log | `gate-lock status` | A `gitstead-sync` waiter behind a long holder is expected; a holder making no progress is the problem: see the gate-lock skill's recovery |
+| Log ends in `exit 124` lines | `gitstead doctor`, then `gitstead sync -v` from a terminal | Find the repository that stalls (network, a huge fetch) and fix or exclude it |
+| A run never finishes after a drive reconnects | `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' \| grep -i prompting` | Answer the removable-volume prompt on the Mac's screen ([pending prompts](#launchagents)) |
 
 ### GPG agent
 

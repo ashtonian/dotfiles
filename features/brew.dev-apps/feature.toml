@@ -6,7 +6,6 @@ requires = ["brew.base"]
 
 [provides]
 cask = [
-  "ashtonian/tap/gitstead",
   "beyond-compare",
   "bruno",
   "codex",

@@ -1,0 +1,14 @@
+id = "tool.gitstead"
+description = "gitstead, and its scheduled sync every 15 minutes under the host gate lock"
+category = "tools"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+cask = ["ashtonian/tap/gitstead"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.gitstead.plist"
+# The job runs gitstead through the gate lock's shim, which the lock's own
+# install.sh puts on PATH; a Mac without the lock waits rather than syncing ungated.
+when_exists = ["/opt/homebrew/bin/gitstead", "~/.local/bin/gate-lock"]

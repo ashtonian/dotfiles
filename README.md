@@ -674,8 +674,9 @@ rollout file under `~/.codex/sessions/` records the state it ran with as
 ### Agent workspaces and fleets (gitstead)
 
 The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`,
-and `gitstead cd <query>` jumps to a repository. The `brew.dev-apps` feature
-installs [gitstead](https://github.com/ashtonian/gitstead); fleet definitions,
+and `gitstead cd <query>` jumps to a repository. The `tool.gitstead` feature
+installs [gitstead](https://github.com/ashtonian/gitstead) and runs its sync every
+15 minutes under the host gate lock ([gitstead sync](docs/OPERATIONS.md#gitstead-sync)); fleet definitions,
 agent profiles, and workspace paths live in the machine-local
 `~/.config/gitstead/config.yaml` and are not supplied by this repository. Fleet
 sessions run `claudemore` or `claudemax`, which leave the claude.ai connectors

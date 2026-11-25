@@ -74,7 +74,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `brew.apps` | desktop, work | darwin | Brewfile: 26 cask |
 | `brew.base` | base | darwin, linux | Brewfile: 6 tap, 97 brew |
 | `brew.desktop` | desktop | darwin | Brewfile: 1 tap, 1 brew, 7 cask (personal) |
-| `brew.dev-apps` | dev | darwin | Brewfile: 11 cask |
+| `brew.dev-apps` | dev | darwin | Brewfile: 10 cask |
 | `brew.go-tools` | dev | darwin, linux | Brewfile: 13 go |
 | `brew.macos` | base | darwin | Brewfile: 2 brew |
 | `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 8 mas |
@@ -92,6 +92,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.atuin` | base | all | `~/.config/atuin` |
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
+| `tool.gitstead` | dev | darwin | LaunchAgent `com.ashtonian.gitstead` (with gitstead and the gate lock's `gate-lock`); Brewfile: 1 cask |
 | `tool.go-cache-trim` | base | darwin | LaunchAgent `com.ashtonian.go-cache-trim` (with Homebrew's go) |
 | `tool.gpg-agent` | base | darwin | LaunchAgent `com.ashtonian.gpg-agent` (with Homebrew's gnupg) |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |
@@ -218,6 +219,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
 | com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `$AGENT_MONITOR_GATE_HOST:4821` (default `0.0.0.0`), token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on while enrolled (`otel-agent enroll`); OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
+| com.ashtonian.gitstead | Every 15 minutes and at load, through `gate-lock run`, once gitstead and the gate lock are installed | `~/.local/share/gitstead/gitstead.log` |
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |
 | com.ashtonian.gpg-agent | Always on in the GUI login, when gnupg is installed | `~/Library/Logs/gpg-agent/supervisor.log` |

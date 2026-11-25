@@ -1,0 +1,51 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Every 15 minutes, gitstead sync: fetch and fast-forward the tracked repos,
+  back up uncommitted work, keep workspaces and archives in shape. It runs
+  through the host gate lock, so its fetches and git upkeep queue behind
+  benchmarks and full gates; launchd starts no second run while one waits.
+  The label is the one `gitstead install-agent` uses for its default
+  schedule, so the two can't both run one.
+  dotfiles apply installs it for the tool.gitstead feature, with $HOME replaced.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.gitstead</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.local/bin/gate-lock</string>
+        <string>run</string>
+        <string>gitstead-sync</string>
+        <string>--</string>
+        <string>/opt/homebrew/bin/gitstead</string>
+        <string>sync</string>
+        <string>--quiet</string>
+    </array>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>$HOME/.local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+        <key>GATE_LOCK_WAIT</key>
+        <string>1</string>
+        <!-- gitstead's own per-repo timeouts fire first; this ends a run that hangs past them. -->
+        <key>GATE_LOCK_COMMAND_TIMEOUT</key>
+        <string>3600</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>900</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/.local/share/gitstead/gitstead.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/.local/share/gitstead/gitstead.log</string>
+</dict>
+</plist>
