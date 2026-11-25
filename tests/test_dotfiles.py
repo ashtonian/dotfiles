@@ -3101,6 +3101,7 @@ class AgentMcp(Fixture):
     def test_github_uses_the_active_account_and_only_offers_reads(self):
         self.env["HOMEBREW_PREFIX"] = str(self.path)
         self.cli("gh", 'test "$*" = "auth token --hostname github.com" && echo fixture-token')
+        self.cli("mise", 'test "$*" = "-C $HOME which github-mcp-server" && command -v github-mcp-server')
         self.cli("github-mcp-server", 'test "$GITHUB_PERSONAL_ACCESS_TOKEN" = fixture-token && echo "$@"')
         result = self.run_mcp("github")
         self.assertEqual(result.returncode, 0, result.stderr)

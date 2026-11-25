@@ -2,6 +2,7 @@ id = "agents.agent-mcp"
 description = "The agent-mcp launcher, its Serena context, and the MCP credential helpers in ~/.claude/mcp (docs/AGENT-MCP.md)"
 category = "agents"
 platforms = ["darwin", "linux"]
+requires = ["tool.mise"]
 
 # Where the stow package used to link these files.
 retire = [
@@ -10,7 +11,7 @@ retire = [
 ]
 
 [provides]
-brew = ["gh", "github-mcp-server"]
+brew = ["gh", "mise"]
 # ~/.claude/mcp also holds the pinned server installs, which stay untracked;
 # only the credential helpers are linked into it, one file each.
-link = [".config/agent-mcp", ".local/bin/agent-mcp", ".claude/mcp"]
+link = [".config/mise/conf.d/agent-mcp.toml", ".config/agent-mcp", ".local/bin/agent-mcp", ".claude/mcp"]
