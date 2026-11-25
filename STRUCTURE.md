@@ -92,7 +92,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `tool.atuin` | base | all | `~/.config/atuin` |
 | `tool.colorls` | base | darwin, linux | `~/.config/colorls` |
 | `tool.gh` | base | all | copies `~/.config/gh/config.yml`; gitconfig fragment: gh as the credential helper for `github.com` and `gist.github.com` |
-| `tool.gitstead` | dev | darwin | LaunchAgent `com.ashtonian.gitstead` (with gitstead and the gate lock's `gate-lock`); Brewfile: 1 cask |
+| `tool.gitstead` | dev | darwin | copies `~/.config/gitstead/config.yaml` (settings shared by every Mac; the overlays add `config.d` fragments); LaunchAgent `com.ashtonian.gitstead` (with gitstead and the gate lock's `gate-lock`); Brewfile: 1 cask |
 | `tool.go-cache-trim` | base | darwin | LaunchAgent `com.ashtonian.go-cache-trim` (with Homebrew's go) |
 | `tool.gpg-agent` | base | darwin | LaunchAgent `com.ashtonian.gpg-agent` (with Homebrew's gnupg) |
 | `tool.htop` | base | darwin, linux | copies `~/.config/htop/htoprc` |

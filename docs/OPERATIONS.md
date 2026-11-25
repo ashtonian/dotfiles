@@ -470,6 +470,30 @@ dotfiles apply
 launchctl print "gui/$(id -u)/com.ashtonian.gitstead" | grep -E 'state|program|last exit'
 ```
 
+gitstead reads `~/.config/gitstead/config.yaml`, a managed copy of
+`features/tool.gitstead/home/.config/gitstead/config.yaml` with the settings
+every Mac shares, and merges in each file in `~/.config/gitstead/config.d/`.
+The overlays link those fragments: each holds its own context's repos,
+workspaces and fleets, with `machines:` sections keyed by the Mac's
+LocalHostName (`scutil --get LocalHostName`) for where that Mac keeps them. A
+key set in two files is a config error naming both. `gitstead config` prints
+the files it read, the machine section it took and the merged result;
+`gitstead --machine <name> plan` previews another Mac.
+
+On a Mac where `~/.config/gitstead/config.yaml` was written by hand, apply
+leaves the file alone and reports it as in the way. Move its repos and
+workspaces into the overlays' fragments first, then:
+
+```sh
+mv ~/.config/gitstead/config.yaml ~/.config/gitstead/config.yaml.before-dotfiles
+dotfiles apply
+gitstead plan
+```
+
+`gitstead plan` should show nothing to clone, move or retire that the old file
+did not. A config file that is the wrong one for this Mac makes gitstead mark
+repos stale; with the default `cleanup.policy: mark_stale` it deletes nothing.
+
 Output and errors go to `~/.local/share/gitstead/gitstead.log`, gitstead's
 usual scheduled-sync log; with `--quiet` it holds only problems. `bin/disk-hygiene`
 caps it with the other LaunchAgent logs.
@@ -479,6 +503,8 @@ caps it with the other LaunchAgent logs.
 | `dotfiles doctor` lists `waiting com.ashtonian.gitstead` | `ls -l ~/.local/bin/gate-lock /opt/homebrew/bin/gitstead` | Run the gate lock's `./install.sh` from its checkout, or `brew install --cask ashtonian/tap/gitstead`; the next apply loads the job |
 | Repos stop moving; no new lines in the log | `gate-lock status` | A `gitstead-sync` waiter behind a long holder is expected; a holder making no progress is the problem: see the gate-lock skill's recovery |
 | Log ends in `exit 124` lines | `gitstead doctor`, then `gitstead sync -v` from a terminal | Find the repository that stalls (network, a huge fetch) and fix or exclude it |
+| `dotfiles doctor`: `~/.config/gitstead/config.yaml` edited here since dotfiles last wrote it | `diff ~/.dotfiles/features/tool.gitstead/home/.config/gitstead/config.yaml ~/.config/gitstead/config.yaml` | A `gitstead setup` or `clone --save` wrote to it. Never `dotfiles adopt` it: this repository is public. Move a repo or workspace into its overlay's fragment, then remove the file and run `dotfiles apply` to copy the shared one back |
+| `gitstead config` fails on a key set in two files | The two paths in the message | Keep the key in one fragment: machine facts (`base_dir`, roots, transport, archives) in the fragment that owns the Mac's layout, a context's repos and workspaces in that context's |
 | A run never finishes after a drive reconnects | `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' \| grep -i prompting` | Answer the removable-volume prompt on the Mac's screen ([pending prompts](#launchagents)) |
 
 ### GPG agent

@@ -676,9 +676,13 @@ rollout file under `~/.codex/sessions/` records the state it ran with as
 The `claudefleet` function forwards its arguments to `gitstead fleet open fleet`,
 and `gitstead cd <query>` jumps to a repository. The `tool.gitstead` feature
 installs [gitstead](https://github.com/ashtonian/gitstead) and runs its sync every
-15 minutes under the host gate lock ([gitstead sync](docs/OPERATIONS.md#gitstead-sync)); fleet definitions,
-agent profiles, and workspace paths live in the machine-local
-`~/.config/gitstead/config.yaml` and are not supplied by this repository. Fleet
+15 minutes under the host gate lock ([gitstead sync](docs/OPERATIONS.md#gitstead-sync)).
+It copies the settings every Mac shares to `~/.config/gitstead/config.yaml`:
+agent profiles, launchers, the update policy and the default workspace
+isolation. That file names no repository and no machine. Each overlay links a
+fragment into `~/.config/gitstead/config.d/` with its context's repos,
+workspaces and fleets, and with `machines:` sections that say where each Mac
+keeps them; gitstead merges the files into one config. Fleet
 sessions run `claudemore` or `claudemax`, which leave the claude.ai connectors
 out of every launch, so gitstead's agent profiles need no
 `ENABLE_CLAUDEAI_MCP_SERVERS` of their own.
