@@ -27,11 +27,12 @@ def reply(body, number=23, actor=OWNER, **updates):
 
 
 class ApprovalTests(unittest.TestCase):
-    def run_check(self, comments, *, state="open", plan=PLAN, action="check"):
+    def run_check(self, comments, *, state="open", plan=PLAN, action="check", confirmed=True):
         args = ["fleet-plan", action, "example/parser", "7", "22", "--owner-id", str(OWNER)]
         pages = [[plan], comments]
         with patch.object(sys, "argv", args), patch.dict(MAIN.__globals__, {
             "github": lambda path, paginate=False: pages if paginate else {"state": state},
+            "confirm_comments": lambda plan, approval: confirmed,
         }), contextlib.redirect_stdout(io.StringIO()) as output:
             MAIN()
         return output.getvalue().strip()
@@ -55,6 +56,10 @@ class ApprovalTests(unittest.TestCase):
         for comments in cases:
             with self.subTest(comments=comments), self.assertRaises(SystemExit):
                 self.run_check(comments)
+
+    def test_approval_must_survive_final_read(self):
+        with self.assertRaises(SystemExit):
+            self.run_check([reply(APPROVE)], confirmed=False)
 
     def test_closed_or_changed_or_missing_plan(self):
         for options in ({"state": "closed"}, {"plan": dict(PLAN, body="Wider scope")},

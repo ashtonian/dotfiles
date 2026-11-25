@@ -37,6 +37,26 @@ def decision(comments, owner, plan):
     return approve, latest
 
 
+def confirm_comments(plan, approval):
+    # REST updates have second precision. GitHub also exposes an explicit edit
+    # marker on the approval and lets us re-read both bodies in one request.
+    query = """
+    query($p: ID!, $a: ID!) {
+      plan: node(id: $p) { ... on IssueComment { body } }
+      approval: node(id: $a) { ... on IssueComment { body lastEditedAt } }
+    }"""
+    command = [
+        "gh", "api", "--hostname", "github.com", "graphql", "-f", "query=" + query,
+        "-f", "p=" + plan["node_id"], "-f", "a=" + approval["node_id"],
+    ]
+    data = json.loads(subprocess.check_output(command))["data"]
+    return (
+        data["plan"]["body"] == plan["body"]
+        and data["approval"]["body"] == approval["body"]
+        and data["approval"]["lastEditedAt"] is None
+    )
+
+
 def positive(value):
     value = int(value)
     if value <= 0:
@@ -74,7 +94,7 @@ def main():
             print("> " + shown)
         print()
         print(approve)
-    elif approval:
+    elif approval and confirm_comments(plan, approval):
         print(f"{approve} {approval['html_url']}")
     else:
         sys.exit("awaiting owner approval for this plan revision")
