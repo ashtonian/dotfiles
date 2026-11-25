@@ -181,9 +181,9 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync; all under the sync lock |
-| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in (bash for agent commands, attribution off) and the Codex system config (bash for agent commands, repo-guard as a managed hook) |
+| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in (bash for agent commands, attribution off, the delegation policy at session start) and the Codex system config (bash for agent commands, repo-guard and the delegation policy as managed hooks) |
 | [features/agents.claude/bin/claude-subagent-economics](features/agents.claude/bin/claude-subagent-economics) | Price recent subagent runs from Claude Code transcripts and the break-even size of re-reading what they cited; `--days`, `--projects` |
-| [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`), with the delegation policy appended and drive-local scratch; `claudefleet` opens gitstead's `fleet`; `claudeclean` drops session files of exited sessions |
+| [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`) and with drive-local scratch; `claudefleet` opens gitstead's `fleet`; `claudeclean` drops session files of exited sessions |
 | [features/agents.codex/zshrc.zsh](features/agents.codex/zshrc.zsh) | `gptmore`, `gptmax`: Codex sessions on the local app-server in the current directory, without ChatGPT apps unless `CODEX_CONNECTORS=1` |
 | [features/agents.codex/codex-rules.md](features/agents.codex/codex-rules.md) | Codex's own rules: the delegation policy, reading `.claude/rules` itself, the shared skills; joined after every agent's rules into `~/.codex/AGENTS.md` |
 | [features/agents.rules/home/.claude/CLAUDE.md](features/agents.rules/home/.claude/CLAUDE.md) | The rules every coding agent follows: Claude Code's `~/.claude/CLAUDE.md` and the start of Codex's `~/.codex/AGENTS.md` |
@@ -191,7 +191,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/agents.repo-guard/bin/repo-guard](features/agents.repo-guard/bin/repo-guard) | The `PreToolUse` hook Claude Code and Codex run: deny commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt` (or `REPO_GUARD_LIST`) |
 | [features/agents.repo-guard/guard_test.sh](features/agents.repo-guard/guard_test.sh) | repo-guard's cases against throwaway clones, in both harnesses' input shapes; `GUARD_BASH` picks the bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
-| [bin/codex-app-server](bin/codex-app-server) | Pass the delegation policy as developer instructions, then call `stable-exec codex app-server --remote-control` |
+| [bin/codex-app-server](bin/codex-app-server) | Call `stable-exec codex app-server --remote-control` on its own socket; `--print-endpoint` prints it |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
 | [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback, `gate` its LAN gate |
 | [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |

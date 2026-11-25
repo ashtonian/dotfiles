@@ -2,7 +2,8 @@ id = "agents.codex"
 description = "Codex: ~/.codex/AGENTS.md rendered from every agent's rules and its own, the local app-server with remote control (bin/codex-app-server) and the gptmore and gptmax launchers that connect to it"
 category = "agents"
 platforms = ["darwin"]
-# The app-server serves its delegation policy; its roles serve the sessions.
+# Its sessions get the delegation policy from the managed SessionStart hook
+# (bin/dotfiles-agents); its roles serve them.
 requires = ["agents.delegation", "agents.agent-mcp", "agents.rules"]
 
 [provides]

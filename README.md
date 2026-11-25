@@ -552,14 +552,24 @@ the Claude Code subagents' tool lists include Bash, so the same holds there.
 
 `~/.config/agent-delegation/policy.md` says what the session hands them and what
 it keeps on its own model, and that their reports are leads to check, not facts.
-`claudemore` and `claudemax` append it to the session's system prompt.
-A Codex client attached with `--remote` cannot send instructions, so the
-app-server behind `gptmore` and `gptmax` (`bin/codex-app-server`) gives the
-policy to every session it starts, as developer instructions. It reads the file
-at start: restart the service after changing it (OPERATIONS: Codex service).
-Subagents never see the policy, and a bare `claude` or `codex` runs without it.
-A Claude Code session records its system prompt on its first request, so a
-resumed conversation picks up a changed policy only after it compacts.
+A `SessionStart` hook in each harness's managed settings, written by
+`bin/dotfiles-agents install` (see [Agent shells](#agent-shells)), prints it
+into the context of every top-level session, whichever way it starts: the
+launchers, a bare `claude` or `codex`, `claude -p` and `codex exec`, a
+resume, `/clear`, a fork, or after compaction. Subagents start through
+`SubagentStart` instead and never see it. The hook reads the file each time,
+so an edit reaches the next session or compaction with no reinstall or
+restart.
+
+| Session | Gets the policy |
+| ------- | --------------- |
+| `claudemore`, `claudemax`, a bare `claude`, `claude -p` | Yes, at start and after each compaction |
+| `claude --resume` or `--continue`, `/clear`, a fork | Yes, again |
+| `gptmore`, `gptmax`, a bare `codex`, `codex exec` | Yes, at start and after each compaction |
+| A `scout`, `reader` or other subagent | No |
+
+`dotfiles-agents check` (exit 1) shows a Mac whose managed files predate the
+hook; until `install` runs there, its sessions start without the policy.
 
 `claude-subagent-economics [--days N] [--projects DIR]` (default 30 days,
 `~/.claude/projects`) prices the recent `scout`, `reader`, Explore and
@@ -645,8 +655,8 @@ system configs once per machine (they need sudo):
 
 | File | Effect |
 | ---- | ------ |
-| `/Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json` (`/etc/claude-code/...` on Linux) | Sets `CLAUDE_CODE_SHELL` to Homebrew bash, and `"attribution": false`, which hides Claude Code's commit trailer, PR line and session link (Claude Code 2.1.281 or later). Managed settings outrank user and project settings, a CLAUDE.md rule cannot override their attribution, and `env` merges per variable |
-| `/etc/codex/config.toml` | Codex's system config layer: turns shell snapshots off and sets `AGENT_SHELL` in every command shell. Codex always starts the passwd login shell (`zsh -lc <command>`), and `~/.zshenv` hands a marked command to bash. It also registers repo-guard as a managed `PreToolUse` hook (see [Repository guard](#repository-guard)) |
+| `/Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json` (`/etc/claude-code/...` on Linux) | Sets `CLAUDE_CODE_SHELL` to Homebrew bash, and `"attribution": false`, which hides Claude Code's commit trailer, PR line and session link (Claude Code 2.1.281 or later). Managed settings outrank user and project settings, a CLAUDE.md rule cannot override their attribution, and `env` merges per variable. Its `SessionStart` hook prints the delegation policy (see [Subagents and the delegation policy](#subagents-and-the-delegation-policy)); managed hooks run beside the user's own, and `disableAllHooks` outside managed settings cannot turn them off |
+| `/etc/codex/config.toml` | Codex's system config layer: turns shell snapshots off and sets `AGENT_SHELL` in every command shell. Codex always starts the passwd login shell (`zsh -lc <command>`), and `~/.zshenv` hands a marked command to bash. It also registers repo-guard as a managed `PreToolUse` hook (see [Repository guard](#repository-guard)) and the delegation policy's `SessionStart` hook |
 
 `dotfiles-agents` never overwrites a file it did not write (exit 73), and
 `~/.codex/config.toml` can still override any Codex key for one user (hooks

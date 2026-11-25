@@ -389,15 +389,13 @@ There is no metrics endpoint for sync or updates.
 
 The service runs `bin/codex-app-server`, which starts codex `app-server
 --remote-control` on `$CODEX_HOME/dotfiles-app-server.sock` (`CODEX_HOME`
-defaults to `~/.codex`) with the delegation policy
-(`~/.config/agent-delegation/policy.md`) as every session's developer
-instructions. `bin/codex-app-server --print-endpoint` prints the endpoint
+defaults to `~/.codex`). Its sessions get the delegation policy from the
+managed `SessionStart` hook, like every other Codex session.
+`bin/codex-app-server --print-endpoint` prints the endpoint
 without starting the server. `gptmore` and `gptmax` use it to attach to the
 same socket. Their `-C "$PWD"`
 selects the project directory instead of the service's home working directory.
-The policy is read when the service starts: after changing it, restart the
-service with `kickstart -k` below (that interrupts its sessions). A missing
-policy is logged to the service's stderr and the service starts without it.
+A policy edit reaches the next session or compaction without a restart.
 
 The dedicated socket keeps this launchd-managed service separate from
 Codex's managed background daemon. On Codex's default `unix://` endpoint,
@@ -780,7 +778,7 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | Symptom | Check and recovery |
 | ------- | ------------------ |
 | `claudemore: command not found` (or `gptmore`) | The launchers live in the generated zshrc fragment of `agents.claude` (`agents.codex` for the GPT ones, macOS only), which the dev profile enables. Run `dotfiles apply` (sync runs it) and open a new shell; `grep -c 'agents.claude' ~/.config/dotfiles/generated/zshrc.zsh` should be 1. |
-| `claude: ~/.config/agent-delegation/policy.md is missing; starting without the delegation policy` (or `codex-app-server: ... serving without the delegation policy` in the Codex service's stderr log) | The `agents.delegation` link is missing or broken. `dotfiles doctor` names it; `dotfiles apply` restores it. The session or service itself starts normally; restart the Codex service afterwards. |
+| A session behaves as if it had no delegation policy (never uses `scout` or `reader`) | Claude Code: `/hooks` must list a managed `SessionStart` hook running `cat ~/.config/agent-delegation/policy.md`; Codex: `/hooks` must list it with source system. If either is missing, `~/.dotfiles/bin/dotfiles-agents check` prints `changed` or `missing`: run `dotfiles-agents install` (sudo). If the hook is there, the `agents.delegation` link is missing or broken: `dotfiles doctor` names it and `dotfiles apply` restores it. The hook adds nothing when the file is absent. A running session gets the policy at its next compaction, `/clear` or resume. |
 | `/agents` lists no `scout` or `reader` | `~/.claude/agents/scout.md` and `reader.md` must link into `features/agents.delegation/home/`. Run `dotfiles doctor`, then `dotfiles apply`; a running session picks new subagent files up only after a restart. |
 | Codex's `spawn_agent` offers no `scout` or `reader` role | `~/.codex/agents/scout.toml` and `reader.toml` must link into `features/agents.delegation/home/`. A malformed role file is skipped with a startup warning (`Ignoring malformed agent role definition`); `codex debug prompt-input hi \| grep -o -E '(scout\|reader): \{'` prints one line per role that loaded. |
 | A launched session still shows `mcp__claude_ai_*` tools | It was started with `CLAUDE_CONNECTORS=1`, by plain `claude`, or before this launcher. Check with `ps -E -o command= -p <pid> \| tr ' ' '\n' \| grep ENABLE_CLAUDEAI`; restart it with `claudemore`. |
