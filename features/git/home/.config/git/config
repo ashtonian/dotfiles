@@ -2,9 +2,13 @@
 # reads ~/.gitconfig after this file, and `git config --global` writes there,
 # so machine-local settings belong in ~/.gitconfig or ~/.gitconfig.local.
 
+# The email is each context's: the overlays' git fragments set it (personal
+# work, or the client a machine works for), so a client's machine never
+# commits as the personal identity. Without one git refuses to commit
+# rather than guess an address from the host name.
 [user]
   name = Ashton Kinslow
-  email = github@ashtonkinslow.com
+  useConfigOnly = true
 
 [github]
   user = ashtonian
