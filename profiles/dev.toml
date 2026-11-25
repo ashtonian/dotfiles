@@ -3,6 +3,8 @@
 [features]
 enable = [
   "brew.dev-apps",
+  # gitstead and its scheduled sync, under the host gate lock.
+  "tool.gitstead",
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
