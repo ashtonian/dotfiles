@@ -78,20 +78,10 @@ print(mx)
   _claude_drive_env /Volumes
   session_env+=("${reply[@]}")
 
-  # The delegation policy, linked by agents.delegation. A resumed session keeps
-  # the system prompt it recorded until its next compaction.
-  local policy=$HOME/.config/agent-delegation/policy.md
-  local -a policy_args=()
-  if [[ -r $policy ]]; then
-    policy_args=(--append-system-prompt-file "$policy")
-  else
-    print -u2 "claude: $policy is missing; starting without the delegation policy"
-  fi
-
   echo "Session: ${name}"
   env "${session_env[@]}" claude --model "$model" --effort xhigh \
     --dangerously-skip-permissions --permission-mode bypassPermissions \
-    --name "$name" --remote-control "$name" "${policy_args[@]}" "$@"
+    --name "$name" --remote-control "$name" "$@"
   local rc=$?
   command rm -f "$resvdir/$name" 2>/dev/null
   return $rc

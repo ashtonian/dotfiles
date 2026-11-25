@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 #===============================================================================
 # dotfiles-agents - system configs that make Claude Code and Codex use bash,
-#                   keep Claude Code's attribution out of commits and PRs, and
-#                   run repo-guard in every Codex session
+#                   keep Claude Code's attribution out of commits and PRs, give
+#                   every session the delegation policy, and run repo-guard in
+#                   every Codex session
 #===============================================================================
 #
 # USAGE:
@@ -26,6 +27,12 @@
 # command turns any exit other than 0 or 2 into a block. Commit and PR
 # attribution has no local setting in Codex 0.171: the account's
 # commit_attribution_enabled decides it (README: Agent shells).
+# Both: a SessionStart hook prints the delegation policy
+# (~/.config/agent-delegation/policy.md, feature agents.delegation) into the
+# context of every top-level session, however it starts: a launcher, a bare
+# `claude` or `codex`, `-p` or `exec`, a resume, /clear, or after compaction.
+# Subagents start through SubagentStart instead, so they never see it. The hook
+# reads the file each time, so a policy edit needs no reinstall.
 #
 # EXIT STATUS: 0 ok; 1 check found a missing or changed file; 64 usage;
 # 69 no bash 4 or later, or an unsupported OS; 73 a file this script did not
@@ -57,8 +64,32 @@ agent_bash() {
     return 1
 }
 
+# The SessionStart hook command for both harnesses. Plain stdout becomes
+# session context in each; a home without the policy adds nothing.
+policy_hook='cat ~/.config/agent-delegation/policy.md 2>/dev/null || true'
+
 render_claude() {
-    printf '{\n  "attribution": false,\n  "env": {\n    "CLAUDE_CODE_SHELL": "%s"\n  }\n}\n' "$1"
+    cat <<EOF
+{
+  "attribution": false,
+  "env": {
+    "CLAUDE_CODE_SHELL": "$1"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$policy_hook",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+EOF
 }
 
 # The Codex hook command, run by the session's shell. Without the feature the
@@ -89,6 +120,16 @@ matcher = "Bash"
 type = "command"
 command = '$codex_guard'
 timeout = 10
+
+# The delegation policy, for every source: startup, resume, clear, compact, fork.
+[[hooks.SessionStart]]
+
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = '$policy_hook'
+timeout = 10
+# Codex caps the context a hook adds; this leaves the policy ample room.
+additionalContextLimit = 8000
 EOF
 }
 

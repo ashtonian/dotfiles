@@ -1,7 +1,6 @@
 # GPT launchers (feature agents.codex). They attach to the Codex app-server the
-# com.ashtonian.codex-remote-control LaunchAgent runs, which gives every session
-# the delegation policy (bin/codex-app-server). A --remote session runs in the
-# app-server's directory (~) unless -C names one.
+# com.ashtonian.codex-remote-control LaunchAgent runs (bin/codex-app-server). A
+# --remote session runs in the app-server's directory (~) unless -C names one.
 
 # _gpt_session MODEL EFFORT ARGS...: a session that skips approvals and the
 # sandbox, so ChatGPT connector content (mail, Drive, GitHub) stays out unless

@@ -2181,7 +2181,36 @@ class DotfilesAgents(Fixture):
         self.assertEqual((hook['type'], hook['timeout']), ('command', 10))
         self.assertIn('$HOME/.local/bin/repo-guard', hook['command'])
         self.assertEqual(stat.S_IMODE(self.codex.stat().st_mode), 0o644)
+        [claude_start] = claude['hooks']['SessionStart']
+        self.assertNotIn('matcher', claude_start, 'every source: startup, resume, clear, compact')
+        [codex_start] = codex['hooks']['SessionStart']
+        self.assertNotIn('matcher', codex_start)
+        [claude_hook], [codex_hook] = claude_start['hooks'], codex_start['hooks']
+        self.assertEqual((claude_hook['type'], claude_hook['timeout']), ('command', 10))
+        self.assertEqual((codex_hook['type'], codex_hook['timeout']), ('command', 10))
+        self.assertEqual(claude_hook['command'], codex_hook['command'], 'one policy hook for both')
+        self.assertGreater(codex_hook['additionalContextLimit'], len(self.POLICY.read_bytes()))
         self.assertEqual(self.agents('check').returncode, 0)
+
+    POLICY = FEATURES / 'agents.delegation/home/.config/agent-delegation/policy.md'
+
+    def test_the_session_hook_prints_the_policy_and_passes_without_it(self):
+        self.agents('install')
+        [hook] = json.loads(self.claude.read_text())['hooks']['SessionStart'][0]['hooks']
+        home = self.path / 'home'
+        policy = home / '.config/agent-delegation/policy.md'
+        policy.parent.mkdir(parents=True)
+        policy.symlink_to(self.POLICY)
+        for shell in ('/bin/sh', '/bin/bash', '/bin/zsh'):
+            with self.subTest(shell=shell):
+                p = subprocess.run([shell, '-c', hook['command']], input='{"hook_event_name":"SessionStart"}',
+                                   env={'HOME': str(home), 'PATH': '/usr/bin:/bin'}, capture_output=True,
+                                   text=True, timeout=10)
+                self.assertEqual((p.returncode, p.stdout, p.stderr), (0, self.POLICY.read_text(), ''))
+        policy.unlink()
+        p = subprocess.run(['/bin/sh', '-c', hook['command']], env={'HOME': str(home), 'PATH': '/usr/bin:/bin'},
+                           capture_output=True, text=True, timeout=10)
+        self.assertEqual((p.returncode, p.stdout), (0, ''), 'a home without the feature adds nothing')
 
     def test_check_reports_an_edited_config(self):
         self.agents('install')
@@ -2214,9 +2243,7 @@ class ClaudeLaunchers(Fixture):
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        self.policy = self.home / '.config/agent-delegation/policy.md'
-        self.policy.parent.mkdir(parents=True)
-        self.policy.write_text('# policy\n')
+        self.home.mkdir()
         self.work = self.path / 'work/repo'
         self.work.mkdir(parents=True)
         self.out = self.path / 'out'
@@ -2235,10 +2262,10 @@ class ClaudeLaunchers(Fixture):
         environment = dict(line.split('=', 1) for line in (self.out / 'env').read_text().splitlines() if '=' in line)
         return p, argv, environment
 
-    def test_sessions_get_the_policy_and_no_connectors(self):
+    def test_sessions_get_no_connectors(self):
         p, argv, env = self.launch('claudemore', '--resume', 'x')
         self.assertEqual(argv[argv.index('--model') + 1], 'opus[1m]')
-        self.assertEqual(argv[argv.index('--append-system-prompt-file') + 1], str(self.policy))
+        self.assertNotIn('--append-system-prompt-file', argv, 'the managed SessionStart hook carries the policy')
         self.assertEqual(argv[-2:], ['--resume', 'x'], 'arguments pass through last')
         self.assertRegex(argv[argv.index('--name') + 1], r'^repo@.+-1$')
         self.assertEqual(env.get('ENABLE_CLAUDEAI_MCP_SERVERS'), 'false')
@@ -2248,12 +2275,6 @@ class ClaudeLaunchers(Fixture):
     def test_connectors_are_opt_in_per_launch(self):
         _, _, env = self.launch('claudemore', CLAUDE_CONNECTORS='1')
         self.assertNotIn('ENABLE_CLAUDEAI_MCP_SERVERS', env)
-
-    def test_a_missing_policy_is_reported_and_left_out(self):
-        self.policy.unlink()
-        p, argv, _ = self.launch('claudemore')
-        self.assertNotIn('--append-system-prompt-file', argv)
-        self.assertIn('policy.md is missing', p.stderr)
 
 
 class CodexLaunchers(Fixture):
@@ -2302,8 +2323,7 @@ class CodexAppServer(Fixture):
     def setUp(self):
         super().setUp()
         self.home = self.path / 'home'
-        self.policy = self.home / '.config/agent-delegation/policy.md'
-        self.policy.parent.mkdir(parents=True)
+        self.home.mkdir()
         self.env.pop('CODEX_HOME', None)
         shutil.copy(ROOT / 'bin/codex-app-server', self.bin)
         self.cli('stable-exec', f'for a in "$@"; do printf "%s\\0" "$a"; done > {self.path}/argv')
@@ -2314,26 +2334,14 @@ class CodexAppServer(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         return p, (self.path / 'argv').read_text().split('\0')[:-1]
 
-    def test_every_session_gets_the_policy_verbatim(self):
-        text = '# Policy\n\nQuote "this", a \\ backslash,\ta tab and `code`.\n'
-        self.policy.write_text(text)
+    def test_the_server_runs_on_its_own_socket(self):
+        policy = self.home / '.config/agent-delegation/policy.md'
+        policy.parent.mkdir(parents=True)
+        policy.write_text('# policy\n')
         _, argv = self.serve()
-        self.assertEqual(argv[:5], ['codex', 'app-server', '--remote-control', '--listen',
-                                   f'unix://{self.home}/.codex/dotfiles-app-server.sock'])
-        key, value = argv[argv.index('-c') + 1].split('=', 1)
-        self.assertEqual(key, 'developer_instructions')
-        self.assertEqual(tomllib.loads(f'v = {value}')['v'], text.rstrip('\n'), 'codex parses -c values as TOML')
-
-    def test_the_repository_policy_survives_quoting(self):
-        self.policy.symlink_to(FEATURES / 'agents.delegation/home/.config/agent-delegation/policy.md')
-        _, argv = self.serve()
-        value = argv[argv.index('-c') + 1].split('=', 1)[1]
-        self.assertEqual(tomllib.loads(f'v = {value}')['v'], self.policy.read_text().rstrip('\n'))
-
-    def test_a_missing_policy_is_reported_and_left_out(self):
-        p, argv = self.serve()
-        self.assertNotIn('-c', argv)
-        self.assertIn('policy.md is missing', p.stderr)
+        self.assertEqual(argv, ['codex', 'app-server', '--remote-control', '--listen',
+                                f'unix://{self.home}/.codex/dotfiles-app-server.sock'],
+                         'the managed SessionStart hook carries the policy, not -c')
 
     def test_printing_the_endpoint_does_not_start_the_server(self):
         for home in (self.home / '.codex', self.path / 'custom codex'):

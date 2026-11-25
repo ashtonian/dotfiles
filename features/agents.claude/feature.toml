@@ -3,7 +3,8 @@ description = "Claude Code: its own rules beside the shared ones (agents.rules),
 category = "agents"
 # Claude Code itself is not a package here: sync.sh installs it with Anthropic's
 # native installer where this feature is on (sync_claude_code), and it updates itself.
-# The launchers append its delegation policy; its subagents serve their sessions.
+# Its sessions get the delegation policy from the managed SessionStart hook
+# (bin/dotfiles-agents); its subagents serve them.
 requires = ["agents.delegation", "agents.agent-mcp", "agents.rules"]
 
 [provides]

@@ -7,11 +7,9 @@
 #   codex-app-server                 (run by the com.ashtonian.codex-remote-control LaunchAgent)
 #   codex-app-server --print-endpoint
 #
-# Serves Codex sessions with remote control on its own Unix socket. Every
-# session it starts gets the delegation policy (~/.config/agent-delegation/
-# policy.md, feature agents.delegation) as developer instructions: a client
-# attached with `codex --remote` cannot send its own, so the server carries it.
-# The policy is read at start; restart the service after editing it.
+# Serves Codex sessions with remote control on its own Unix socket. The
+# delegation policy reaches its sessions as it reaches every other: through
+# the managed SessionStart hook that bin/dotfiles-agents installs.
 #
 # ONE-TIME SETUP (macOS privacy settings cannot be scripted):
 #   System Settings > Privacy & Security > Full Disk Access > "+" > Cmd+Shift+G >
@@ -27,21 +25,8 @@ case ${1:-} in
 	*) print -u2 'usage: codex-app-server [--print-endpoint]'; exit 64 ;;
 esac
 
-policy=$HOME/.config/agent-delegation/policy.md
 # The default socket belongs to Codex's managed daemon, whose clients require
 # matching shared feature flags. Our remote sessions carry their own settings.
 args=(app-server --remote-control --listen "$endpoint")
-if [[ -r $policy ]]; then
-	# -c parses its value as TOML, so the text goes in as a basic string.
-	text=$(<$policy)
-	text=${text//\\/\\\\}
-	text=${text//\"/\\\"}
-	text=${text//$'\t'/\\t}
-	text=${text//$'\r'/}
-	text=${text//$'\n'/\\n}
-	args+=(-c "developer_instructions=\"$text\"")
-else
-	print -u2 "codex-app-server: $policy is missing; serving without the delegation policy"
-fi
 
 exec ${0:A:h}/stable-exec codex "${args[@]}"
