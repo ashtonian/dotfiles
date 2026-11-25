@@ -3,7 +3,7 @@ description = "Codex: the local app-server with remote control (bin/codex-app-se
 category = "agents"
 platforms = ["darwin"]
 # The app-server serves its delegation policy; its roles serve the sessions.
-requires = ["agents.delegation"]
+requires = ["agents.delegation", "agents.agent-mcp"]
 
 [provides]
 zshrc = "zshrc.zsh" # gptmore, gptmax

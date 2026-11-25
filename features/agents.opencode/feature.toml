@@ -1,6 +1,7 @@
 id = "agents.opencode"
 description = "OpenCode coordinator config, agents and delegate plugin (see README.md here)"
 category = "agents"
+requires = ["agents.agent-mcp"]
 
 # Where the stow package used to link these files.
 retire = [

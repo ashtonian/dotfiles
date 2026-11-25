@@ -1577,7 +1577,7 @@ class Install(Fixture):
         self.assertEqual(steps, ['sync.sh build',
                                  f'dotfiles init --repo {self.home}/.dotfiles --profiles base,dev',
                                  f'dotfiles apply --repo {self.home}/.dotfiles --launch-agents=false',
-                                 'sync.sh brewfile', 'sync.sh mise', 'sync.sh apply'])
+                                 'sync.sh brewfile', 'sync.sh mise', 'sync.sh github-mcp', 'sync.sh apply'])
         self.assertNotIn('stow', self.audit.read_text())
 
     def test_keeps_an_existing_machine_manifest(self):
@@ -3097,6 +3097,19 @@ class AgentMcp(Fixture):
         self.assertIn('pyroscope', claude)
         self.assertNotIn('pyroscope', codex)
         self.assertIn('-enabled-tools search,datasource,prometheus,loki,dashboard', codex)
+
+    def test_github_uses_the_active_account_and_only_offers_reads(self):
+        self.env["HOMEBREW_PREFIX"] = str(self.path)
+        self.cli("gh", 'test "$*" = "auth token --hostname github.com" && echo fixture-token')
+        self.cli("mise", 'test "$*" = "-C $HOME which github-mcp-server" && command -v github-mcp-server')
+        self.cli("github-mcp-server", 'test "$GITHUB_PERSONAL_ACCESS_TOKEN" = fixture-token && echo "$@"')
+        result = self.run_mcp("github")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "stdio --gh-host https://github.com --read-only --toolsets default,actions")
+        self.cli("gh", "exit 1")
+        result = self.run_mcp("github")
+        self.assertEqual(result.returncode, 77)
+        self.assertEqual(result.stdout, "")
 
     def test_kubernetes_stays_read_only(self):
         self.fake(self.mcp / 'bin/kubernetes-mcp-server', 'k8s')

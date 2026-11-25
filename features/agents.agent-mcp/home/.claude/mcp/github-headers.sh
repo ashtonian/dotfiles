@@ -3,7 +3,7 @@
 # gh CLI keyring at connect time, so no token is written into any config file.
 # Claude Code started from the desktop app has no Homebrew on PATH, so its prefixes come first.
 set -euo pipefail
-gh=$(PATH="${HOMEBREW_PREFIX:-/opt/homebrew}/bin:/home/linuxbrew/.linuxbrew/bin:$PATH" command -v gh) ||
+gh=$(PATH="${HOMEBREW_PREFIX:-/opt/homebrew}/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH" command -v gh) ||
     { echo "gh is not installed; install it with Homebrew" >&2; exit 1; }
-token=$("$gh" auth token 2>/dev/null) || { echo "gh auth token failed; run: gh auth login" >&2; exit 1; }
-printf '{"Authorization":"Bearer %s"}\n' "$token"
+token=$("$gh" auth token --hostname github.com 2>/dev/null) || { echo "gh auth token failed; run: gh auth login" >&2; exit 1; }
+printf '{"Authorization":"Bearer %s","X-MCP-Toolsets":"default,actions","X-MCP-Readonly":"true"}\n' "$token"

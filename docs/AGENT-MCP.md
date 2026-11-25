@@ -2,17 +2,16 @@
 
 ## Overview
 
-Claude Code and Codex load MCP servers per repository. A repository lists the
+Claude Code, Codex and OpenCode have a global read-only GitHub MCP for repositories, issues, pull requests and Actions. Claude Code and Codex also load servers per repository. A repository lists the
 servers it needs in committed config, `.mcp.json` for Claude Code and
 `.codex/config.toml` for Codex, and each entry runs `agent-mcp <server>
 [claude|codex]`. The launcher, `features/agents.agent-mcp/home/.local/bin/agent-mcp`, defines
 every server's binary, version and flags once, so repositories never carry
-paths, hosts or credentials. OpenCode loads no MCP servers: its local model's
-64K context is too small for their tool schemas.
+paths, hosts or credentials. OpenCode loads GitHub globally through its managed user configuration.
 
 | Where | Claude Code | Codex |
 | --- | --- | --- |
-| Every session | github (read-only), context7 (remote, user scope) | context7 (remote, `~/.codex/config.toml`) |
+| Every session | github (read-only), context7 (remote, user scope) | github (read-only), context7 (remote, `~/.codex/config.toml`) |
 | Go applications with a database and a web console | serena, codebase-memory, playwright, postgres; typescript-lsp plugin | serena, codebase-memory, postgres |
 | Go libraries and engines | serena, codebase-memory | serena, codebase-memory |
 | Infrastructure repositories (Kubernetes, Terraform) | kubernetes, terraform, grafana; pyright-lsp plugin | kubernetes, terraform, grafana |
@@ -43,6 +42,8 @@ gopls only in Go code.
 | terraform | `agent-mcp` | terraform-mcp-server v1.3.0 `stdio --toolsets=registry` | Public registry only. |
 | pprof | `agent-mcp` | pprof-analyzer-mcp v0.3.1 | Reads profile files. No repository loads it: `compare_profiles` reports CPU time in bytes and `analyze_pprof` has no cumulative view. `go tool pprof` does both. |
 | grafana | `agent-mcp` → `~/.claude/mcp/grafana.sh` | mcp-grafana v2.0.2 `-disable-write -disable-admin -usage-stats=disabled` | URL and token from keychain service `claude-mcp-grafana`; the token belongs to Grafana service account `claude-mcp` (Viewer). Claude gets search, datasource, prometheus, loki, alerting, dashboard, folder and pyroscope. Codex gets search, datasource, prometheus, loki and dashboard. |
+| github | Claude Code user scope | GitHub’s hosted MCP at `https://api.githubcopilot.com/mcp/` | The header helper reads the active github.com credential from `gh` at connection time and selects the read-only default and Actions toolsets. |
+| github | Codex user scope and OpenCode global config | `agent-mcp github` | Runs GitHub’s official release pinned in the feature’s mise configuration on stdio with the same toolsets and read-only mode. Only the server child receives the credential. |
 | context7 | `~/.claude.json` (user), `~/.codex/config.toml` | `https://mcp.context7.com/mcp` | Claude's `headersHelper` (`~/.claude/mcp/context7-headers.sh`) sends an API key from keychain service `claude-mcp-context7`, account `api-key`, when one exists; until then it is anonymous. |
 | Approvals | `~/.claude/settings.json` `enabledMcpjsonServers` | the eight server names above | Fleet sessions never stop at a project-server prompt. |
 | Codex trust | `~/.codex/config.toml` `[projects."<clone>"]` | `trust_level = "trusted"` per clone | Codex reads a project's `.codex/config.toml` only for a trusted clone path (exact path, not a parent). A new clone asks once in the Codex TUI. |
@@ -51,7 +52,7 @@ gopls only in Go code.
 ## External Dependencies
 
 - `~/.claude/mcp` with its pinned installs; the runbook there lists every version and the upgrade steps. The credential helpers in it, `github-headers.sh` and `context7-headers.sh` (`headersHelper` scripts named in `~/.claude.json`) and `grafana.sh`, are links into this feature; the installs stay untracked.
-- `gh` logged in: `github-headers.sh` sends `gh auth token` as the GitHub server's bearer token, with Homebrew's prefixes on PATH, since the desktop app starts Claude Code without them.
+- An active github.com login in `gh` on each workstation. Run `gh auth login --hostname github.com` if needed. The desktop client can access a macOS login keychain that an SSH shell cannot.
 - `uv` (Serena), Go and gopls (`~/go/bin`), and mise's default Node, through its shims (Playwright, dbhub, the LSP servers).
 - The keychain items `claude-mcp-grafana` (`url`, `token`) and, optionally, `claude-mcp-context7` (`api-key`).
 - `~/.local/bin` on `PATH`: `~/.config/shell/env.sh` puts it there for shells, and the Codex and OpenCode LaunchAgents set it in their `PATH`.
@@ -84,11 +85,17 @@ installed (the message names it), 78 when Serena's Claude context file is missin
 ## Build / Run / Test
 
 ```sh
+./sync.sh github-mcp                 # register installed clients in their user configs
+claude mcp get github
+codex mcp get github
+opencode mcp list
 python3 -m unittest tests.test_dotfiles.AgentMcp
 cd <clone> && claude mcp list                                        # project servers connected?
 cd <clone> && ~/.local/libexec/codex-stable/bin/codex mcp list       # needs a trusted clone
 cd <clone> && claude -p "/context" --strict-mcp-config --mcp-config '{"mcpServers":{}}'   # baseline context, no API call
 ```
+
+A full sync registers GitHub with the installed Claude and Codex CLIs after package installation. Registration preserves other servers and reports an existing custom entry named `github`. Open a fresh client session to load the configuration.
 
 To add a server to a repository, add its name to that repository's
 `.mcp.json` and `.codex/config.toml`. If it is a new server, add a case to

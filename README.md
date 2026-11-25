@@ -626,7 +626,8 @@ checks it. Setup, configuration, operations and security:
 
 ### Agent MCP servers
 
-Repositories list the MCP servers they need in committed `.mcp.json` (Claude
+Claude Code, Codex and OpenCode get a global read-only GitHub MCP, including Actions jobs and logs.
+Repositories list additional MCP servers in committed `.mcp.json` (Claude
 Code) and `.codex/config.toml` (Codex) files; every entry runs
 `agent-mcp <server>`, which pins each server's binary and flags in one place.
 Servers load only where they are used: Serena in the Go repositories, a code
