@@ -59,9 +59,10 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
 | `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
-| `agents.claude` | dev | all | `~/.claude/CLAUDE.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation`; sync installs Claude Code natively where it is on |
+| `agents.claude` | dev | all | `~/.claude/rules/claude-code.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation` and `agents.rules`; sync installs Claude Code natively where it is on |
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
-| `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` |
+| `agents.codex` | dev | darwin | `~/.codex/AGENTS.md` (a link to `generated/AGENTS.md`); `agent_rules` fragment `agent-rules.md`; LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` and `agents.rules` |
+| `agents.rules` | dev (required) | all | `~/.claude/CLAUDE.md`; the first `agent_rules` fragment |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
 | `agents.gascity` | opt-in | darwin | [Gas City fleet](features/agents.gascity/README.md), its Homebrew dependencies, reviewer prompt, `fleet-slot-check` and `fleet-plan` |
 | `agents.repo-guard` | dev | all | `~/.local/bin/repo-guard`, `~/.claude/skills/repo-guard/` (its Claude Code plugin; the Codex registration is `bin/dotfiles-agents`'s; lists come from overlays) |
@@ -184,6 +185,9 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [features/agents.claude/bin/claude-subagent-economics](features/agents.claude/bin/claude-subagent-economics) | Price recent subagent runs from Claude Code transcripts and the break-even size of re-reading what they cited; `--days`, `--projects` |
 | [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`), with the delegation policy appended and drive-local scratch; `claudefleet` opens gitstead's `fleet`; `claudeclean` drops session files of exited sessions |
 | [features/agents.codex/zshrc.zsh](features/agents.codex/zshrc.zsh) | `gptmore`, `gptmax`: Codex sessions on the local app-server in the current directory, without ChatGPT apps unless `CODEX_CONNECTORS=1` |
+| [features/agents.codex/agent-rules.md](features/agents.codex/agent-rules.md) | Codex's own rules: the delegation policy, reading `.claude/rules` itself, the shared skills; joined after every agent's rules into `~/.codex/AGENTS.md` |
+| [features/agents.rules/home/.claude/CLAUDE.md](features/agents.rules/home/.claude/CLAUDE.md) | The rules every coding agent follows: Claude Code's `~/.claude/CLAUDE.md` and the start of Codex's `~/.codex/AGENTS.md` |
+| [features/agents.claude/home/.claude/rules/claude-code.md](features/agents.claude/home/.claude/rules/claude-code.md) | Claude Code's own rules, which Codex doesn't get |
 | [features/agents.repo-guard/bin/repo-guard](features/agents.repo-guard/bin/repo-guard) | The `PreToolUse` hook Claude Code and Codex run: deny commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt` (or `REPO_GUARD_LIST`) |
 | [features/agents.repo-guard/guard_test.sh](features/agents.repo-guard/guard_test.sh) | repo-guard's cases against throwaway clones, in both harnesses' input shapes; `GUARD_BASH` picks the bash |
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |

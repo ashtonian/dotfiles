@@ -480,6 +480,30 @@ with the endpoint defined by `bin/codex-app-server --print-endpoint`.
 Codex reserves its default `unix://` socket for its own managed daemon and
 requires explicit feature flags to match that daemon's shared settings.
 
+### Agent rules
+
+Claude Code and Codex follow one set of rules, kept once:
+
+| Source | Owner | Claude Code reads it as | Codex reads it in `~/.codex/AGENTS.md` |
+| --- | --- | --- | --- |
+| `features/agents.rules/home/.claude/CLAUDE.md`, every agent's rules | `agents.rules` | `~/.claude/CLAUDE.md` | First |
+| `features/agents.codex/agent-rules.md`, Codex's own | `agents.codex` | Not at all | Second |
+| An overlay's rules file, such as `~/.claude/rules/personal.md` | The overlay's `<context>.claude` | `~/.claude/rules/<context>.md` | After them, in feature order |
+| `features/agents.claude/home/.claude/rules/claude-code.md`, Claude Code's own | `agents.claude` | `~/.claude/rules/claude-code.md` | Not at all |
+
+A feature hands its Markdown to Codex with `agent_rules`. `dotfiles apply`
+joins the enabled ones in feature order into `generated/AGENTS.md`, each after
+an HTML comment naming its feature. `agents.codex` links `~/.codex/AGENTS.md`
+there (`link_generated`), because Codex reads that one fixed file and has no
+include. So an edit belongs in a source file. The next apply replaces anything
+written into `~/.codex/AGENTS.md`, and a hand-written file at that path stays
+in place, reported as in the way, until it is removed.
+
+Codex 0.172 includes the whole global file in every session: a 49 KB
+`AGENTS.md` came through `codex debug prompt-input` intact. Its
+`project_doc_max_bytes` limit applies to a repository's own AGENTS.md files.
+On a Mac with the personal and client overlays the rendered file is 43 KB.
+
 ### Subagents and the delegation policy
 
 `agents.delegation`, which `agents.claude` and `agents.codex` require, gives

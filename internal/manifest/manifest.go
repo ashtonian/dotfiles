@@ -105,6 +105,12 @@ type Provides struct {
 	// the link's place. While any exists, apply neither makes nor replaces the
 	// entry's links.
 	LinkUnlessExists map[string][]string `toml:"link_unless_exists"`
+	// AgentRules is a Markdown fragment of the rules coding agents follow;
+	// generated/AGENTS.md joins the enabled ones in feature order.
+	AgentRules string `toml:"agent_rules"`
+	// LinkGenerated links paths under $HOME to generated outputs, by output
+	// name, for a tool that reads one fixed file and has no include.
+	LinkGenerated map[string]string `toml:"link_generated"`
 	// Prefs maps a store from prefs.Stores to a file of the settings this
 	// feature owns in that app, set key by key; see package prefs.
 	Prefs map[string]string `toml:"prefs"`
@@ -454,7 +460,7 @@ func validateFeature(f *Feature, dirName string) error {
 		}
 	}
 	var paths []string
-	for _, p := range []string{f.Provides.Env, f.Provides.Zshrc, f.Provides.Gitconfig, f.Provides.SSHConfig} {
+	for _, p := range []string{f.Provides.Env, f.Provides.Zshrc, f.Provides.Gitconfig, f.Provides.SSHConfig, f.Provides.AgentRules} {
 		if p != "" {
 			paths = append(paths, p)
 		}
@@ -481,6 +487,14 @@ func validateFeature(f *Feature, dirName string) error {
 			if !strings.HasPrefix(w, "/") && !strings.HasPrefix(w, "~/") {
 				return fmt.Errorf("link_unless_exists %s: %q must be absolute or start with ~/", entry, w)
 			}
+		}
+	}
+	for _, target := range slices.Sorted(maps.Keys(f.Provides.LinkGenerated)) {
+		if err := checkRelative(target); err != nil {
+			return err
+		}
+		if name := f.Provides.LinkGenerated[target]; name == "" || strings.ContainsAny(name, `/\`) {
+			return fmt.Errorf("link_generated %s: %q must name a generated output", target, name)
 		}
 	}
 	for _, store := range slices.Sorted(maps.Keys(f.Provides.Prefs)) {
