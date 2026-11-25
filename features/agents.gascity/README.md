@@ -22,7 +22,7 @@ dolt version
 tmux -V
 ```
 
-The upstream tap supplies Gas City and brings in Beads, Dolt, jq, tmux and flock. Homebrew updates these packages independently. The reference versions for this guide are Gas City **1.5.1**, Beads **1.3.2** and Dolt **2.2.0**. Record actual versions on each host before working against a shared board. Upgrade all board clients together when the schema changes. Sign into the installed Claude and Codex CLIs in each intended OS account. Check `claude auth status` and `codex login status` in the shell that will launch sessions. Provider credentials stay in that account.
+Homebrew's core `gascity` formula supplies Gas City and brings in Beads, Dolt, jq, tmux and flock. Homebrew updates these packages independently. The reference versions for this guide are Gas City **1.5.1**, Beads **1.3.2** and Dolt **2.2.0**. Record actual versions on each host before working against a shared board. Upgrade all board clients together when the schema changes. Sign into the installed Claude and Codex CLIs in each intended OS account. Check `claude auth status` and `codex login status` in the shell that will launch sessions. Provider credentials stay in that account.
 
 ## Stage one host
 

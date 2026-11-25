@@ -5,7 +5,6 @@ platforms = ["darwin"]
 requires = ["brew.base"]
 
 [provides]
-tap = ["gastownhall/gascity"]
-brew = ["gastownhall/gascity/gascity"]
+brew = ["gascity"]
 bin = ["bin/fleet-slot-check", "bin/fleet-plan"]
 link = [".config/gas-fleet/architecture-review.md", ".config/gas-fleet/work-plan.md"]
