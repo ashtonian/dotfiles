@@ -3674,11 +3674,12 @@ class DiskHygiene(Fixture):
     def test_codex_sessions_unwritten_for_the_window_are_deleted_through_codex(self):
         stale_ids = ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222',
                      '33333333-3333-4333-8333-333333333333')
-        long_ago = time.time() - 45 * 86400
+        long_ago = time.time() - 120 * 86400
         stale = self.rollout('sessions/2026/01/02', stale_ids[0], long_ago)
         only_read = self.rollout('sessions/2026/01/03', stale_ids[1], long_ago, read=time.time())
         archived = self.rollout('archived_sessions', stale_ids[2], long_ago)
         fresh = self.rollout('sessions/2026/11/25', self.SESSION, time.time(), read=long_ago)
+        within_window = self.rollout('sessions/2026/09/26', self.OTHER, time.time() - 60 * 86400)
         notes = self.home / '.codex/sessions/notes.txt'
         notes.write_text('x')
         os.utime(notes, (long_ago, long_ago))
@@ -3695,11 +3696,11 @@ class DiskHygiene(Fixture):
         for gone in (stale, only_read, archived):
             self.assertFalse(gone.exists(), gone)
         self.assertFalse(stale.parent.exists(), 'the emptied date directory goes')
-        for stays in (fresh, notes, self.home / '.codex/sessions'):
+        for stays in (fresh, within_window, notes, self.home / '.codex/sessions'):
             self.assertTrue(stays.exists(), stays)
 
     def test_a_codex_session_codex_cannot_delete_fails_the_run(self):
-        stuck = self.rollout('sessions/2026/01/02', self.OTHER, time.time() - 45 * 86400)
+        stuck = self.rollout('sessions/2026/01/02', self.OTHER, time.time() - 120 * 86400)
         self.stub_codex(failing=self.OTHER)
         p = self.run_hygiene()
         self.assertEqual(p.returncode, 1, p.stdout + p.stderr)

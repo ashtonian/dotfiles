@@ -19,7 +19,7 @@
 #                                           disk_hygiene.keyed; none unless a profile names them)
 #   ~/Library/Caches/{goimports,pnpm}       each file unused for DISK_HYGIENE_CACHE_DAYS
 #   <CODEX_HOME>/{sessions,archived_sessions}  a Codex session whose transcript nothing wrote
-#                                           for DISK_HYGIENE_TRANSCRIPT_DAYS (30), through codex delete
+#                                           for DISK_HYGIENE_TRANSCRIPT_DAYS (90), through codex delete
 #   ~/Library/pnpm/store, <drive>/.pnpm-store   `pnpm store prune`
 #   each cache in DISK_HYGIENE_RELOCATE        moved to <cache drive>/cache/xdg/<name> and
 #                                           linked from its usual place, while the drive named
@@ -45,7 +45,7 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
 
 scratch_days=${DISK_HYGIENE_SCRATCH_DAYS:-7}
 cache_days=${DISK_HYGIENE_CACHE_DAYS:-14}
-transcript_days=${DISK_HYGIENE_TRANSCRIPT_DAYS:-30}
+transcript_days=${DISK_HYGIENE_TRANSCRIPT_DAYS:-90}
 codex_home=${CODEX_HOME:-$HOME/.codex}
 keyed=${DISK_HYGIENE_KEYED-$(machine_setting DISK_HYGIENE_KEYED)}
 keep=${DISK_HYGIENE_KEEP-}
