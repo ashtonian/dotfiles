@@ -34,6 +34,21 @@ extensions:
       cleanup_on_start: true
 
 receivers:
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: coding-agent-collector
+          scrape_interval: 60s
+          static_configs:
+            - targets: ["127.0.0.1:8889"]
+          metric_relabel_configs:
+            - source_labels: [__name__]
+              regex: 'otelcol_(exporter_(queue_(size|capacity)|(enqueue_failed|send_failed)_(log_records|metric_points))|receiver_(accepted|refused)_(log_records|metric_points))'
+              action: keep
+            # Count agent traffic at the OTLP receiver, excluding this scrape.
+            - source_labels: [receiver]
+              regex: 'prometheus/collector'
+              action: drop
   otlp:
     protocols:
       http:
@@ -121,7 +136,7 @@ service:
                 port: 8889
   pipelines:
     metrics:
-      receivers: [otlp]
+      receivers: [otlp, prometheus/collector]
       processors: [memory_limiter, resource/redact, attributes/redact, resource/host, batch]
       exporters: [otlp_http/metrics]
     logs:
