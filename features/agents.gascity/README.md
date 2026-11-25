@@ -97,6 +97,23 @@ bd -C "$BOARD" dolt test
 
 For subsequent hosts distribute the first board's non-secret `.beads/metadata.json` and `.beads/config.yaml` into the same private directory structure after inspecting them. Supply credentials and TLS on each host. Use `bd -C "$BOARD" show ISSUE_ID` on both hosts to check they see the same scratch issue before dispatch. Run board commands outside a Gas City worker environment that sets `BEADS_DIR` or other store overrides. Never copy runtime data, credential files or a running city's internal store between Macs.
 
+### A Mac with a private database CA
+
+An OpenSSL probe using a CA file and a native Go client using the macOS trust store can get different verification results. For a Mac where the CA is already trusted, use the direct setup above. For an operator who wants trust scoped to this board, Beads 1.3.2 also offers an **experimental** local proxy for an external server. It accepts an explicit PEM CA and verifies the upstream endpoint. The remote Dolt service holds the issues and claims. The proxy runs locally and keeps connection metadata in the board directory.
+
+Start with a fresh private board directory for this mode. Obtain the CA from the cluster operator over a trusted channel. Supply `BEADS_PROXIED_SERVER_EXTERNAL_PASSWORD` to the operator’s board commands through the approved credential manager. Keep it out of city startup and model sessions.
+
+```sh
+(cd "$BOARD" && bd init --proxied-server \
+  --proxied-server-external-host "$BOARD_HOST" --proxied-server-external-port "$BOARD_PORT" \
+  --proxied-server-external-user "$BOARD_USER" --proxied-server-external-tls \
+  --proxied-server-external-tls-ca-cert-path "$BOARD_CA" \
+  --database "$BOARD_DB" --prefix team --skip-hooks --skip-agents)
+(cd "$BOARD" && bd ready)
+```
+
+Use an absolute path for `BOARD_CA`. Commission the connection with a disposable issue and two distinct claim actors. Query the remote database independently to confirm it holds the same issue ID, assignee and dependencies. An existing workspace needs its normal migration or adoption procedure before changing mode.
+
 ## Approve one issue or a chunk
 
 Give the planner read access. Have the dispatcher post the proposal as a **standalone plan comment** on the issue with the scope, exclusions, affected repos and lanes, immutable source revisions, dependency/release gates, acceptance tests and decisions you are being asked to make. Use one comment for an entire small issue. On a large RFC, use one comment per independently reviewable chunk. A sign-off on chunk 1 leaves chunk 2 awaiting approval. Include downstream SHAs or version constraints when they affect the decision.
