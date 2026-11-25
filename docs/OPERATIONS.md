@@ -41,6 +41,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `GO_EXTRA_BUILD_CACHES` | Colon-separated directory paths | unset (only `go env GOCACHE`); the `studio` profile sets `/Volumes/E2TB2/cache/go/build` | `bin/go-cache-trim`: Go build caches to trim besides `go env GOCACHE`, such as one a checkout's `mise.toml` points `GOCACHE` at. Setting `paths.go_extra_build_caches` (feature `shell.env`), exported by the generated `env.sh`, which the job reads itself because launchd starts it without a shell |
 | `DISK_HYGIENE_SCRATCH_DAYS` | Whole days, at least 1 | `7` | `bin/disk-hygiene`: delete a Claude Code session's scratch once nothing in it was used this long; set in the `macos.disk-hygiene` feature's template |
 | `DISK_HYGIENE_CACHE_DAYS` | Whole days, at least 1 | `14` | `bin/disk-hygiene`: delete a tool's cache directory, a key of a keyed cache, or a goimports or pnpm cache file once unused this long; set in the template |
+| `DISK_HYGIENE_TRANSCRIPT_DAYS` | Whole days, at least 1 | `90` | `bin/disk-hygiene`: delete a Codex session under `CODEX_HOME` (`~/.codex`) through `codex delete` once its transcript has not been written this long, a longer window than the 30 days Claude Code's `cleanupPeriodDays` default keeps its own transcripts; set in the template |
 | `DISK_HYGIENE_KEYED` | Space-separated names | setting `disk_hygiene.keyed`, empty unless a profile sets it | Cache directories holding one subdirectory per branch, agent or tool version; `bin/disk-hygiene` prunes these a subdirectory at a time instead of whole. They are repository names, so an overlay's profile sets them; the environment wins over the setting. Empty: none |
 | `DISK_HYGIENE_KEEP` | Space-separated names | empty | Cache directories `bin/disk-hygiene` never deletes, for a cache that is expensive to rebuild and used less often than the window |
 | `DISK_HYGIENE_CACHE_DRIVE` | Directory path (a drive under `/Volumes`) | setting `disk_hygiene.cache_drive`: unset; the `studio` profile sets `/Volumes/E2TB`, other machines set it in their manifest | `bin/disk-hygiene` moves each cache in `DISK_HYGIENE_RELOCATE` to `<drive>/cache/xdg/<name>` and leaves a link in its usual place, while this drive is mounted. Unset: caches stay where their tools put them; the environment wins over the setting |
@@ -287,6 +288,16 @@ and repository scripts leave behind, so each run deletes:
   `DISK_HYGIENE_KEEP` stay.
 - goimports index files and pnpm metadata files unused for the same window,
   followed through a link to wherever the cache lives.
+- a Codex session whose transcript (`<CODEX_HOME>/sessions/<date>/rollout-*.jsonl`,
+  or under `archived_sessions`) nothing wrote for `DISK_HYGIENE_TRANSCRIPT_DAYS`
+  (90). Codex keeps every session until someone deletes it, while Claude Code
+  deletes its own transcripts after `cleanupPeriodDays` (30). The run calls
+  `codex delete --force <id>`, so Codex's index and thread history lose the
+  session too, then removes the date directories that emptied. Only the write
+  time counts, because listing sessions to resume one reads every transcript.
+  Without `codex` on the job's PATH the sessions stay and the run says so; a
+  session `codex delete` cannot remove is logged as `could not delete Codex
+  session` and fails the run.
 - with `DISK_HYGIENE_CACHE_DRIVE` naming a mounted drive, each cache in
   `DISK_HYGIENE_RELOCATE` found as a real directory: it is renamed aside, a
   link to `<drive>/cache/xdg/<name>` takes its place, and the internal copy is

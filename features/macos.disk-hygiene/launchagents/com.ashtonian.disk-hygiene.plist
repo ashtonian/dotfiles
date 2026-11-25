@@ -24,6 +24,8 @@
         <string>7</string>
         <key>DISK_HYGIENE_CACHE_DAYS</key>
         <string>14</string>
+        <key>DISK_HYGIENE_TRANSCRIPT_DAYS</key>
+        <string>90</string>
     </dict>
     <key>StartCalendarInterval</key>
     <dict>

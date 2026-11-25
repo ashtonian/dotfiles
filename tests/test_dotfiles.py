@@ -3611,8 +3611,10 @@ class DiskHygiene(Fixture):
         for d in (self.home / '.cache', self.tmp, self.volumes, self.agents):
             d.mkdir(parents=True)
         self.env.update(HOME=str(self.home), DISK_HYGIENE_TMP=str(self.tmp),
-                        DISK_HYGIENE_VOLUMES=str(self.volumes), XDG_STATE_HOME=str(self.path / 'state'))
+                        DISK_HYGIENE_VOLUMES=str(self.volumes), XDG_STATE_HOME=str(self.path / 'state'),
+                        CODEX_HOME=str(self.home / '.codex'))
         self.env.pop('DISK_HYGIENE_KEEP', None)
+        self.env.pop('DISK_HYGIENE_TRANSCRIPT_DAYS', None)
         self.env.pop('DISK_HYGIENE_KEYED', None)
         self.env.pop('DISK_HYGIENE_CACHE_DRIVE', None)
         self.env.pop('DISK_HYGIENE_RELOCATE', None)
@@ -3651,6 +3653,59 @@ class DiskHygiene(Fixture):
         self.assertFalse(on_drive.parent.exists(), 'an emptied project directory stays behind')
         for kept in (live, not_a_session, not_a_project):
             self.assertTrue(kept.exists(), kept)
+
+    def rollout(self, rel, session, written, read=None):
+        """A Codex transcript under CODEX_HOME/REL, last written at WRITTEN and read at READ."""
+        f = self.home / '.codex' / rel / f'rollout-2026-01-02T03-04-05-{session}.jsonl'
+        f.parent.mkdir(parents=True, exist_ok=True)
+        f.write_text('{}\n')
+        os.utime(f, (read or written, written))
+        return f
+
+    def stub_codex(self, failing=''):
+        """A codex whose `delete --force ID` removes ID's transcript, except FAILING's."""
+        audit = self.path / 'codex-audit'
+        self.cli('codex', f'printf "%s\\n" "$*" >> {audit}\n'
+                          '[ "$1" = delete ] && [ "$2" = --force ] || exit 2\n'
+                          f'[ "$3" = "{failing}" ] && exit 1\n'
+                          'find "$CODEX_HOME" -name "rollout-*-$3.jsonl" -delete')
+        return lambda: sorted(audit.read_text().splitlines()) if audit.exists() else []
+
+    def test_codex_sessions_unwritten_for_the_window_are_deleted_through_codex(self):
+        stale_ids = ('11111111-1111-4111-8111-111111111111', '22222222-2222-4222-8222-222222222222',
+                     '33333333-3333-4333-8333-333333333333')
+        long_ago = time.time() - 120 * 86400
+        stale = self.rollout('sessions/2026/01/02', stale_ids[0], long_ago)
+        only_read = self.rollout('sessions/2026/01/03', stale_ids[1], long_ago, read=time.time())
+        archived = self.rollout('archived_sessions', stale_ids[2], long_ago)
+        fresh = self.rollout('sessions/2026/11/25', self.SESSION, time.time(), read=long_ago)
+        within_window = self.rollout('sessions/2026/09/26', self.OTHER, time.time() - 60 * 86400)
+        notes = self.home / '.codex/sessions/notes.txt'
+        notes.write_text('x')
+        os.utime(notes, (long_ago, long_ago))
+        calls = self.stub_codex()
+
+        p = self.run_hygiene('--dry-run')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(calls(), [], 'a dry run deletes nothing')
+        self.assertEqual(p.stdout.count('would delete Codex session'), 3, p.stdout)
+
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(calls(), sorted(f'delete --force {i}' for i in stale_ids))
+        for gone in (stale, only_read, archived):
+            self.assertFalse(gone.exists(), gone)
+        self.assertFalse(stale.parent.exists(), 'the emptied date directory goes')
+        for stays in (fresh, within_window, notes, self.home / '.codex/sessions'):
+            self.assertTrue(stays.exists(), stays)
+
+    def test_a_codex_session_codex_cannot_delete_fails_the_run(self):
+        stuck = self.rollout('sessions/2026/01/02', self.OTHER, time.time() - 120 * 86400)
+        self.stub_codex(failing=self.OTHER)
+        p = self.run_hygiene()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn(f'could not delete Codex session {self.OTHER}', p.stdout)
+        self.assertTrue(stuck.exists())
 
     def test_caches_go_whole_or_a_key_at_a_time(self):
         cache = self.home / '.cache'
