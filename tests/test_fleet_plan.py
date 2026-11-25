@@ -1,4 +1,4 @@
-"""An approval must apply to this plan and originate from the configured owner."""
+"""Owner decisions are scoped to an exact plan or reviewed PR revision."""
 
 import contextlib
 import hashlib
@@ -67,3 +67,68 @@ class ApprovalTests(unittest.TestCase):
                         {"plan": dict(PLAN, id=77)}):
             with self.subTest(options=options), self.assertRaises(SystemExit):
                 self.run_check([reply(APPROVE)], **options)
+
+
+class FinishTests(unittest.TestCase):
+    base = "a" * 40
+    head = "b" * 40
+
+    def report(self, verdict="ready"):
+        return dict(PLAN, body=f"/fleet review main {self.base} {self.head} {verdict}\nReviewed the write path.")
+
+    def acceptance(self, report):
+        digest = hashlib.sha256(report["body"].encode()).hexdigest()
+        return f"/fleet accept {report['id']} {digest}"
+
+    def check(self, report, comments, pulls=None, action="check-finish", confirmed=True):
+        current = {"state": "open", "base": {"ref": "main", "sha": self.base}, "head": {"sha": self.head}}
+        responses = iter([current, current] if pulls is None else pulls)
+
+        def github(path, paginate=False):
+            if path == "repos/example/parser/pulls/7":
+                return next(responses)
+            if path == "repos/example/parser/issues/7/comments?per_page=100" and paginate:
+                return [[report], comments]
+            self.assertEqual(path, "repos/example/parser/issues/7")
+            return {"state": "open"}
+
+        args = ["fleet-plan", action, "example/parser", "7", "22", "--owner-id", str(OWNER)]
+        with patch.object(sys, "argv", args), patch.dict(MAIN.__globals__, {
+            "github": github, "confirm_comments": lambda plan, approval: confirmed,
+        }), contextlib.redirect_stdout(io.StringIO()) as output:
+            MAIN()
+        return output.getvalue().strip()
+
+    def test_exact_report_can_be_accepted(self):
+        report = self.report()
+        command = self.acceptance(report)
+        self.assertTrue(self.check(report, [], action="show-finish").endswith(command))
+        self.assertIn("https://example.test/approval", self.check(report, [reply(command)]))
+
+    def test_preflight_and_other_decisions_do_not_accept_this_report(self):
+        report = self.report()
+        accept = self.acceptance(report)
+        for comments in ([], [reply(APPROVE)], [reply(accept, actor=202)],
+                         [reply(accept), reply("/fleet hold-finish", number=24)],
+                         [reply(accept), reply(accept.replace("accept 22", "accept 44"), number=24)]):
+            with self.subTest(comments=comments), self.assertRaises(SystemExit):
+                self.check(report, comments)
+        with self.assertRaises(SystemExit):
+            self.check(report, [reply(accept)], confirmed=False)
+        with self.assertRaises(SystemExit):
+            self.check(dict(report, body=report["body"] + " Revised."), [reply(accept)])
+
+    def test_unready_or_missing_evidence_cannot_be_accepted(self):
+        for verdict in ("changes", "evidence"):
+            report = self.report(verdict)
+            with self.subTest(verdict=verdict), self.assertRaises(SystemExit):
+                self.check(report, [reply(self.acceptance(report))])
+
+    def test_revision_and_target_checked_again_at_handoff(self):
+        report = self.report()
+        current = {"state": "open", "base": {"ref": "main", "sha": self.base}, "head": {"sha": self.head}}
+        for change in ({"state": "closed"}, {"head": {"sha": "c" * 40}},
+                       {"base": {"ref": "main", "sha": "d" * 40}},
+                       {"base": {"ref": "release", "sha": self.base}}):
+            with self.subTest(change=change), self.assertRaises(SystemExit):
+                self.check(report, [reply(self.acceptance(report))], [current, dict(current, **change)])

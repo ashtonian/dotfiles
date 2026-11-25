@@ -49,14 +49,34 @@ option_defaults = { permission_mode = "suggest", model = "gpt-6.2-astra" }
 
 Use an implementation identity without branch-protection bypass, and require review on the target branch. Give the reviewer read access. Inspect the resolved configuration with `command gc --city "$CITY" config show`, including pack providers, permission modes, startup hooks, standing sessions and refinery/landing orders. Disable auto-landing and additional worker pools before pointing the city at real repos. Count coordinator, patrol and review sessions against the host budget. Start with a disposable copy and one named worker.
 
-For the first pilot, leave product rigs unregistered so their refinery, witness and polecat templates are never activated. For a city-local worker, place this in `agents/parser-one/agent.toml` under the city. Substitute an absolute path on **that host**. Add a second agent directory for the reviewer with `provider = "codex"` and its own copy. Keep checkout-creation and checkout-reset hooks off the supplied copies.
+For the first pilot, leave product rigs unregistered so their refinery, witness and polecat templates are never activated. For a city-local worker, place this in `agents/parser-one/agent.toml` under the city. Substitute an absolute path on **that host**. Give the reviewer its own copy. Keep checkout-creation and checkout-reset hooks off the supplied copies.
 
 ```toml
 scope = "city"
 work_dir = "/work/slots/parser-one"
 provider = "claude"
-nudge = "Read your assigned issue and its acceptance criteria."
+nudge = "Read the approved plan, prepare a draft PR and hand the root unit to the human owner for acceptance."
 ```
+
+Link the feature's [architectural review brief](home/.config/gas-fleet/architecture-review.md) once per stopped city. Run as the account that owns that city. For an existing link, check that it resolves to the installed brief.
+
+```sh
+install -d -m 700 "$CITY/prompts"
+ln -s "$HOME/.config/gas-fleet/architecture-review.md" "$CITY/prompts/fleet-architecture-review.md"
+```
+
+A reviewer's `agents/parser-review/agent.toml` selects the brief explicitly:
+
+```toml
+scope = "city"
+work_dir = "/work/slots/parser-review"
+provider = "codex"
+option_defaults = { permission_mode = "suggest", model = "gpt-6.2-astra" }
+prompt_template = "prompts/fleet-architecture-review.md"
+nudge = "Review the assigned revision and return the evidence to the dispatcher."
+```
+
+Before dispatch, `command gc --city "$CITY" prime parser-review --strict` should print **Architecture and production readiness review**. When updating an existing city, add the link and reviewer setting while the slot is idle, then verify the rendered prompt before assigning its next PR.
 
 Gas City v1.5.1 selects the runtime **city-wide**. Keep local tmux on each Mac and operate the other cities over an existing verified SSH connection. For a city whose *every* session should run on one remote host, the city setting is `[session] provider = "ssh:builder-a"`. SSH does not distribute a single city's agents across several Macs. [Upstream runtime and transport](https://github.com/gastownhall/gascity/blob/v1.5.1/docs/guides/configuring-an-agent.md)
 
@@ -79,7 +99,9 @@ For subsequent hosts distribute the first board's non-secret `.beads/metadata.js
 
 ## Approve one issue or a chunk
 
-Give the planner read access. Have it post a **standalone plan comment** on the issue with the scope, exclusions, affected repos and lanes, immutable source revisions, dependency/release gates, acceptance tests and decisions you are being asked to make. Use one comment for an entire small issue. On a large RFC, use one comment per independently reviewable chunk. A sign-off on chunk 1 leaves chunk 2 awaiting approval. Include downstream SHAs or version constraints when they affect the decision.
+Give the planner read access. Have the dispatcher post the proposal as a **standalone plan comment** on the issue with the scope, exclusions, affected repos and lanes, immutable source revisions, dependency/release gates, acceptance tests and decisions you are being asked to make. Use one comment for an entire small issue. On a large RFC, use one comment per independently reviewable chunk. A sign-off on chunk 1 leaves chunk 2 awaiting approval. Include downstream SHAs or version constraints when they affect the decision.
+
+As the human owner, you decide whether this unit is worth starting and what success means. Have the planner include the **why now**, current behavior, proposed change and architectural rationale, source links, affected users or tenants, evidence needed for acceptance, and the consequence of deferring. Ask for a split, a revision, a named dependency or a hold when those would change the decision. The dispatcher keeps the implementation blocked until you approve a specific version.
 
 The operator selects the plan comment and the trusted owner's numeric GitHub ID. The ID comes from private dispatcher configuration. The number after `#issuecomment-` in the plan's URL is its comment ID. Run:
 
@@ -203,15 +225,42 @@ For a consumer with relative Go replacements, keep its pinned sibling copy in th
 
 ## Have Astra review a Claude draft
 
-Give the reviewer the issue, acceptance criteria, diff, tests and exact head. The reviewer can inspect a fetched diff from its own copy. The operator can fetch evidence without allowing the reviewer to change the branch:
+Hand Astra the approved plan link and revision, repository and PR, target branch, full base and head SHAs, checks for that head, prior findings and relevant RFC or consumer evidence. The dispatcher can collect the GitHub evidence while the reviewer reads its own checkout:
 
 ```sh
-gh pr view "$PR" --repo "$repo" --json baseRefOid,headRefOid,url
+gh pr view "$PR" --repo "$repo" --json baseRefName,baseRefOid,headRefOid,url
 gh pr diff "$PR" --repo "$repo"
 gh pr checks "$PR" --repo "$repo"
 ```
 
-Capture the head **before and after** collecting the diff. If it moved, discard the mismatched evidence and fetch again. Ask Astra to report actionable findings with file, line and impact, or to record a clean review for that SHA. Return findings to the original Claude session; record the reviewed SHA on the board. Re-review the next pushed head and let the repository's merge rules decide when it can land. Human intake, dispatch and handoff are explicit in this setup.
+Read the branch and both SHAs again after collecting evidence. If any moved, refresh the packet. Astra reads the changed path end to end, including unchanged callers and downstream effects. It returns an architectural verdict, concrete findings, readiness evidence, rollout and recovery implications, and a decision for the owner. The [reviewer's actual instructions](home/.config/gas-fleet/architecture-review.md) cover failure behavior, tenant and permission checks, concurrency, telemetry, SQL and index choices, and opportunities to simplify the design.
+
+The dispatcher copies Astra's report verbatim into a **top-level PR conversation comment** and records its URL on the bead. Use the report from the assigned read-only session. `fleet-plan` checks the owner's decision and the reviewed revisions; the dispatcher supplies the report's provenance. Material defects go to the original Claude session. Missing evidence goes to whoever can supply the relevant fixture, query plan, CI or operational check. After a fix, Astra reconciles the findings against the new revision.
+
+## Decide when a unit is finished
+
+Maintain two owner inboxes in the appropriate trust context. Open issues labeled `needs-plan-approval` are proposals. Open PRs labeled `needs-owner-acceptance` have a readiness packet. Each finishing packet links the approved plan, its acceptance criteria and evidence, Astra's report, CI, outstanding threads, rollout/rollback steps and any follow-up with an owner. The root unit stays open while the decision is pending.
+
+Astra starts its report with `/fleet review TARGET_BRANCH BASE_SHA HEAD_SHA ready`, using full commit IDs. For example, a change that lists records for one tenant might pass an isolation test but still need a representative query plan. Astra reports `evidence`, identifies the missing plan and asks the implementer to return it. If the implementation leaks a record across tenant boundaries, the verdict is `changes`. Only `ready` presents the owner with an acceptance action.
+
+```sh
+# PR is the number, REPORT_COMMENT the numeric ID of the selected top-level report.
+fleet-plan show-finish "$repo" "$PR" "$REPORT_COMMENT"
+```
+
+For example, consider a PR that lists a tenant’s open orders newest first. A useful human handoff could read:
+
+> **Evidence needed.** The service uses the existing tenant-scoped query path. The two-tenant integration test linked in CI covers the list and its next page. The query filters by tenant and status, sorts by creation time and ID, and limits the page. The fixture contains only a few rows per tenant. Before rollout, compare the existing index with a candidate on `(tenant_id, status, created_at, id)` using representative tenant sizes and the actual engine. Record rows examined, sort cost and insert overhead. Return the plan comparison to the implementation owner. The broader repository refactor can wait.
+
+This is an illustrative report. A real handoff names the exact revisions and links the specific code, test result and query-plan artifact.
+
+Read the quoted report. Accept that exact version by posting the printed `/fleet accept …` line in a new PR conversation comment. To request changes, give Claude the specific findings and post `/fleet hold-finish` as a standalone comment if an earlier acceptance exists. You can also defer, split a follow-up or require a staged release. If the change expands the approved scope, return the affected chunk to plan review.
+
+```sh
+fleet-plan check-finish "$repo" "$PR" "$REPORT_COMMENT" --owner-id "$FLEET_OWNER_ID"
+```
+
+The check requires an open PR, a ready report for its current target branch, base and head, and the configured owner's unedited acceptance of that exact report. An edited report, newer hold or changed revision requires renewed acceptance. The acceptance is a fleet handoff. The operator separately checks required GitHub reviews, CI and unresolved threads and uses the repository's ordinary landing process, matching the reviewed head. Keep automatic landing disabled until this handoff. Mark the implementation landed only when the PR merges. If the plan includes rollout or consumer validation, keep those steps open until the agreed evidence arrives.
 
 ## Resume after sleep or an account limit
 

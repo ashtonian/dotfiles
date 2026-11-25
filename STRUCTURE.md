@@ -63,7 +63,7 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
-| `agents.gascity` | opt-in | darwin | [Gas City fleet](features/agents.gascity/README.md), its Homebrew dependencies, `fleet-slot-check` and `fleet-plan` |
+| `agents.gascity` | opt-in | darwin | [Gas City fleet](features/agents.gascity/README.md), its Homebrew dependencies, reviewer prompt, `fleet-slot-check` and `fleet-plan` |
 | `agents.repo-guard` | dev | all | `~/.local/bin/repo-guard`, `~/.claude/skills/repo-guard/` (its Claude Code plugin; the Codex registration is `bin/dotfiles-agents`'s; lists come from overlays) |
 | `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup) |
 | `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`) |
