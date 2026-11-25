@@ -1,0 +1,21 @@
+# Claude Code settings this feature owns in ~/.claude/settings.json, the same on
+# every machine and in every context. Every other key there (hooks, env,
+# permissions, plugins, MCP approvals) stays the machine's own. A [prefs] entry
+# in a profile or machine.toml overrides one for that machine, and
+# `dotfiles adopt claude:<key>` keeps a value changed in Claude Code.
+
+# The launchers (claudemore, claudemax) pass their own model and effort; these
+# are what a plain `claude` starts with.
+model = "opus"
+effortLevel = "xhigh"
+
+# Compact well before the 1M window fills: long sessions stay cheaper and the
+# summary keeps more of what matters.
+autoCompactEnabled = true
+autoCompactWindow = 400000
+
+statusLine = { type = "command", command = "bash ~/.claude/statusline-p10k.sh" }
+
+# The launchers start in bypass mode, so the confirmation prompt is noise.
+skipDangerousModePermissionPrompt = true
+agentPushNotifEnabled = true

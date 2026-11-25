@@ -1523,7 +1523,11 @@ else:
         settings.parent.mkdir()
         settings.write_text('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "dark-ansi"\n}\n')
         self.converge('base,dev')
-        self.assertEqual(settings.read_text(), '{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula"\n}\n')
+        shared = tomllib.loads((FEATURES / 'agents.claude/claude.toml').read_text())
+        self.assertEqual(json.loads(settings.read_text()), {'hooks': {'Stop': []}, 'theme': 'custom:dracula'} | shared,
+                         "the shared keys are set and the machine's own hooks stay")
+        self.assertTrue(settings.read_text().startswith('{\n  "hooks": {\n    "Stop": []\n  },\n  "theme": "custom:dracula",\n'),
+                        'keys already there keep their order and formatting')
         theme = self.home / '.claude/themes/dracula.json'
         self.assertFalse(theme.is_symlink(), 'Claude Code rewrites its themes, so the theme is a managed copy')
         self.assertEqual(json.loads(theme.read_text())['name'], 'Dracula')
@@ -2203,6 +2207,8 @@ class CodexLaunchers(Fixture):
         self.work.mkdir()
         self.cli('codex', f'printf "%s\\n" "$@" > {self.path}/argv')
         self.env.pop('CODEX_CONNECTORS', None)
+        self.env.pop('CODEX_HOME', None)
+        self.env['HOME'] = str(self.path)
 
     def launch(self, launcher, *args, **env):
         p = subprocess.run(['/bin/zsh', '-fc', f'source {FEATURES / "agents.codex/zshrc.zsh"}; "$@"', 'test',
@@ -2213,7 +2219,8 @@ class CodexLaunchers(Fixture):
 
     def test_sessions_attach_to_the_local_server_without_connectors(self):
         argv = self.launch('gptmore', 'resume', '--last')
-        self.assertEqual(argv[:4], ['--remote', 'unix://', '-C', str(self.work.resolve())])
+        self.assertEqual(argv[:4], ['--remote', f'unix://{self.path}/.codex/dotfiles-app-server.sock',
+                                    '-C', str(self.work.resolve())])
         self.assertEqual(argv[argv.index('--model') + 1], 'gpt-6.1-sol')
         self.assertIn('model_reasoning_effort=xhigh', argv)
         self.assertEqual(argv[argv.index('--disable') + 1], 'apps', 'no ChatGPT connectors')
@@ -2225,6 +2232,11 @@ class CodexLaunchers(Fixture):
     def test_connectors_are_opt_in_per_launch(self):
         self.assertNotIn('--disable', self.launch('gptmore', CODEX_CONNECTORS='1'))
 
+    def test_the_launcher_uses_the_server_endpoint_for_a_custom_codex_home(self):
+        home = self.path / 'custom codex'
+        argv = self.launch('gptmore', CODEX_HOME=str(home))
+        self.assertEqual(argv[:2], ['--remote', f'unix://{home}/dotfiles-app-server.sock'])
+
 
 class CodexAppServer(Fixture):
     """bin/codex-app-server, run beside a stub stable-exec that records its arguments."""
@@ -2234,6 +2246,7 @@ class CodexAppServer(Fixture):
         self.home = self.path / 'home'
         self.policy = self.home / '.config/agent-delegation/policy.md'
         self.policy.parent.mkdir(parents=True)
+        self.env.pop('CODEX_HOME', None)
         shutil.copy(ROOT / 'bin/codex-app-server', self.bin)
         self.cli('stable-exec', f'for a in "$@"; do printf "%s\\0" "$a"; done > {self.path}/argv')
 
@@ -2247,7 +2260,8 @@ class CodexAppServer(Fixture):
         text = '# Policy\n\nQuote "this", a \\ backslash,\ta tab and `code`.\n'
         self.policy.write_text(text)
         _, argv = self.serve()
-        self.assertEqual(argv[:5], ['codex', 'app-server', '--remote-control', '--listen', 'unix://'])
+        self.assertEqual(argv[:5], ['codex', 'app-server', '--remote-control', '--listen',
+                                   f'unix://{self.home}/.codex/dotfiles-app-server.sock'])
         key, value = argv[argv.index('-c') + 1].split('=', 1)
         self.assertEqual(key, 'developer_instructions')
         self.assertEqual(tomllib.loads(f'v = {value}')['v'], text.rstrip('\n'), 'codex parses -c values as TOML')
@@ -2262,6 +2276,20 @@ class CodexAppServer(Fixture):
         p, argv = self.serve()
         self.assertNotIn('-c', argv)
         self.assertIn('policy.md is missing', p.stderr)
+
+    def test_printing_the_endpoint_does_not_start_the_server(self):
+        for home in (self.home / '.codex', self.path / 'custom codex'):
+            with self.subTest(home=home):
+                env = dict(self.env, HOME=str(self.home), CODEX_HOME=str(home))
+                p = subprocess.run([str(self.bin / 'codex-app-server'), '--print-endpoint'], env=env,
+                                   capture_output=True, text=True, timeout=30)
+                self.assertEqual((p.returncode, p.stdout, p.stderr),
+                                 (0, f'unix://{home}/dotfiles-app-server.sock\n', ''))
+                self.assertFalse((self.path / 'argv').exists())
+                self.env['CODEX_HOME'] = str(home)
+                _, argv = self.serve()
+                self.assertEqual(argv[argv.index('--listen') + 1], p.stdout.strip())
+                (self.path / 'argv').unlink()
 
 
 class Delegation(unittest.TestCase):

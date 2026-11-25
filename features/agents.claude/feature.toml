@@ -1,5 +1,5 @@
 id = "agents.claude"
-description = "Claude Code: the global instructions, the claudemore, claudemax, claudefleet and claudeclean launchers, the status line and claude-subagent-economics"
+description = "Claude Code: the global instructions, the claudemore, claudemax, claudefleet and claudeclean launchers, the status line, the shared settings.json defaults and claude-subagent-economics"
 category = "agents"
 # Claude Code itself is not a package here: sync.sh installs it with Anthropic's
 # native installer where this feature is on (sync_claude_code), and it updates itself.
@@ -19,3 +19,7 @@ link = [
 ]
 bin = ["bin/claude-subagent-economics"]
 zshrc = "zshrc.zsh" # claudemore, claudemax, claudefleet, claudeclean
+
+[provides.prefs]
+# The settings.json keys every machine shares; the rest of the file is the machine's.
+claude = "claude.toml"
