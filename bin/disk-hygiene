@@ -18,6 +18,8 @@
 #   <cache>/<name>/<key>                    one key of a DISK_HYGIENE_KEYED cache (setting
 #                                           disk_hygiene.keyed; none unless a profile names them)
 #   ~/Library/Caches/{goimports,pnpm}       each file unused for DISK_HYGIENE_CACHE_DAYS
+#   <CODEX_HOME>/{sessions,archived_sessions}  a Codex session whose transcript nothing wrote
+#                                           for DISK_HYGIENE_TRANSCRIPT_DAYS (30), through codex delete
 #   ~/Library/pnpm/store, <drive>/.pnpm-store   `pnpm store prune`
 #   each cache in DISK_HYGIENE_RELOCATE        moved to <cache drive>/cache/xdg/<name> and
 #                                           linked from its usual place, while the drive named
@@ -43,6 +45,8 @@ source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
 
 scratch_days=${DISK_HYGIENE_SCRATCH_DAYS:-7}
 cache_days=${DISK_HYGIENE_CACHE_DAYS:-14}
+transcript_days=${DISK_HYGIENE_TRANSCRIPT_DAYS:-30}
+codex_home=${CODEX_HOME:-$HOME/.codex}
 keyed=${DISK_HYGIENE_KEYED-$(machine_setting DISK_HYGIENE_KEYED)}
 keep=${DISK_HYGIENE_KEEP-}
 cache_drive=${DISK_HYGIENE_CACHE_DRIVE-$(machine_setting DISK_HYGIENE_CACHE_DRIVE)}
@@ -65,7 +69,7 @@ case "${1:-}" in
     *) echo "usage: disk-hygiene [--dry-run]" >&2; exit 2 ;;
 esac
 for setting in DISK_HYGIENE_SCRATCH_DAYS:$scratch_days DISK_HYGIENE_CACHE_DAYS:$cache_days \
-    DISK_HYGIENE_LOG_MAX_BYTES:$log_max_bytes; do
+    DISK_HYGIENE_TRANSCRIPT_DAYS:$transcript_days DISK_HYGIENE_LOG_MAX_BYTES:$log_max_bytes; do
     if [[ ! ${setting#*:} =~ ^[0-9]+$ ]] || (( ${setting#*:} < 1 )); then
         echo "disk-hygiene: ${setting%%:*}=${setting#*:}: want a whole number, at least 1" >&2
         exit 2
@@ -265,6 +269,47 @@ prune_files() {
     freed_kb=$(( freed_kb + kb ))
 }
 
+# prune_codex_sessions: Codex keeps every session until someone deletes it: its
+# transcript (<CODEX_HOME>/sessions/<date>/rollout-<time>-<id>.jsonl, or under
+# archived_sessions) and its entries in Codex's index and thread history
+# databases. Claude Code deletes its own transcripts after cleanupPeriodDays
+# (30). A session whose transcript nothing wrote for DISK_HYGIENE_TRANSCRIPT_DAYS
+# goes through `codex delete`, so Codex's databases lose it too. The write time
+# alone decides: listing sessions to resume one reads every transcript.
+prune_codex_sessions() {
+    local dir codex file id kb
+    local uuid='[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+    local dirs=()
+    for dir in "$codex_home/sessions" "$codex_home/archived_sessions"; do
+        if [[ -d $dir && ! -L $dir ]]; then dirs+=("$dir"); fi
+    done
+    (( ${#dirs[@]} > 0 )) || return 0
+    if ! codex=$(command -v codex); then
+        echo "$(now) no codex on PATH; the Codex sessions in $codex_home stay"
+        return 0
+    fi
+    while IFS= read -r -d '' file; do
+        [[ ${file##*/} =~ ^rollout-.*-($uuid)\.jsonl$ ]] || continue
+        id=${BASH_REMATCH[1]}
+        kb=$(du -k "$file" 2>/dev/null | cut -f1) || true
+        kb=${kb:-0}
+        if $dry_run; then
+            echo "$(now) would delete Codex session $id ($(( kb / 1024 )) MiB, $file)"
+        elif "$codex" delete --force "$id" </dev/null >/dev/null 2>&1 && [[ ! -e $file ]]; then
+            echo "$(now) deleted Codex session $id ($(( kb / 1024 )) MiB)"
+        else
+            echo "$(now) could not delete Codex session $id ($file)"
+            failures=$(( failures + 1 ))
+            continue
+        fi
+        removed=$(( removed + 1 ))
+        freed_kb=$(( freed_kb + kb ))
+    done < <(find "${dirs[@]}" -type f -name 'rollout-*.jsonl' ! -mtime -"$transcript_days" -print0 2>/dev/null)
+    $dry_run && return 0
+    # codex delete leaves the date directories it empties.
+    find "${dirs[@]}" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+}
+
 # find_pnpm prints a pnpm that runs: the one on PATH, else the newest corepack
 # has cached. A version-manager shim on PATH can exist and still fail outside a
 # project, so each candidate has to answer --version.
@@ -363,10 +408,11 @@ while IFS= read -r drive; do prune_cache "$drive/cache/xdg"; done < <(drives)
 relocate_caches
 prune_files "$HOME/Library/Caches/goimports"
 prune_files "$HOME/Library/Caches/pnpm"
+prune_codex_sessions
 while IFS= read -r log; do cap_log "$log"; done < <(agent_logs)
 
 verb=removed
 $dry_run && verb="would remove"
-printf '%s %s %d items (%.1f GiB): scratch unused %d days, caches unused %d days; %d failures\n' \
-    "$(now)" "$verb" "$removed" "$(bc <<<"scale=1; $freed_kb / 1048576")" "$scratch_days" "$cache_days" "$failures"
+printf '%s %s %d items (%.1f GiB): scratch unused %d days, caches unused %d days, Codex sessions unwritten %d days; %d failures\n' \
+    "$(now)" "$verb" "$removed" "$(bc <<<"scale=1; $freed_kb / 1048576")" "$scratch_days" "$cache_days" "$transcript_days" "$failures"
 (( failures == 0 ))
