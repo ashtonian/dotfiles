@@ -221,7 +221,7 @@ and reloads the collector on the new release.
   see why. `com.ashtonian.otel-agent is not loaded` there means apply did not
   load it: the `agents.otel-agent` feature is off here, or apply's own output
   above it names a launchctl problem (`dotfiles doctor`).
-- **Dashboard:** Grafana → Applications → Coding Agents.
+- **Dashboard:** Grafana → Applications → Coding Agents. Every minute the local collector scrapes its loopback metrics endpoint and forwards queue size and capacity, accepted and refused OTLP records and points, and export and enqueue failures under the job `coding-agent-collector`. Queue capacity is reported even when agents are idle. A sleeping or disconnected Mac leaves a gap until it can deliver again. The local status command can inspect queues during an outage.
 
 **Failure modes:**
 
