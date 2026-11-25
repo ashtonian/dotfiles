@@ -1,0 +1,12 @@
+id = "agents.rules"
+description = "The rules every coding agent follows: Claude Code reads them as ~/.claude/CLAUDE.md, Codex as the start of ~/.codex/AGENTS.md"
+category = "agents"
+
+# Where the stow package used to link it.
+retire = [
+  ".claude/CLAUDE.md",
+]
+
+[provides]
+link = [".claude/CLAUDE.md"]
+agent_rules = "home/.claude/CLAUDE.md"

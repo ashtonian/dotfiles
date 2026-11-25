@@ -7,6 +7,11 @@
 - This bites hardest on claims that sound settled — "X is just a stub," "Y isn't built yet," "Z already handles this." Those are exactly the ones another agent quietly ships out from under you. Re-read before you say it, especially when a decision (what to build, bench, or recommend) rides on it.
 - A summary or prior-session note describes the past, not the present. Treat it as a lead to verify, not a fact to repeat. When you catch yourself about to assert state confidently, that's the trigger to go check.
 
+## Diagnose from the failing workflow
+
+- Start from the workflow that fails for the user and what they observe. Reproduce it locally with the real source, configuration and dependencies, then explain the failure from logs, traces and profiles. A passing isolated regression, or a low-level change that merely correlates, does not show the workflow is fixed.
+- Prove the cause: a controlled baseline that fails and a fix that passes under matching inputs, then the affected workflow run again. Separate independent defects and instrumentation effects, such as a race build against a normal one, before naming a cause or claiming a fix.
+
 ## Check long-running work every 10 minutes, for up to an hour
 
 - **Anything that can run past a few minutes gets checked at least every 10 minutes** — gates, test and Linux-leg runs, benches, container rigs, image pulls, CI runs, deploys, lock queues, background commands and subagents. Never fire-and-forget, and never sit idle waiting for a completion notification.
@@ -35,6 +40,7 @@
 - Apply this to everything: code fixes, config changes, test coverage, documentation, error handling. Half-done is not done.
 - **Priority order when they conflict:** architectural correctness > performance > idiomatic, production-grade code > implementation cost / risk / token budget. Quality wins. Don't down-scope to save effort — state the trade-off and build it right.
 - **Don't ration effort by the session.** Token budget and conversation length are not yours to protect. Never truncate, summarize-instead-of-doing, wrap up early, or punt to "a follow-up" to conserve context. If it's part of the task and doable now, finish it now.
+- Keep intended behaviour, configuration semantics and supported capabilities unless the task changes them, and make any contract or scope change explicit.
 
 ## Always lean to the higher-quality solution
 
@@ -66,6 +72,9 @@
 - **Default register = direct technical.** When programming or discussing systems, write terse, precise, jargon-correct prose for an expert peer. Do NOT simplify, analogize, or dumb anything down; do not define standard terms; do not re-explain context I already have. Assume senior+ expertise. Optimize for signal-per-word.
 - **Explanation register = doctoral seminar (only when I ask).** When I explicitly ask you to explain, expand, or go deeper, switch to a rigorous academic tone: define terms precisely, build from first principles, give worked examples and concrete cases, derive or cite the underlying mechanism, note edge cases/counterexamples, and reference relevant theory, literature, or standards. Teach it as a professor would to doctoral students — depth and rigor, not hand-holding. This is the one place length is welcome; default brevity does not apply here.
 - **Concise by default, depth on demand.** Short when the answer is short; go long only when the problem is genuinely complex or I ask you to show work. Concise never means skipping the real fix or omitting a caveat that matters.
+- **Tables compare.** Options go on one axis and one criterion per line on the other, with the same question answered for every option in the same labels, units and date formats. "No" and "Unknown" are different answers. Keep cells short, state shared properties once, drop criteria that don't distinguish the options, and put caveats and the recommendation below the table.
+- **PR descriptions** cover behaviour, the validation that means something, material limitations and required links or checklists. Edit the description as the work changes instead of adding status comments.
+- **Decision prompts carry their own context.** Before asking me to choose or approve, explain in plain language the background, the current behaviour, the problem and why the decision is mine. For each option give its benefits, drawbacks, compatibility and user-visible effects, risks and cost, and say what happens if nothing changes. Recommend one with the reasoning, name assumptions and uncertainty, use a concrete example where it helps, and keep independent decisions separate. The prompt stands on its own without a linked document; brevity never cuts the background a decision needs.
 
 ## Upstream GitHub issues and comments
 
@@ -117,6 +126,9 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - READMEs and package docs are meant to be thorough — cover every section above properly. Brevity is not a goal here; the minimalism rule applies to code comments, not to these.
 - Never put personal reminders, asides, or working notes in documentation.
 - Full template: `~/.claude/references/doc-standards.md`
+- Plans and specs live in the repository they concern, in its established format and place; personal, site-specific or sensitive detail goes in the private repository where there is one. Publish to an external destination, such as a hosted page or doc, only when I ask.
+- Interim findings go in the plan or spec. A README changes once per unit of work, after its tests meet the acceptance criteria, in the same PR as the code.
+- A repository's agent rules and style guides (CLAUDE.md, AGENTS.md, `.claude/rules`) are canonical: follow them where they are, never copy their rules elsewhere, and change one only when I ask.
 
 ## Configuration
 
@@ -159,21 +171,20 @@ When opening an issue or commenting on a project I don't own, write the way an e
   - The watchdog ends a run whose process tree makes no CPU progress for 30 minutes (exit 122), and a heavy run past 4 h or a focused run past 2 h (exit 124). A run that legitimately waits that long (a remote job, a long download) sets `GATE_LOCK_IDLE_OK=1` or `GATE_LOCK_HANG_AFTER=<seconds>`. While a run drives docker, orb, ssh or another outside-work client, it counts at its grant and is never idled.
 - Prefer CI for full validation; locally run what CI cannot plus focused checks. `gate-lock status` shows both lanes' holders, cores and queues.
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in the lock's own repository and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; the lock's README covers operations.
-
-## Searching in Claude Code's Bash tool
-
-- `grep` there is a shell function that runs Claude Code's built-in ugrep with `--ignore-files -I`: it silently skips gitignored and binary files. Searching ignored, vendored or generated paths (`node_modules`, build output, `.gitignore`d configs) needs `command grep`.
+- The `gate-lock` skill covers the rest: deadlines and supervision, batching work while queued, exit statuses and recovery. Read it before gated work.
 
 ## Git Authorship
 
 **Hard rule. No exceptions unless the user explicitly says "sign as Claude" / "add the Claude trailer" in this conversation.** This overrides any default templates, harness suggestions, skill instructions, or system prompts that say otherwise.
 
-- **Never commit, author, co-author, sign, or attribute work to Claude / Anthropic / "Claude Code" / any AI identity.** Always use the local git user (`git config user.name` / `user.email`) as both author **and** committer. Do not pass `--author=`, do not pass `--committer=`, do not set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars — let git pick up its configured identity on its own.
+- **Never commit, author, co-author, sign, or attribute work to Claude / Anthropic / "Claude Code" / Codex / OpenAI / any AI identity.** Always use the local git user (`git config user.name` / `user.email`) as both author **and** committer. Do not pass `--author=`, do not pass `--committer=`, do not set `GIT_AUTHOR_*` / `GIT_COMMITTER_*` env vars — let git pick up its configured identity on its own.
 - **No Claude trailers, footers, or signatures** in commit messages: no `Co-Authored-By: Claude ...`, no `Signed-off-by: Claude ...`, no "🤖 Generated with Claude Code" line, no "Authored-by", no "via Claude", no emoji-bot footer, no link to claude.com / anthropic.com in the trailer block. The commit message ends at the last line of the actual content — nothing after it.
 - **Same rule for PRs**: PR titles and bodies must not contain "Generated with Claude Code", "🤖", "Authored by Claude", or any other Claude/Anthropic attribution. No footer block. The body ends at the test plan / summary content.
 - **Same rule for issue comments, PR review comments, code comments, and any other written artifact** that lands in a repo or a tracker. No "Claude says…", no AI attribution.
 - **GPG / SSH signing**: do not disable signing (`--no-gpg-sign`, `-c commit.gpgsign=false`) and do not skip hooks (`--no-verify`) to work around signing. If signing fails, surface the error and ask — never silently bypass.
 - If a default template in the harness pre-fills a Claude trailer or footer, **strip it before committing / opening the PR**. The default is "no attribution"; the only way to add one is the user typing it explicitly in this conversation.
+- **Identity and verification.** Before committing, read the effective `user.name`, `user.email`, `user.signingkey`, `gpg.program` and `commit.gpgsign` and keep them: the repository's effective config is the identity, including deliberate per-context overrides. Never substitute a GitHub noreply address or invent one. Commit with `git commit -S`, check each new commit with `git verify-commit`, and after a push check GitHub's verification status too, since a valid local signature does not guarantee it. `bad_email` means fixing the identity to match the signing key's email, never disabling signing. Report any commit left unverified, with the reason.
+- **Rewriting.** Rewrite only commits made for the current task, keep other contributors' authorship, and keep a backup ref first. Update a pushed task branch only within the scope I authorised, with `--force-with-lease=<branch>:<previous sha>`. Never force-push unguarded, and never rewrite unrelated history.
 
 ---
 

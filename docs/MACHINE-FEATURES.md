@@ -159,6 +159,7 @@ go     = []                   # `go install` packages, in the generated Brewfile
 stub   = []                   # entry points created once: { path = ".zshrc", line = "..." }
 gitconfig  = ""               # git fragment, included by ~/.config/git/config
 ssh_config = ""               # ssh fragment, included by ~/.ssh/dotfiles.conf
+agent_rules = ""              # Markdown rules for coding agents, joined into generated/AGENTS.md
 winget = ["ajeetdsouza.zoxide"] # WinGet configuration entries (Windows)
 zshrc  = "zshrc.zsh"          # interactive zsh fragment, real sessions only
 pwsh   = "profile.ps1"        # interactive PowerShell fragment (Windows)
@@ -173,6 +174,9 @@ schedules = []                # job definitions, rendered per OS scheduler
 
 [provides.link_unless_exists] # a `link` entry left alone while any of these absolute or ~/ paths exists
 # ".local/bin/zoxide" = ["~/.local/bin/.zoxide-installer"]
+
+[provides.link_generated]     # paths under ~ linked to a generated output, for a tool with no include
+# ".codex/AGENTS.md" = "AGENTS.md"
 
 [provides.prefs]              # app settings owned key by key: store = prefs file (see App settings)
 # muxy = "muxy.toml"
@@ -398,6 +402,7 @@ startup parses a manifest.
 | `generated/zshrc.zsh` | `~/.zshrc` stub | Enabled `zshrc` fragments in feature order |
 | `generated/gitconfig` | `~/.config/git/config` include | Profile and feature git fragments |
 | `generated/ssh_config` | `~/.ssh/dotfiles.conf` include | Profile and feature ssh fragments |
+| `generated/AGENTS.md` | `~/.codex/AGENTS.md`, a `link_generated` link | Enabled `agent_rules` fragments in feature order, each after an HTML comment naming its feature (README: Agent rules) |
 | `generated/backup-apps.json` | settings backup (see [Mackup](#mackup)) | Enabled `backup.mackup.*` apps with their paths, credentials removed |
 
 ## Entry points
@@ -983,8 +988,9 @@ page lists it as a manual step until done.
 | Feature | Mechanism |
 | --- | --- |
 | `agents.claude.bash` | A `dotfiles.json` drop-in in the OS's managed-settings directory (see [Platforms](#platforms)) sets `CLAUDE_CODE_SHELL` to bash on macOS and Linux, and `CLAUDE_CODE_GIT_BASH_PATH` on Windows. It also sets `"attribution": false`, so no commit trailer, PR line or session link is added and no CLAUDE.md or project setting can bring them back. Installed once with admin rights as a copy of the tracked file, which `apply` keeps in sync. Today `bin/dotfiles-agents install` writes it |
-| `agents.claude` | Links the global CLAUDE.md and the status line script, and `claude-subagent-economics`; owns the `settings.json` keys every machine shares (`claude.toml`: model, effort, auto-compact, status line); its `zshrc` fragment defines `claudemore` and `claudemax`, which append the delegation policy and leave the claude.ai connectors out unless `CLAUDE_CONNECTORS=1`. Requires `agents.delegation` |
-| `agents.codex` | The `com.ashtonian.codex-remote-control` LaunchAgent runs `bin/codex-app-server`, which gives every session the delegation policy as developer instructions; its `zshrc` fragment defines `gptmore` and `gptmax`, which pass `--disable apps` unless `CODEX_CONNECTORS=1`. macOS only. Requires `agents.delegation` |
+| `agents.rules` | Links the rules every agent follows as `~/.claude/CLAUDE.md` and hands the same file to Codex as the first `agent_rules` fragment. `agents.claude` and `agents.codex` require it |
+| `agents.claude` | Links Claude Code's own rules (`~/.claude/rules/claude-code.md`), the status line script, and `claude-subagent-economics`; owns the `settings.json` keys every machine shares (`claude.toml`: model, effort, auto-compact, status line); its `zshrc` fragment defines `claudemore` and `claudemax`, which append the delegation policy and leave the claude.ai connectors out unless `CLAUDE_CONNECTORS=1`. Requires `agents.delegation` |
+| `agents.codex` | Adds Codex's own rules (`agent-rules.md`) as an `agent_rules` fragment and links `~/.codex/AGENTS.md` to `generated/AGENTS.md`. The `com.ashtonian.codex-remote-control` LaunchAgent runs `bin/codex-app-server`, which gives every session the delegation policy as developer instructions; its `zshrc` fragment defines `gptmore` and `gptmax`, which pass `--disable apps` unless `CODEX_CONNECTORS=1`. macOS only. Requires `agents.delegation` |
 | `agents.delegation` | Links the delegation policy (`~/.config/agent-delegation/policy.md`) and the `scout` and `reader` subagents twice: as Claude Code user subagents (`~/.claude/agents/*.md`) and as Codex roles (`~/.codex/agents/*.toml`) with the same descriptions and instructions |
 | `agents.repo-guard` | Links the hook `~/.local/bin/repo-guard` and its Claude Code plugin `~/.claude/skills/repo-guard/`, where Claude Code loads a plugin folder with no install step; `bin/dotfiles-agents` registers the same script as a managed Codex hook in `/etc/codex/config.toml`. The hook denies commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt`, one list linked by each overlay; the public feature ships none |
 | `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so. The same file registers repo-guard. Codex 0.171 has no local setting for commit and PR attribution, so there is no counterpart to `agents.claude.bash`'s `"attribution": false`: the ChatGPT account's commit attribution setting decides it |

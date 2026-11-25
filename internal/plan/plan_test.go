@@ -346,3 +346,42 @@ func TestTwoFeaturesCannotInstallOneLaunchAgent(t *testing.T) {
 	require.ErrorIs(t, err, ErrPlan)
 	assert.Contains(t, err.Error(), "both install")
 }
+
+func TestAgentRulesJoinInFeatureOrderAndLinkWhereAToolReadsThem(t *testing.T) {
+	root := t.TempDir()
+	home, gen := filepath.Join(root, "home"), filepath.Join(root, "gen")
+	shared := feature(t, root, manifest.Feature{ID: "shared", Provides: manifest.Provides{AgentRules: "home/.claude/CLAUDE.md"}},
+		map[string]string{"home/.claude/CLAUDE.md": "# Every agent\n"})
+	tool := feature(t, root, manifest.Feature{ID: "tool", Provides: manifest.Provides{
+		AgentRules:    "rules.md",
+		LinkGenerated: map[string]string{".tool/AGENTS.md": "AGENTS.md"},
+	}}, map[string]string{"rules.md": "## This tool only"})
+	p, err := Build(map[string]*manifest.Feature{"shared": shared, "tool": tool}, []string{"shared", "tool"}, nil, nil,
+		Env{Home: home, GeneratedDir: gen, GOOS: "darwin"})
+	require.NoError(t, err)
+
+	rules := generated(t, p, "AGENTS.md")
+	assert.Less(t, strings.Index(rules, "# Every agent"), strings.Index(rules, "## This tool only"), "fragments follow the feature order")
+	assert.Contains(t, rules, "\n<!-- tool -->\n## This tool only\n", "a fragment follows a comment naming its feature and ends in a newline")
+	assert.NotContains(t, rules, "# ---", "a shell-style marker would be a Markdown heading")
+	assert.Contains(t, p.Links, Link{Target: filepath.Join(home, ".tool/AGENTS.md"), Source: filepath.Join(gen, "AGENTS.md"), Feature: "tool"})
+}
+
+func TestLinkGeneratedRefusals(t *testing.T) {
+	tests := []struct {
+		name, rel, output, want string
+	}{
+		{"an output nothing generates", ".tool/RULES.md", "RULES.md", `"RULES.md" is not a generated output`},
+		{"a target under Library on macOS", "Library/Application Support/tool/AGENTS.md", "AGENTS.md", "installed as copies on macOS"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			f := feature(t, root, manifest.Feature{ID: "tool", Provides: manifest.Provides{LinkGenerated: map[string]string{tt.rel: tt.output}}}, nil)
+			_, err := Build(map[string]*manifest.Feature{"tool": f}, []string{"tool"}, nil, nil,
+				Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: "darwin"})
+			require.ErrorIs(t, err, ErrPlan)
+			assert.Contains(t, err.Error(), tt.want)
+		})
+	}
+}

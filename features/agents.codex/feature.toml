@@ -1,12 +1,15 @@
 id = "agents.codex"
-description = "Codex: the local app-server with remote control (bin/codex-app-server) and the gptmore and gptmax launchers that connect to it"
+description = "Codex: ~/.codex/AGENTS.md rendered from every agent's rules and its own, the local app-server with remote control (bin/codex-app-server) and the gptmore and gptmax launchers that connect to it"
 category = "agents"
 platforms = ["darwin"]
 # The app-server serves its delegation policy; its roles serve the sessions.
-requires = ["agents.delegation", "agents.agent-mcp"]
+requires = ["agents.delegation", "agents.agent-mcp", "agents.rules"]
 
 [provides]
 zshrc = "zshrc.zsh" # gptmore, gptmax
+agent_rules = "agent-rules.md"
+# Codex reads one global instructions file and has no include.
+link_generated = { ".codex/AGENTS.md" = "AGENTS.md" }
 
 [[provides.launch_agent]]
 plist = "launchagents/com.ashtonian.codex-remote-control.plist"

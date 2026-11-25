@@ -439,6 +439,41 @@ env = "TOOL_CACHE"
 	assert.Contains(t, string(env), `[ -n "${TOOL_CACHE:-}" ] || TOOL_CACHE="$HOME"/'Library/Caches/tool'; export TOOL_CACHE # paths.cache`)
 }
 
+func TestAGeneratedOutputLinkedIntoTheHome(t *testing.T) {
+	m := newMachine(t)
+	m.write("features/tool/feature.toml", `id = "tool"
+default = true
+[provides]
+agent_rules = "rules.md"
+link_generated = { ".tool/AGENTS.md" = "AGENTS.md" }
+`)
+	m.write("features/tool/rules.md", "## Tool rules\n")
+	target := m.at(".tool/AGENTS.md")
+	require.NoError(t, os.MkdirAll(filepath.Dir(target), 0o700))
+	require.NoError(t, os.WriteFile(target, []byte("written by hand\n"), 0o644))
+
+	report := m.run(false)
+	require.Len(t, report.Problems, 1)
+	assert.Equal(t, target, report.Problems[0].Path)
+	content, err := os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Equal(t, "written by hand\n", string(content), "a file someone wrote is never replaced")
+
+	require.NoError(t, os.Remove(target))
+	assert.Empty(t, m.run(false).Problems)
+	dest, err := os.Readlink(target)
+	require.NoError(t, err)
+	assert.Equal(t, filepath.Join(m.generated, "AGENTS.md"), dest)
+	content, err = os.ReadFile(target)
+	require.NoError(t, err)
+	assert.Contains(t, string(content), "<!-- tool -->\n## Tool rules\n")
+
+	m.disable = []string{"tool"}
+	m.run(false)
+	_, err = os.Lstat(target)
+	assert.ErrorIs(t, err, os.ErrNotExist, "turning the feature off removes its link")
+}
+
 func TestManagedCopies(t *testing.T) {
 	m := newMachine(t)
 	m.run(false)

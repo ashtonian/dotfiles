@@ -1,19 +1,15 @@
 id = "agents.claude"
-description = "Claude Code: the global instructions, the claudemore, claudemax, claudefleet and claudeclean launchers, the status line, the shared settings.json defaults and claude-subagent-economics"
+description = "Claude Code: its own rules beside the shared ones (agents.rules), the claudemore, claudemax, claudefleet and claudeclean launchers, the status line, the shared settings.json defaults and claude-subagent-economics"
 category = "agents"
 # Claude Code itself is not a package here: sync.sh installs it with Anthropic's
 # native installer where this feature is on (sync_claude_code), and it updates itself.
 # The launchers append its delegation policy; its subagents serve their sessions.
-requires = ["agents.delegation", "agents.agent-mcp"]
-
-# Where the stow package used to link these files.
-retire = [
-  ".claude/CLAUDE.md",
-]
+requires = ["agents.delegation", "agents.agent-mcp", "agents.rules"]
 
 [provides]
 link = [
-  ".claude/CLAUDE.md",
+  # Rules for Claude Code alone; agents.rules has every agent's.
+  ".claude/rules/claude-code.md",
   # settings.json's statusLine runs it.
   ".claude/statusline-p10k.sh",
 ]
