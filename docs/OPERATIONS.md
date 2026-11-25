@@ -96,9 +96,11 @@ installed plist edited by hand: it reports it every run and leaves it loaded.
 
 ## Git identity and signing
 
-The shared Git config contains the repository owner's identity. Override it
-intentionally for another user or a work-specific repository. The installer
-does not create a signing key or register one with GitHub.
+The shared Git config names the owner and sets `user.useConfigOnly`. The email
+is each context's: an overlay's git fragment sets it, so a client's machine
+never commits as the personal identity, and without one Git refuses to commit.
+Override it intentionally for another user or a work-specific repository. The
+installer does not create a signing key or register one with GitHub.
 
 Use [the local template](../features/git/gitconfig.local.example), merging settings
 into an existing `~/.gitconfig.local` rather than overwriting it:
@@ -601,6 +603,7 @@ state files, disable signing, or force-push to clear a failure.
 | Gitleaks fails | Fix staged content or the outgoing commit. Rotate/revoke an exposed secret; deleting the current file does not remove Git history. |
 | Signing fails | Check effective Git config, key availability, GPG/pinentry, and background unlock behavior. Diagnose with a deliberate signed commit interactively; never disable signing. |
 | `gpg: signing failed: No pinentry` | The gpg-agent that answered runs outside the GUI login, where pinentry-mac cannot reach the keychain or show a dialog. Check `launchctl print "gui/$(id -u)/com.ashtonian.gpg-agent"`: not found means `dotfiles doctor` shows why apply has not loaded it (gnupg missing, or the `tool.gpg-agent` feature off); running means the supervisor replaces that agent within `GPG_AGENT_SUPERVISOR_SECONDS`, so retry. If nobody is logged in at the Mac's screen, log in there. If pinentry-mac asks on every signature, tick "Save in Keychain" in its dialog ([GPG agent](#gpg-agent)). |
+| `has no signing identity ...; receiving only` | The repository's effective Git config lacks `user.name`, `user.email`, `user.signingkey` or a working `gpg.program`. Sync still fast-forwards it, so an overlay that supplies the email arrives and the apply after it installs it; the next run publishes. If the warning persists, check `git -C <repo> config --show-origin --get user.email` and that `machine.toml` lists the overlay that sets it. The `... needs a signing identity` errors name what waits for it: local edits, local commits or a branch that diverged, all left as they are. |
 | GitHub reports bad_email | Correct the affected commit to a signing-key email verified on GitHub. Keep a backup ref before any authorized history repair. |
 | GitHub verification fails after push | Publication already occurred. Inspect the reason and GitHub status; repair only affected commits within authorized history scope. |
 | Merge conflict | Automation aborts the merge. Resolve and sign the integration deliberately. Dotfiles has no conflict preference; auxiliary repos use local-preferred conflicting hunks (`-X ours`). |
@@ -608,7 +611,7 @@ state files, disable signing, or force-push to clear a failure.
 | Excluded tracked changes remain | Review tracked `*.local`, `.env*` or `*.secret*` paths in any directory. Sync skips merge/push while excluded tracked changes remain. |
 | Sync leaves a repository alone | The log says why: a Git index lock (another Git command is running, or one crashed and left `.git/index.lock`; check `ps` before removing it), or a tracked edit newer than `SYNC_QUIET_MINUTES`. The next run picks it up. |
 | `No network connectivity (... did not answer within ...s), skipping sync` | The HEAD request to `SYNC_CONNECTIVITY_URL` failed. Check `curl -sfI https://github.com` from a terminal; if it answers only slowly, raise `SYNC_CONNECTIVITY_TIMEOUT` in the `dotfiles.sync` template. The next run retries. |
-| Sync never finishes; `ps` shows a Go command at 0% CPU under it | macOS is waiting for an answer to "bash would like to access files on a removable volume" because Go's caches are on an external drive. Answer it on the machine's screen, or allow `bash` under System Settings > Privacy & Security > Files and Folders. `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' \| grep AUTHREQ_PROMPTING` names the binary it is waiting on; after a `brew upgrade bash` it is the new build. |
+| Sync never finishes; `ps` shows a Go command at 0% CPU under it | macOS is waiting for an answer to "bash would like to access files on a removable volume" because Go's caches are on an external drive. Answer it on the machine's screen, or allow `bash` under System Settings > Privacy & Security > Files and Folders. `log show --last 1h --predicate 'subsystem == "com.apple.TCC"' \| grep AUTHREQ_PROMPTING` names the binary it is waiting on; after a `brew upgrade bash` it is the new build. A prompt holds every later removable-volume check behind it until someone answers, whichever binary asked, so a sync can stall on another tool's prompt (an agent runtime, `python3`). |
 | New files are not published | By design: sync stages tracked files only (`git add -u`). Commit new files yourself. |
 | `installs machine features and this machine has no .../machine.toml` | Upstream uses the feature engine and this machine has no manifest, so sync neither merges nor pushes (merging would leave the old stow links pointing at moved files). Write `~/.config/dotfiles/machine.toml` with this machine's profiles from the list in the message, such as `profiles = ["base", "dev", "desktop"]`, then run `sync.sh`: the same run merges and applies. |
 | `installs machine features and Go is not installed to build its engine` | Sync builds the upstream engine before merging it and found no `go` on its PATH, so it neither merges nor pushes. Install Go (`brew install go`; the LaunchAgent's PATH includes `/opt/homebrew/bin`), then run `sync.sh`. |
