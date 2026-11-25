@@ -118,11 +118,11 @@ class Fixture(unittest.TestCase):
                               cwd=self.path, env=self.env, input=input,
                               capture_output=True, text=True, timeout=20)
 
-    def bash(self, code, *args, source='sync.sh'):
+    def bash(self, code, *args, source='sync.sh', timeout=20):
         return subprocess.run(['/bin/bash', '-c', 'source "$1"; shift; ' + code,
                                'test', str(ROOT / source), *args],
                               cwd=self.path, env=self.env, capture_output=True,
-                              text=True, timeout=20)
+                              text=True, timeout=timeout)
 
 
 class Credentials(Fixture):
@@ -799,17 +799,21 @@ class SignedRepo(Fixture):
                        check=True, env=self.env)
         signers = self.path / 'allowed_signers'
         signers.write_text('fixture@example.com ' + (self.path / 'signing.pub').read_text())
+        self.signing = {'user.name': 'Fixture', 'user.email': 'fixture@example.com',
+                        'user.signingkey': str(key), 'gpg.format': 'ssh', 'gpg.program': '/usr/bin/true',
+                        'gpg.ssh.allowedSignersFile': str(signers), 'commit.gpgsign': 'true'}
         self.repo = self.path / 'repo'
         subprocess.run(['git', 'init', '-q', '-b', 'master', str(self.repo)], check=True, env=self.env)
-        for name, value in {'user.name': 'Fixture', 'user.email': 'fixture@example.com',
-                            'user.signingkey': str(key), 'gpg.format': 'ssh', 'gpg.program': '/usr/bin/true',
-                            'gpg.ssh.allowedSignersFile': str(signers), 'commit.gpgsign': 'true'}.items():
-            self.git('config', name, value)
+        self.configure_signing(self.repo)
         (self.repo / 'sub').mkdir()
         for name in ('tracked', 'sub/app.local'):
             (self.repo / name).write_text('one\n')
         self.git('add', 'tracked', 'sub/app.local')
         self.git('commit', '-q', '-m', 'initial')
+
+    def configure_signing(self, repo):
+        for name, value in self.signing.items():
+            subprocess.run(['git', '-C', str(repo), 'config', name, value], check=True, env=self.env)
 
     def git(self, *args):
         return subprocess.run(['git', '-C', str(self.repo), *args], env=self.env, check=True,
@@ -1200,6 +1204,112 @@ class SyncFeaturesLayout(SignedRepo):
         self.assert_not_merged(p)
         self.assertIn('does not build', p.stdout)
         self.assertFalse(self.checked.exists())
+
+
+# A stand-in engine for a sync's checkouts: `overlays` names the first LISTED
+# paths in DOTFILES_TEST_OVERLAYS, and `check` fails as the real engine does
+# while the first of them does not define the feature machine.toml enables.
+CHECKOUTS_ENGINE = """package main
+
+import (
+	"os"
+	"strings"
+)
+
+const overlays = LISTED
+
+func main() {
+	listed := strings.Fields(os.Getenv("DOTFILES_TEST_OVERLAYS"))[:overlays]
+	switch os.Args[1] {
+	case "overlays":
+		os.Stdout.WriteString(strings.Join(listed, "\\n") + "\\n")
+	case "check":
+		if _, err := os.Stat(listed[0] + "/features/personal.tool/feature.toml"); err != nil {
+			os.Stderr.WriteString("dotfiles: feature resolution failed: machine enables unknown feature \\"personal.tool\\"\\n")
+			os.Exit(2)
+		}
+	}
+}
+"""
+
+
+@unittest.skipUnless(shutil.which('go'), 'Go required to build the engines')
+class SyncCheckouts(SignedRepo):
+    """sync_checkouts: the dotfiles merge is checked against the overlays apply will read, and
+    an overlay only the merged engine names is synced in the same run."""
+
+    def setUp(self):
+        super().setUp()
+        self.engine = self.path / 'engine/dotfiles'
+        self.overlays = [self.path / 'overlays/personal', self.path / 'overlays/client']
+        gocache = subprocess.run(['go', 'env', 'GOCACHE'], capture_output=True, text=True, check=True).stdout.strip()
+        self.env.pop('XDG_CONFIG_HOME', None)
+        self.env.update(DOTFILES_DIR=str(self.repo), DOTFILES_BIN=str(self.engine), GOCACHE=gocache,
+                        DOTFILES_TEST_OVERLAYS=' '.join(map(str, self.overlays)))
+        machine = Path(self.env['HOME']) / '.config/dotfiles/machine.toml'
+        machine.parent.mkdir(parents=True)
+        machine.write_text('overlays = ["personal", "client"]\nprofiles = ["base"]\n\n'
+                           '[features]\nenable = ["personal.tool"]\n')
+        (self.repo / 'logs').mkdir()
+        self.commit(self.repo, self.engine_files(1), 'engine')
+        self.with_origin(self.repo)
+        self.dotfiles_upstream = self.incoming(self.repo, self.engine_files(2), 'the engine names a second overlay')
+        for overlay in self.overlays:
+            self.run_git(self.path, 'init', '-q', '-b', 'master', str(overlay))
+            self.configure_signing(overlay)
+            self.commit(overlay, {'README.md': overlay.name + '\n'}, 'initial')
+            self.with_origin(overlay)
+        self.overlay_upstream = [
+            self.incoming(self.overlays[0], {'features/personal.tool/feature.toml': 'id = "personal.tool"\n'},
+                          'personal.tool'),
+            self.incoming(self.overlays[1], {'README.md': 'client, updated\n'}, 'update'),
+        ]
+
+    @staticmethod
+    def engine_files(overlays):
+        return {'features/shell.env/feature.toml': 'id = "shell.env"\n', 'profiles/base.toml': '',
+                'go.mod': 'module example.invalid/engine\n\ngo 1.21\n',
+                'cmd/dotfiles/main.go': CHECKOUTS_ENGINE.replace('LISTED', str(overlays))}
+
+    def run_git(self, repo, *args):
+        return subprocess.run(['git', '-C', str(repo), *args], env=self.env, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, repo, files, message):
+        for name, text in files.items():
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text)
+        self.run_git(repo, 'add', *files)
+        self.run_git(repo, 'commit', '-q', '-m', message)
+
+    def with_origin(self, repo):
+        origin = self.path / f'{repo.name}.git'
+        self.run_git(self.path, 'init', '-q', '--bare', '-b', 'master', str(origin))
+        self.run_git(repo, 'remote', 'add', 'origin', str(origin))
+        self.run_git(repo, 'push', '-q', '-u', 'origin', 'master')
+
+    def incoming(self, repo, files, message):
+        """Another machine publishes MESSAGE to REPO's origin, which REPO has fetched but not merged."""
+        self.commit(repo, files, message)
+        self.run_git(repo, 'push', '-q', 'origin', 'master')
+        self.run_git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+        return self.run_git(repo, 'rev-parse', 'origin/master')
+
+    def sync(self):
+        return self.bash('sync_checkouts', timeout=120)
+
+    def test_a_feature_only_an_incoming_overlay_commit_defines_does_not_hold_the_merge_back(self):
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.run_git(self.overlays[0], 'rev-parse', 'HEAD'), self.overlay_upstream[0])
+        self.assertEqual(self.run_git(self.repo, 'rev-parse', 'HEAD'), self.dotfiles_upstream)
+        self.assertNotIn('cannot plan', p.stdout)
+
+    def test_an_overlay_only_the_merged_engine_names_is_synced_in_the_same_run(self):
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual(self.run_git(self.overlays[1], 'rev-parse', 'HEAD'), self.overlay_upstream[1])
+        self.assertEqual(p.stdout.count('INFO: Syncing personal'), 1, 'each overlay is synced once per run')
 
 
 @unittest.skipUnless(shutil.which('go'), 'Go required to build the engine')

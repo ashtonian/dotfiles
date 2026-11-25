@@ -169,9 +169,12 @@ uses the engine, sync checks that this machine can install it: the machine has
 `~/.config/dotfiles/machine.toml` (otherwise it logs the profiles upstream
 offers), and the upstream's own engine builds with this machine's Go and plans
 that manifest (`dotfiles check`). If any of that fails, sync neither merges nor
-pushes, and the checkout stays as it is. Sync then brings this machine's
-overlays up to date (see [Overlays](#overlays)) before `dotfiles apply` reads
-them.
+pushes, and the checkout stays as it is. Sync brings this machine's overlays up
+to date (see [Overlays](#overlays)) before that check, so it plans the manifest
+against the overlays `dotfiles apply` will read: enabling a feature that only an
+overlay's incoming commit defines does not hold the dotfiles merge back. When
+the merged engine names an overlay the earlier one did not, sync brings that one
+up to date in the same run.
 
 ### Manual Sync Commands
 
