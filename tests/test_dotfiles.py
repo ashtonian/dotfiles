@@ -1577,7 +1577,7 @@ class Install(Fixture):
         self.assertEqual(steps, ['sync.sh build',
                                  f'dotfiles init --repo {self.home}/.dotfiles --profiles base,dev',
                                  f'dotfiles apply --repo {self.home}/.dotfiles --launch-agents=false',
-                                 'sync.sh brewfile', 'sync.sh mise', 'sync.sh apply'])
+                                 'sync.sh brewfile', 'sync.sh mise', 'sync.sh github-mcp', 'sync.sh apply'])
         self.assertNotIn('stow', self.audit.read_text())
 
     def test_keeps_an_existing_machine_manifest(self):
