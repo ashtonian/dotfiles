@@ -1648,6 +1648,36 @@ class StableExec(Fixture):
         self.assertEqual([c.name for c in self.libexec.iterdir() if '.new.' in c.name], [])
 
 
+class OpencodeHomelab(Fixture):
+    @unittest.skipUnless(shutil.which('bun'), 'Bun required for OpenCode plugins')
+    def test_credentials_stay_with_the_enrolled_gateway(self):
+        settings = self.path / '.local/share/opencode/homelab'
+        settings.mkdir(parents=True)
+        (settings / 'base-url').write_text('http://fixture.local/v1\n')
+        plugin = FEATURES / 'agents.opencode/home/.config/opencode/plugins/homelab.ts'
+        script = """
+import { Homelab } from 'PLUGIN'
+import { strict as assert } from 'node:assert'
+import { writeFile } from 'node:fs/promises'
+const hook = await Homelab()
+async function provider(options) {
+  const config = {provider: {homelab: {options, models: {local: {}}}}}
+  await hook.config(config)
+  return config.provider.homelab
+}
+assert.equal(await provider({}), undefined)
+await writeFile(process.env.HOME + '/.local/share/opencode/homelab/litellm.key', 'fixture-key\\n')
+const enrolled = await provider({headerTimeout: 42})
+assert.deepEqual(enrolled.options, {headerTimeout: 42, baseURL: 'http://fixture.local/v1', apiKey: 'fixture-key'})
+assert.ok(enrolled.models.local)
+assert.equal(await provider({baseURL: 'https://other.invalid'}), undefined)
+const custom = {baseURL: 'https://other.invalid', apiKey: 'other-key'}
+assert.deepEqual((await provider(custom)).options, custom)
+""".replace('PLUGIN', plugin.as_posix())
+        subprocess.run(['bun', '-e', script], cwd=self.path, env=dict(self.env, HOME=str(self.path)),
+                       check=True, timeout=15)
+
+
 class OpencodeServer(Fixture):
     def run_server(self, **overrides):
         home = self.path / 'home'
