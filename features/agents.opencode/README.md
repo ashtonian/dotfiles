@@ -36,10 +36,9 @@ does not provision the gateway or establish benchmark results.
 
 ## Config
 
-Configuration lives in four places: `opencode.jsonc` and the coordinator agent
-file in this package (both public), local files under
-`~/.local/share/opencode/homelab/`, and environment variables read by the
-plugin and the server wrapper.
+The global config enables the read-only GitHub MCP on every host. The homelab
+plugin enables local inference when the gateway URL and scoped key are present
+under `~/.local/share/opencode/homelab/`.
 
 ### opencode.jsonc
 
@@ -53,8 +52,8 @@ plugin and the server wrapper.
 | `default_agent` | `coordinator` | |
 | `model` | `homelab/qwen3.8-27b` | Thinking on: the agents that write code. |
 | `small_model` | `homelab/qwen3.8-27b-fast` | Titles and summaries without a reasoning trace. |
-| `provider.homelab.options.baseURL` | `{file:~/.local/share/opencode/homelab/base-url}` | Gateway URL, kept out of this public repo. |
-| `provider.homelab.options.apiKey` | `{file:~/.local/share/opencode/homelab/litellm.key}` | Scoped virtual key. |
+| `provider.homelab.options.baseURL` | `~/.local/share/opencode/homelab/base-url` | Gateway URL, kept out of this public repo. |
+| `provider.homelab.options.apiKey` | `~/.local/share/opencode/homelab/litellm.key` | Scoped virtual key. |
 | `provider.homelab.options.headerTimeout` | `1800000` (30 min) | The server sends headers only after prefill; a cold full-window prompt takes ~11 min on the local card, and OpenCode's default is 5. |
 | `provider.homelab.models.*` | The one alias the gateway serves | The gateway keeps a single model resident and does not swap; see the model table below. |
 
@@ -348,6 +347,7 @@ Service logs have no rotation configured by these scripts.
 | `feature.toml` | What `dotfiles apply` installs: a link per file under `home/`, and on macOS the server's LaunchAgent once opencode and its password exist |
 | `home/.config/opencode/opencode.jsonc` | Providers, models, default agent |
 | `home/.config/opencode/agents/coordinator.md` | Coordinator prompt and permissions |
+| `home/.config/opencode/plugins/homelab.ts` | Loads the local gateway credentials for the homelab provider |
 | `home/.config/opencode/plugins/delegate.ts` | Job store, worker commands, completion notices, the five `delegate_*` tools. Linked; Bun resolves its imports from the link's location, `~/.config/opencode/node_modules`, where OpenCode installs them |
 | `../../bin/opencode-server` | LaunchAgent entry point: loads the password, runs `opencode serve` from the stable path |
 | `../../bin/stable-exec` | Runs a Homebrew CLI from a fixed path so privacy grants survive upgrades |

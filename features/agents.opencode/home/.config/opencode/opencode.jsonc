@@ -53,13 +53,10 @@
     "homelab": {
       "npm": "@ai-sdk/openai-compatible",
       "name": "Homelab",
-      // Kept out of this public repo: the gateway URL and a scoped virtual key.
       // headerTimeout: the server sends no headers until prefill ends, and a
       // cold prompt filling the whole window takes ~11 minutes on the local card
       // (OpenCode's default is 5); 30 minutes leaves room to queue behind another.
       "options": {
-        "baseURL": "{file:~/.local/share/opencode/homelab/base-url}",
-        "apiKey": "{file:~/.local/share/opencode/homelab/litellm.key}",
         "headerTimeout": 1800000
       },
       // Limits match the server: the model's native 262,144-token window.
