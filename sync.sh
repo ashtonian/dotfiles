@@ -458,9 +458,13 @@ sync_auxiliary_repos() {
 }
 sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
 
+# The overlay checkouts this run has handled, one per line.
+SYNCED_OVERLAYS=''
+
 # sync_overlays: bring each overlay machine.toml lists (one private checkout per
 # context this machine belongs to) up to date before apply reads it. The engine
-# names them, so where overlays live is decided in one place.
+# names them, so where overlays live is decided in one place. Each is handled
+# once per run, however often the overlays are listed.
 sync_overlays() {
     local dirs dir result=0
     [[ -f "$MACHINE_FILE" ]] || return 0
@@ -471,6 +475,8 @@ sync_overlays() {
     fi
     while IFS= read -r dir; do
         [[ -n "$dir" ]] || continue
+        if [[ $'\n'"$SYNCED_OVERLAYS" == *$'\n'"$dir"$'\n'* ]]; then continue; fi
+        SYNCED_OVERLAYS+="$dir"$'\n'
         if [[ ! -d "$dir/.git" && ! -f "$dir/.git" ]]; then
             log "ERROR: $MACHINE_FILE lists overlay ${dir##*/}, which is not cloned at $dir; clone its repository there, or remove it from the list"
             result=1
@@ -479,6 +485,24 @@ sync_overlays() {
         sync_git_repo "$dir" || result=1
     done <<< "$dirs"
     return "$result"
+}
+
+# sync_checkouts: the overlays, then dotfiles. The check that gates the dotfiles
+# merge plans machine.toml against the overlay checkouts, so they have to be the
+# ones apply will read: checked against the overlays as they were, a feature
+# that only an incoming overlay commit defines holds the merge back, and one an
+# incoming commit removes passes the check and then fails apply. The merged
+# engine can name overlays the earlier one did not, so it lists them again.
+sync_checkouts() {
+    local before after status=0
+    sync_overlays || status=1
+    before=$(git -C "$DOTFILES_DIR" rev-parse -q --verify HEAD 2>/dev/null) || before=''
+    sync_dotfiles || status=1
+    after=$(git -C "$DOTFILES_DIR" rev-parse -q --verify HEAD 2>/dev/null) || after=''
+    if [[ "$after" != "$before" ]]; then
+        sync_overlays || status=1
+    fi
+    return "$status"
 }
 
 # build_engine: rebuild the binary when the checkout's engine sources are newer
@@ -588,8 +612,7 @@ run_mode() {
             # apply linked. The Brewfile apply generates is installed next,
             # then mise's tools (mise is one of the packages), then Claude Code
             # where it is missing (jq, which reads the features, is a package).
-            sync_dotfiles || status=1
-            sync_overlays || status=1
+            sync_checkouts || status=1
             apply_features || status=1
             sync_otel_agent || status=1
             sync_brewfile || status=1
