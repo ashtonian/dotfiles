@@ -1,0 +1,38 @@
+# gitstead's shared settings on every Mac with dotfiles' tool.gitstead feature.
+# It names no repository and no machine: each overlay's fragment in config.d
+# adds its context's repos and workspaces, and where they live on each Mac.
+
+sync:
+  # Fast-forward a clone's current branch when it is clean; never merge.
+  update: ff-only-clean
+workspace_defaults:
+  # Full clones: an agent's copy shares no worktree state with the others.
+  isolation: clone
+# Agent profiles. Each command is typed into an interactive zsh in the agent's
+# copy, so the launchers from dotfiles' zsh config work as they do by hand; a
+# copy an agent ran in before gets `resume` (`--fresh` starts over). The first
+# profile is the default.
+agents:
+  - name: claude # Opus, through claudemore (agents.claude)
+    command: claudemore
+    resume: claudemore --continue
+  - name: fable # Fable, through claudemax (agents.claude)
+    command: claudemax
+    resume: claudemax --continue
+  - name: astra # GPT Astra, through gptmax (agents.codex)
+    command: gptmax
+  - name: sol # GPT Sol, through gptmore (agents.codex)
+    command: gptmore
+  - name: local # the OpenCode coordinator on a local model (agents.opencode)
+    command: oc
+launchers:
+  default: auto
+  tmux:
+    # Keeps the wg- prefix the zsh config keys on.
+    session: "wg-{{.Fleet}}"
+  muxy:
+    # Start each agent as a Muxy server session right away (Existing Terminals
+    # in the app, the TUI and paired phones) instead of writing layouts.
+    open: sessions
+    # The workgroups' Muxy projects already exist; leave their colors alone.
+    color: none

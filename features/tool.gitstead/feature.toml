@@ -1,11 +1,14 @@
 id = "tool.gitstead"
-description = "gitstead, and its scheduled sync every 15 minutes under the host gate lock"
+description = "gitstead, its shared settings (a managed copy) and its scheduled sync every 15 minutes under the host gate lock"
 category = "tools"
 platforms = ["darwin"]
 requires = ["brew.base"]
 
 [provides]
 cask = ["ashtonian/tap/gitstead"]
+# A managed copy, not a link: `gitstead setup` and `clone --save` edit the
+# config file, and a link would publish their edits here.
+copy = [".config/gitstead/config.yaml"]
 
 [[provides.launch_agent]]
 plist = "launchagents/com.ashtonian.gitstead.plist"
