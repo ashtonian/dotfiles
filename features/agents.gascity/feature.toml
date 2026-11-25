@@ -1,0 +1,11 @@
+id = "agents.gascity"
+description = "Gas City, its local session tools and a preflight for operator-supplied Git checkouts"
+category = "agents"
+platforms = ["darwin"]
+requires = ["brew.base"]
+
+[provides]
+tap = ["gastownhall/gascity"]
+brew = ["gastownhall/gascity/gascity"]
+bin = ["bin/fleet-slot-check", "bin/fleet-plan"]
+link = [".config/gas-fleet/architecture-review.md", ".config/gas-fleet/work-plan.md"]

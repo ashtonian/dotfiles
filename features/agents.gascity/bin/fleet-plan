@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Print or verify the owner's decision on a plan or a reviewed pull request."""
+
+import argparse
+import hashlib
+import json
+import re
+import subprocess
+import sys
+
+
+def github(path, paginate=False):
+    command = ["gh", "api", "--hostname", "github.com"]
+    if paginate:
+        command += ["--paginate", "--slurp"]
+    return json.loads(subprocess.check_output(command + [path]))
+
+
+def decision(comments, owner, record, finish):
+    digest = hashlib.sha256(record["body"].encode("utf-8")).hexdigest()
+    if finish:
+        # The latest finish decision belongs to the whole PR, across reports.
+        approve = f"/fleet accept {record['id']} {digest}"
+        other_approvals = r"/fleet accept [1-9][0-9]* [a-f0-9]{64}"
+        hold = "/fleet hold-finish"
+    else:
+        approve = f"/fleet approve {record['id']} {digest}"
+        other_approvals = rf"/fleet approve {record['id']} [a-f0-9]{{64}}"
+        hold = f"/fleet hold {record['id']}"
+    latest = None
+    for comment in comments:
+        user = comment.get("user") or {}
+        body = (comment.get("body") or "").strip()
+        if user.get("id") != owner or user.get("type") != "User" or comment.get("performed_via_github_app"):
+            continue
+        if body == hold or re.fullmatch(other_approvals, body):
+            if latest is None or comment["id"] > latest["id"]:
+                latest = comment
+    if latest is None or latest["body"].strip() != approve:
+        return approve, None
+    # Editing another user's comment can preserve the original author ID.
+    if latest["created_at"] != latest["updated_at"] or latest["created_at"] < record["updated_at"]:
+        return approve, None
+    return approve, latest
+
+
+def confirm_comments(plan, approval):
+    # REST updates have second precision. GitHub also exposes an explicit edit
+    # marker on the approval and lets us re-read both bodies in one request.
+    query = """
+    query($p: ID!, $a: ID!) {
+      plan: node(id: $p) { ... on IssueComment { body } }
+      approval: node(id: $a) { ... on IssueComment { body lastEditedAt } }
+    }"""
+    command = [
+        "gh", "api", "--hostname", "github.com", "graphql", "-f", "query=" + query,
+        "-f", "p=" + plan["node_id"], "-f", "a=" + approval["node_id"],
+    ]
+    data = json.loads(subprocess.check_output(command))["data"]
+    return (
+        data["plan"]["body"] == plan["body"]
+        and data["approval"]["body"] == approval["body"]
+        and data["approval"]["lastEditedAt"] is None
+    )
+
+
+def positive(value):
+    value = int(value)
+    if value <= 0:
+        raise argparse.ArgumentTypeError("expected a positive GitHub ID or issue number")
+    return value
+
+
+def require_current_report(pull_path, report):
+    pull = github(pull_path)
+    if pull["state"] != "open":
+        sys.exit("pull request is closed")
+    expected = f"/fleet review {pull['base']['ref']} {pull['base']['sha']} {pull['head']['sha']} ready"
+    if report["body"].splitlines()[0] != expected:
+        sys.exit("a ready report for the current target branch, base and head is required")
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("action", choices=("show", "check", "show-finish", "check-finish"))
+    parser.add_argument("repo", help="GitHub owner/repository")
+    parser.add_argument("issue", type=positive, help="issue number, or PR number for finish decisions")
+    parser.add_argument("comment", type=positive, help="ID of the plan or the review report in the conversation")
+    parser.add_argument("--owner-id", type=positive, help="trusted human's numeric GitHub account ID")
+    args = parser.parse_args()
+    if not re.fullmatch(r"[\w.-]+/[\w.-]+", args.repo, flags=re.ASCII) or any(v in (".", "..") for v in args.repo.split("/")):
+        parser.error("invalid owner/repository")
+    checking = args.action in ("check", "check-finish")
+    finish = args.action in ("show-finish", "check-finish")
+    if checking and args.owner_id is None:
+        parser.error("check requires --owner-id from the operator's trusted configuration")
+    issue_path = f"repos/{args.repo}/issues/{args.issue}"
+    issue = github(issue_path)
+    if issue["state"] != "open":
+        sys.exit("issue is closed")
+    pages = github(issue_path + "/comments?per_page=100", paginate=True)
+    comments = [c for page in pages for c in page]
+    record = next((c for c in comments if c["id"] == args.comment), None)
+    if not record or not (record.get("body") or "").strip():
+        sys.exit("selected comment missing or empty in this conversation")
+    pull_path = f"repos/{args.repo}/pulls/{args.issue}"
+    if finish:
+        require_current_report(pull_path, record)
+    approve, approval = decision(comments, args.owner_id, record, finish)
+    if not checking:
+        # Render untrusted comment text without interpreting terminal controls.
+        # Each line is quoted so text in the proposal is distinct from the decision.
+        for line in record["body"].split("\n"):
+            shown = "".join(c if c.isprintable() else ascii(c)[1:-1] for c in line)
+            print("> " + shown)
+        print()
+        print(approve)
+    elif approval and confirm_comments(record, approval):
+        if finish:
+            require_current_report(pull_path, record)
+        print(f"{approve} {approval['html_url']}")
+    else:
+        sys.exit("awaiting the owner's decision on this revision")
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except (OSError, subprocess.CalledProcessError, ValueError, KeyError, TypeError):
+        sys.exit("could not verify the decision with GitHub; hold work")

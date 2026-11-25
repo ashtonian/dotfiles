@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+# Check a fresh worker copy before claiming work. Recovery uses the original attempt.
+set -euo pipefail
+if [[ $# != 2 || -z $1 || -z $2 ]]; then
+    echo "usage: fleet-slot-check CHECKOUT EXPECTED_ORIGIN" >&2
+    exit 2
+fi
+
+fail() { echo "fleet-slot-check: $1" >&2; exit 1; }
+
+# Use the path the operator gave us even in a checkout hook environment.
+unset GIT_DIR GIT_WORK_TREE GIT_INDEX_FILE GIT_COMMON_DIR
+checkout=$(cd -- "$1" && pwd -P) || fail "checkout is unavailable"
+root=$(git -C "$checkout" rev-parse --show-toplevel) || fail "expected a Git working tree"
+[[ $(cd -- "$root" && pwd -P) == "$checkout" ]] || fail "path must be the checkout root"
+origin=$(git -C "$checkout" remote get-url origin) || fail "origin is missing"
+[[ $origin == "$2" ]] || fail "origin differs from the expected remote"
+changes=$(git -C "$checkout" --no-optional-locks status --porcelain=v1 --untracked-files=all --ignore-submodules=none)
+[[ -z $changes ]] || fail "checkout has uncommitted changes"
+git -C "$checkout" rev-parse --verify HEAD
