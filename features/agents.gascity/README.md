@@ -103,6 +103,12 @@ Give the planner read access. Have the dispatcher post the proposal as a **stand
 
 As the human owner, you decide whether this unit is worth starting and what success means. Have the planner include the **why now**, current behavior, proposed change and architectural rationale, source links, affected users or tenants, evidence needed for acceptance, and the consequence of deferring. Ask for a split, a revision, a named dependency or a hold when those would change the decision. The dispatcher keeps the implementation blocked until you approve a specific version.
 
+Give every planner the installed brief at `~/.config/gas-fleet/work-plan.md`. The dispatcher checks the requested decision and the reasoning before posting. The approval digest binds the full text. The human judges whether the evidence is sufficient. [Planning brief and comment outline](home/.config/gas-fleet/work-plan.md)
+
+For example, a routine request could say “Approve correcting the retry example in the CLI guide. The example retries four times while the existing test fixes the contract at three. Updating the example now removes ambiguity for callers and adds no runtime cost. Changing the implementation would break the published contract. Run the documented example and check it against the contract test. A revert restores the prior text.”
+
+For a deep request, consider changing how multiple workers claim a tenant’s next job. Show the duplicate-claim evidence and expected traffic, compare a transactional claim with partitioning the queue and deferring, and explain who bears lock contention or migration cost. Separate first-deploy mixed-version behavior from steady-state throughput and maintenance. Ask for approval of a two-tenant concurrency experiment first if the ordering guarantee is unknown. Specify its fixture, success condition and owner. A production rollout gets its own decision once the measurements exist.
+
 The operator selects the plan comment and the trusted owner's numeric GitHub ID. The ID comes from private dispatcher configuration. The number after `#issuecomment-` in the plan's URL is its comment ID. Run:
 
 ```sh
@@ -235,7 +241,7 @@ gh pr checks "$PR" --repo "$repo"
 
 Read the branch and both SHAs again after collecting evidence. If any moved, refresh the packet. Astra reads the changed path end to end, including unchanged callers and downstream effects. It returns an architectural verdict, concrete findings, readiness evidence, rollout and recovery implications, and a decision for the owner. The [reviewer's actual instructions](home/.config/gas-fleet/architecture-review.md) cover failure behavior, tenant and permission checks, concurrency, telemetry, SQL and index choices, and opportunities to simplify the design.
 
-The dispatcher copies Astra's report verbatim into a **top-level PR conversation comment** and records its URL on the bead. Use the report from the assigned read-only session. `fleet-plan` checks the owner's decision and the reviewed revisions; the dispatcher supplies the report's provenance. Material defects go to the original Claude session. Missing evidence goes to whoever can supply the relevant fixture, query plan, CI or operational check. After a fix, Astra reconciles the findings against the new revision.
+The dispatcher copies Astra's report verbatim into a **top-level PR conversation comment** and records its URL on the bead. Use the report from the assigned read-only session. `fleet-plan` checks the owner's decision and the reviewed revisions; the dispatcher supplies the report's provenance. Material defects go to the implementation owner recorded on the bead. Missing evidence goes to whoever can supply the relevant fixture, query plan, CI or operational check. After a fix, Astra reconciles the findings against the new revision.
 
 ## Decide when a unit is finished
 
@@ -254,7 +260,7 @@ For example, consider a PR that lists a tenant’s open orders newest first. A u
 
 This is an illustrative report. A real handoff names the exact revisions and links the specific code, test result and query-plan artifact.
 
-Read the quoted report. Accept that exact version by posting the printed `/fleet accept …` line in a new PR conversation comment. To request changes, give Claude the specific findings and post `/fleet hold-finish` as a standalone comment if an earlier acceptance exists. You can also defer, split a follow-up or require a staged release. If the change expands the approved scope, return the affected chunk to plan review.
+Read the quoted report. Accept that exact version by posting the printed `/fleet accept …` line in a new PR conversation comment. To request changes, give the implementation owner the specific findings and post `/fleet hold-finish` as a standalone comment if an earlier acceptance exists. You can also defer, split a follow-up or require a staged release. If the change expands the approved scope, return the affected chunk to plan review.
 
 ```sh
 fleet-plan check-finish "$repo" "$PR" "$REPORT_COMMENT" --owner-id "$FLEET_OWNER_ID"
@@ -265,6 +271,20 @@ The check requires an open PR, a ready report for its current target branch, bas
 ## Resume after sleep or an account limit
 
 Inspect `command gc --city "$CITY" session list`, the bead's owner, the existing branch and the current PR. Reattach to the matching session. A dirty copy with matching ownership belongs to that attempt. Keep an unreachable host's work reserved until the original session and branch are reconciled. On a subscription limit, save progress and park that profile until its reset. Other eligible slots can take independent ready issues.
+
+### Choose an implementation provider per attempt
+
+Let an idle implementation seat use the approved signed-in account with available allowance. For a fresh Astra implementation change only that worker’s definition and validate the resolved configuration before launch. Keep the city-wide Codex default and the separate reviewer in `suggest` mode.
+
+```toml
+scope = "city"
+work_dir = "/work/slots/parser-one"
+provider = "codex"
+option_defaults = { permission_mode = "auto-edit", model = "gpt-6.2-astra" }
+nudge = "Use the claimed issue and approved plan. Return scope changes to the owner and hand the draft to the independent reviewer."
+```
+
+When switching an existing attempt, record the issue, approval permalink, owner, branch, last commit, test results and unfinished changes. Park the old session and verify it is stopped. Preserve uncommitted work before transfer. Verify the checkpoint in the receiving copy, recheck the human approval and update the claim and attempt together under the single dispatcher before resuming. A provider change within the same approved scope can reuse the plan. If both accounts are exhausted, park the unit. If only the reviewer is exhausted, queue the PR for independent Astra review. Reserve enough capacity for waiting reviews before spending the same account on another implementation.
 
 ## Keep a client engagement separate
 
