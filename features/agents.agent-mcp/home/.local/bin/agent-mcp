@@ -15,7 +15,7 @@
 # also takes the name of the dbhub config listing the repository's development
 # databases, ~/.claude/mcp/dbhub/<databases>.toml.
 #
-# Servers: serena, codebase-memory, playwright, postgres, kubernetes, terraform,
+# Servers: github, serena, codebase-memory, playwright, postgres, kubernetes, terraform,
 # pprof, grafana. Installs and pinned versions: ~/.claude/mcp/README.md and
 # docs/AGENT-MCP.md.
 set -eu
@@ -44,6 +44,16 @@ case $harness in
 esac
 
 case $server in
+	github)
+		# Desktop clients need the Homebrew prefix even outside a login shell.
+		PATH="${HOMEBREW_PREFIX:-/opt/homebrew}/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+		export PATH
+		GITHUB_PERSONAL_ACCESS_TOKEN=$(gh auth token --hostname github.com) ||
+			die 77 "github: sign in with gh auth login --hostname github.com"
+		[ -n "$GITHUB_PERSONAL_ACCESS_TOKEN" ] || die 77 "github: gh returned an empty token"
+		export GITHUB_PERSONAL_ACCESS_TOKEN
+		run github-mcp-server stdio --gh-host https://github.com --read-only --toolsets default,actions
+		;;
 	serena)
 		# Claude Code keeps its own Read and Edit (and their LSP diagnostics);
 		# upstream's claude-code context forbids them. Codex uses upstream's.
@@ -111,6 +121,6 @@ case $server in
 		run "$mcp/grafana.sh" -enabled-tools search,datasource,prometheus,loki,alerting,dashboard,folder,pyroscope
 		;;
 	*)
-		die 64 "usage: agent-mcp <serena|codebase-memory|playwright|postgres|kubernetes|terraform|pprof|grafana> [claude|codex] [databases]"
+		die 64 "usage: agent-mcp <github|serena|codebase-memory|playwright|postgres|kubernetes|terraform|pprof|grafana> [claude|codex] [databases]"
 		;;
 esac

@@ -3098,6 +3098,18 @@ class AgentMcp(Fixture):
         self.assertNotIn('pyroscope', codex)
         self.assertIn('-enabled-tools search,datasource,prometheus,loki,dashboard', codex)
 
+    def test_github_uses_the_active_account_and_only_offers_reads(self):
+        self.env["HOMEBREW_PREFIX"] = str(self.path)
+        self.cli("gh", 'test "$*" = "auth token --hostname github.com" && echo fixture-token')
+        self.cli("github-mcp-server", 'test "$GITHUB_PERSONAL_ACCESS_TOKEN" = fixture-token && echo "$@"')
+        result = self.run_mcp("github")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(result.stdout.strip(), "stdio --gh-host https://github.com --read-only --toolsets default,actions")
+        self.cli("gh", "exit 1")
+        result = self.run_mcp("github")
+        self.assertEqual(result.returncode, 77)
+        self.assertEqual(result.stdout, "")
+
     def test_kubernetes_stays_read_only(self):
         self.fake(self.mcp / 'bin/kubernetes-mcp-server', 'k8s')
         out = self.run_mcp('kubernetes').stdout

@@ -10,6 +10,7 @@ retire = [
 ]
 
 [provides]
+brew = ["gh", "github-mcp-server"]
 # ~/.claude/mcp also holds the pinned server installs, which stay untracked;
 # only the credential helpers are linked into it, one file each.
 link = [".config/agent-mcp", ".local/bin/agent-mcp", ".claude/mcp"]

@@ -5,6 +5,13 @@
   // and picking one of their free models would send code to a third party.
   "enabled_providers": ["homelab"],
   "share": "disabled",
+  "mcp": {
+    "github": {
+      "type": "local",
+      "command": ["{env:HOME}/.local/bin/agent-mcp", "github"],
+      "enabled": true
+    }
+  },
   // Homebrew owns upgrades; a self-update would rewrite the Cellar copy.
   "autoupdate": false,
   // The shell tool runs `<shell> -c`. Model-written commands are bash, as in

@@ -219,6 +219,7 @@ install_packages() {
     info "Installing the enabled features' packages..."
     "$DOTFILES_DIR/sync.sh" brewfile || warn "Some packages may have failed to install; see $DOTFILES_DIR/logs/sync.log"
     "$DOTFILES_DIR/sync.sh" mise || warn "mise could not install every tool; see $DOTFILES_DIR/logs/sync.log"
+    "$DOTFILES_DIR/sync.sh" github-mcp || warn "GitHub MCP registration needs attention; see $DOTFILES_DIR/logs/sync.log"
 }
 
 #=============================================================================

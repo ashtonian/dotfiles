@@ -513,6 +513,43 @@ sync_otel_agent() {
     fi
 }
 
+# Register through each client so it owns the locks and writes to its user config.
+# OpenCode's global file belongs to the feature and is already linked by apply.
+sync_github_mcp() (
+    local launcher="$HOME/.local/bin/agent-mcp" helper="$HOME/.claude/mcp/github-headers.sh"
+    local config="${CLAUDE_CONFIG_DIR:-$HOME}/.claude.json" url='https://api.githubcopilot.com/mcp/' state
+    local PATH="$HOME/.local/bin:${HOMEBREW_PREFIX:-/opt/homebrew}/bin:/usr/local/bin:/home/linuxbrew/.linuxbrew/bin:$PATH"
+    [[ -x "$launcher" ]] || return 0
+    # Exclude any project-scoped server named github from the registration check.
+    cd / || return 1
+    if command -v claude >/dev/null; then
+        state=missing
+        if [[ -e "$config" ]]; then
+            state=$(jq -er --arg url "$url" --arg helper "$helper" '
+                .mcpServers.github | if . == null then "missing"
+                elif .type == "http" and .url == $url and .headersHelper == $helper then "managed"
+                else "custom" end' "$config") || return 1
+        fi
+        case "$state" in
+            missing)
+                jq -cn --arg url "$url" --arg helper "$helper" \
+                    '{type:"http", url:$url, headers:{"X-MCP-Readonly":"true"}, headersHelper:$helper}' |
+                    claude mcp add-json --scope user github - || return 1 ;;
+            custom) log "WARN: keeping the existing Claude user MCP server named github" ;;
+        esac
+    fi
+    if command -v codex >/dev/null; then
+        state=$(codex mcp list --json | jq -er --arg launcher "$launcher" '
+            map(select(.name == "github")) | first | if . == null then "missing"
+            elif .transport.command == $launcher and .transport.args == ["github"] then "managed"
+            else "custom" end') || return 1
+        case "$state" in
+            missing) codex mcp add github -- "$launcher" github || return 1 ;;
+            custom) log "WARN: keeping the existing Codex user MCP server named github" ;;
+        esac
+    fi
+)
+
 # run_mode MODE: one sync run's work.
 run_mode() {
     local status=0
@@ -533,6 +570,7 @@ run_mode() {
             sync_brewfile || status=1
             sync_mise_tools || status=1
             sync_claude_code || status=1
+            sync_github_mcp || status=1
             sync_auxiliary_repos || status=1
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
@@ -541,11 +579,12 @@ run_mode() {
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
         build) build_engine || status=$? ;;
         apply) apply_features || status=$? ;;
+        github-mcp) sync_github_mcp || status=$? ;;
         otel-agent) sync_otel_agent || status=$? ;;
         brewfile) sync_brewfile || status=$? ;;
         mise) sync_mise_tools || status=$? ;;
         claude-code) check_connectivity || return 0; sync_claude_code || status=$? ;;
-        *) printf 'Usage: %s {sync|dotfiles|overlays|repos|build|apply|otel-agent|brewfile|mise|claude-code|all|check}\n' "$0"; return 1 ;;
+        *) printf 'Usage: %s {sync|dotfiles|overlays|repos|build|apply|otel-agent|github-mcp|brewfile|mise|claude-code|all|check}\n' "$0"; return 1 ;;
     esac
     return "$status"
 }
