@@ -1312,6 +1312,113 @@ class SyncCheckouts(SignedRepo):
         self.assertEqual(p.stdout.count('INFO: Syncing personal'), 1, 'each overlay is synced once per run')
 
 
+ENGINE_SOURCES = ('go.mod', 'go.sum', 'cmd', 'internal')
+
+
+def copy_engine_sources(repo):
+    """Copy the engine's sources into REPO, a dotfiles checkout of a test's own, so that
+    sync builds the real engine there."""
+    for name in ENGINE_SOURCES:
+        if (ROOT / name).is_dir():
+            shutil.copytree(ROOT / name, repo / name)
+        else:
+            shutil.copy2(ROOT / name, repo / name)
+
+
+def go_caches():
+    """This machine's Go build and module caches, for a test whose HOME is its own."""
+    return {name: subprocess.run(['go', 'env', name], capture_output=True, text=True, check=True).stdout.strip()
+            for name in ('GOCACHE', 'GOMODCACHE')}
+
+
+# A feature as macos.host-metrics is one: a Homebrew package, and a LaunchAgent
+# that waits for the package's program.
+SERVICE_FEATURE = """id = "tool.service"
+description = "A service from a package"
+category = "tools"
+platforms = ["darwin"]
+
+[provides]
+brew = ["example-service"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.example.service.plist"
+when_exists = ["~/.local/opt/example/bin/example-service"]
+"""
+
+SERVICE_PLIST = """<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.example.service</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.local/opt/example/bin/example-service</string>
+    </array>
+</dict>
+</plist>
+"""
+
+
+@unittest.skipUnless(sys.platform == 'darwin' and shutil.which('go'),
+                     'LaunchAgents are macOS-only, and Go builds the engine')
+class SyncFeaturePackages(SignedRepo):
+    """`sync.sh sync` with the real engine, in a dotfiles checkout of its own whose base
+    profile turns on a feature with a package and a LaunchAgent waiting for it: one sync
+    leaves the feature complete."""
+
+    def setUp(self):
+        super().setUp()
+        home = Path(self.env['HOME'])
+        self.program = home / '.local/opt/example/bin/example-service'
+        self.env.pop('XDG_CONFIG_HOME', None)
+        self.env.update(DOTFILES_DIR=str(self.repo), DOTFILES_BIN=str(home / '.local/bin/dotfiles'),
+                        DOTFILES_SYSTEM_ROOT=str(self.path / 'system'), **go_caches())
+        machine = home / '.config/dotfiles/machine.toml'
+        machine.parent.mkdir(parents=True)
+        machine.write_text('profiles = ["base"]\n')
+        copy_engine_sources(self.repo)
+        files = {'features/tool.service/feature.toml': SERVICE_FEATURE,
+                 'features/tool.service/launchagents/com.example.service.plist': SERVICE_PLIST,
+                 'profiles/base.toml': '[features]\nenable = ["tool.service"]\n',
+                 # Not enrolled with a cluster: nothing for the collector to do.
+                 'bin/otel-agent': '#!/bin/sh\nexit 0\n'}
+        for name, text in files.items():
+            (self.repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (self.repo / name).write_text(text)
+        (self.repo / 'bin/otel-agent').chmod(0o755)
+        self.git('add', *ENGINE_SOURCES, *files)
+        self.git('commit', '-q', '-m', 'engine and tool.service')
+        self.cli('curl', 'exit 0')
+        self.cli('mise', 'exit 0')
+        # Homebrew, as far as the Brewfile's one package goes.
+        self.cli('brew', f'''prog={self.program}
+case "$*" in
+  "bundle check"*) [ -x "$prog" ] ;;
+  "bundle list --cask"*|"list --cask -1") ;;
+  "bundle install"*) mkdir -p "${{prog%/*}}" && printf '#!/bin/sh\\n' > "$prog" && chmod +x "$prog" && echo "Installing example-service" ;;
+  *) echo "unexpected brew $*" >&2; exit 2 ;;
+esac''')
+
+    def sync(self):
+        return subprocess.run(['/bin/bash', str(ROOT / 'sync.sh'), 'sync'], cwd=self.path, env=self.env,
+                              capture_output=True, text=True, timeout=300, start_new_session=True)
+
+    def test_one_sync_installs_the_package_and_then_the_launch_agent_waiting_for_it(self):
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertTrue(self.program.exists(), 'the package is installed')
+        agent = Path(self.env['HOME']) / 'Library/LaunchAgents/com.example.service.plist'
+        self.assertTrue(agent.exists(), 'the agent waiting for it is installed in the same run')
+        self.assertTrue((self.launchd / 'com.example.service').exists(), 'and loaded')
+        self.assertEqual(p.stdout.count('Applying again for the packages this run installed'), 1)
+
+        again = self.sync()
+        self.assertEqual(again.returncode, 0, again.stdout + again.stderr)
+        self.assertNotIn('Applying again', again.stdout, 'a run that installs nothing applies once')
+
+
 @unittest.skipUnless(shutil.which('go'), 'Go required to build the engine')
 class RealFeatures(Fixture):
     """The repository's own features and profiles, applied by the real engine to a fresh home."""

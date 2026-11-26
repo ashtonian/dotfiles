@@ -244,7 +244,8 @@ plans the manifest against them, and runs `dotfiles apply` right after
 the dotfiles merge (refusing to merge an engine layout this machine cannot
 install: no `machine.toml`, no Go, or an upstream engine that does not build here
 or cannot plan the manifest), then installs the generated Brewfile's missing packages with
-`--no-upgrade`. It does not run Mackup. Git sync is
+`--no-upgrade` and mise's missing tools, and applies again when those steps installed
+anything (the LaunchAgents waiting for a new program load in the same run). It does not run Mackup. Git sync is
 separate for dotfiles, each listed overlay, and each immediate Git repo under `SYNC_DIR`. It signs
 commits and merges, verifies outgoing signatures, and checks GitHub verification
 after publishing. Auxiliary merges use `-X ours`, which prefers local conflicting

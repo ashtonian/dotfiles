@@ -194,7 +194,9 @@ On each run, for each agent its features declare:
 
 - **Waiting for a path.** Until every `when_exists` path exists, apply leaves the
   agent out, and unloads and removes one it installed before. `dotfiles doctor`
-  lists it: `waiting <label>: installs once <path> exists`.
+  lists it: `waiting <label>: installs once <path> exists`. A sync whose package
+  steps installed anything applies again after them, so an agent waiting for a
+  program its feature's packages provide loads in the run that installs them.
 - **Not loaded.** apply loads it. An agent booted out by hand is loaded again at
   the next apply: to stop one, turn its feature off (below).
 - **Template changed.** apply writes the new plist and reloads the job, which
@@ -859,7 +861,7 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | `<feature>: check.script did not finish within 10s` (or `hooks.apply … 5m0s`) | The script hung or waited for input it cannot get. A hook that legitimately takes longer sets `[hooks] timeout` or `[check] timeout` in its `feature.toml`. |
 | `<feature>: turned off, and hooks.teardown exited with status N; the next apply runs it again` | The recorded teardown failed; its output is above. The next apply retries it. A teardown that can never succeed (what it removes is already gone some other way) still has to exit 0: fix it in the repository. |
 | `<feature>: check.script hooks/check is not an executable file` (exit 2) | The script is missing or lost its executable bit: `chmod +x features/<id>/hooks/check` and commit. |
-| `waiting <label>: installs once <path> exists` (doctor) | Expected until the agent's setup step runs: install the package, or run the step the [LaunchAgents table](#launchagents) names. The next apply installs and loads it. |
+| `waiting <label>: installs once <path> exists` (doctor) | Expected until the agent's setup step runs: install the package, or run the step the [LaunchAgents table](#launchagents) names. The next apply installs and loads it; a sync applies again right after installing packages, so it is still waiting after a sync only when the package did not install (see `Installing missing packages` in `logs/sync.log`) or the path comes from another step. |
 | `waiting <label>: reloads ...` or `unloads ...` (doctor) | Expected: the job is running, so apply left the reload or removal for a later run. If it stays for days, `launchctl print "gui/$(id -u)/<label>"` shows whether a run is stuck. |
 | `<label>.plist: edited here since dotfiles last wrote it` | Someone changed the installed plist; launchd keeps running that version. Move the change into the template in `features/<id>/launchagents/` (every Mac gets it), or delete the installed file; the next apply writes the template and reloads the job. |
 | `launchctl bootstrap gui/<uid> ...: ... Input/output error` | launchd refused the plist five times. `plutil -lint <plist>` checks it; a job that needs the GUI login (`LimitLoadToSessionType Aqua`, gpg-agent) loads only while someone is logged in at the screen. The next apply retries. |

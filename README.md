@@ -152,7 +152,7 @@ read or save a symlinked preference file); it installs a managed copy instead.
 | ---------- | ------ | ----------- |
 | `~/.dotfiles` | git, tracked files only | Every 4 hours |
 | `~/.sync/*` repos | git, tracked files only | Every 4 hours |
-| This machine's features | `dotfiles apply`, right after the dotfiles merge | Every sync, once the checkout has `features/` |
+| This machine's features | `dotfiles apply`, right after the dotfiles merge, and again after the package steps when they installed anything, so a feature's LaunchAgents that wait for its programs load in the same run | Every sync, once the checkout has `features/` |
 | The agent telemetry collector | `bin/otel-agent converge`, right after apply: installs the pinned release and restarts the collector when it changed | Every sync, on Macs enrolled with `otel-agent enroll` |
 | Missing packages | brew bundle install `--no-upgrade` | Every sync; under the LaunchAgent, casks that install as root and App Store apps wait for a terminal, named in a `WARN` line |
 | Claude Code | Anthropic's native installer, when `~/.local/bin/claude` is missing; Claude Code then updates itself | Every sync, on machines with `agents.claude` |
