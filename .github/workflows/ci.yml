@@ -10,6 +10,10 @@ permissions:
 
 jobs:
   engine:
+    # Pull requests from forks run nothing: CI here is for this repository's
+    # own branches. A maintainer runs an outside change by pushing it to a
+    # branch here.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: engine (${{ matrix.os }})
     strategy:
       fail-fast: false
@@ -29,6 +33,10 @@ jobs:
         run: go test -race -count=1 ./...
 
   shell:
+    # Pull requests from forks run nothing: CI here is for this repository's
+    # own branches. A maintainer runs an outside change by pushing it to a
+    # branch here.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
     name: shell and sync (macos)
     runs-on: macos-latest
     steps:
