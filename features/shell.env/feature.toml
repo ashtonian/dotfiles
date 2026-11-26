@@ -20,11 +20,6 @@ stub = [
   { path = ".bash_profile", line = '[ -r "$HOME/.config/shell/env.sh" ] && . "$HOME/.config/shell/env.sh"; if [ -r "$HOME/.profile" ]; then . "$HOME/.profile"; elif [ -r "$HOME/.bashrc" ]; then . "$HOME/.bashrc"; fi' },
 ]
 
-[settings."paths.agent_monitor_data"]
-type = "path"
-env = "AGENT_MONITOR_DATA_DIR"
-doc = "Where `agent-monitor install` keeps the dashboard database and transcript snapshots (several GB); unset keeps them under its home"
-
 [settings."paths.go_extra_build_caches"]
 type = "string"
 env = "GO_EXTRA_BUILD_CACHES"

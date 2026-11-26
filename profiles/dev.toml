@@ -12,7 +12,6 @@ enable = [
   # Blocks Claude Code and Codex writes to the repositories the overlays protect.
   "agents.repo-guard",
   "agents.agent-mcp",
-  # The Codex app-server, and the agent dashboard once agent-monitor install ran.
+  # The Codex app-server.
   "agents.codex",
-  "agents.agent-monitor",
 ]

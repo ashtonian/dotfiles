@@ -215,8 +215,7 @@ Each LaunchAgent is a template in the feature that declares it
 (`features/<id>/launchagents/`), and `dotfiles apply`, which every sync runs,
 installs, loads, reloads and removes them as the profiles say. An agent whose
 program or setup is missing waits for it: the Codex service for the codex cask,
-OpenCode for its local setup, the dashboard for `agent-monitor install`, the
-telemetry collector for `otel-agent enroll`. The full list, the one-time macOS
+OpenCode for its local setup, the telemetry collector for `otel-agent enroll`. The full list, the one-time macOS
 prompts, and what apply does when a template changes are in
 [OPERATIONS.md](docs/OPERATIONS.md#launchagents).
 
@@ -704,15 +703,6 @@ each finishes. Drive it from the terminal and a browser at once:
 Setup, configuration, the `delegate_*` tools, operations and security:
 [features/agents.opencode/README.md](features/agents.opencode/README.md).
 
-### Agent dashboard
-
-A loopback web dashboard at <http://127.0.0.1:4820> for every Claude Code and
-Codex session on this Mac: live cards, Kanban, tool timelines, transcripts, token
-and cost analytics, and a Run page that starts sessions with the CLIs' own logins.
-`~/.dotfiles/bin/agent-monitor install` sets it up, and `agent-monitor status`
-checks it. Setup, configuration, operations and security:
-[docs/AGENT-MONITOR.md](docs/AGENT-MONITOR.md).
-
 ### Agent MCP servers
 
 Claude Code, Codex and OpenCode get a global read-only GitHub MCP, including Actions jobs and logs.
@@ -854,7 +844,7 @@ current Go before the migration reaches it; see
 4. **Machine-specific SSH hosts** — create `~/.ssh/config.local`
 
 5. **LaunchAgents**: `dotfiles doctor` lists the ones still waiting for a setup
-   step (`otel-agent enroll`, `agent-monitor install`, OpenCode's local files);
+   step (`otel-agent enroll`, OpenCode's local files);
    apply loads each once its step has run
 
 6. **Agent shells**: `~/.dotfiles/bin/dotfiles-agents install` (see [Agent shells](#agent-shells))

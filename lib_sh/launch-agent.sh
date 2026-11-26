@@ -3,8 +3,8 @@
 # owns, right after the setup step it waits for. A loaded agent restarts, so it
 # reads what the step changed; one not loaded yet is installed and loaded by
 # apply. Fails, saying why, when the agent's feature is off on this Mac.
-# Sourced by bin/otel-agent and bin/agent-monitor (zsh, where `status` is
-# read-only); needs DOTFILES_DIR.
+# Sourced by bin/otel-agent (zsh, where `status` is read-only); needs
+# DOTFILES_DIR.
 start_launch_agent() {
     local label=$1 feature=$2 engine=${DOTFILES_BIN:-$HOME/.local/bin/dotfiles} rc=0
     if launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
