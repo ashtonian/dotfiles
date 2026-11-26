@@ -15,8 +15,10 @@ enable = [
   # Muxy and its terminal font, the Muxy settings every Mac shares, and the
   # other Macs as Muxy servers (docs/MUXY.md).
   "tool.muxy",
-  # They reach the home cluster: OpenCode's homelab gateway, and the
-  # collector that forwards agent telemetry to it (D1, D31).
+  # They reach the home cluster: OpenCode's homelab gateway, the collector
+  # that forwards agent telemetry to it (D1, D31), and the hardware metrics
+  # that collector forwards too (docs/HOST-METRICS.md).
   "agents.opencode",
   "agents.otel-agent",
+  "macos.host-metrics",
 ]

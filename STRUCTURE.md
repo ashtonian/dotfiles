@@ -28,6 +28,7 @@ This file maps the checked-in implementation.
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
+├── docs/HOST-METRICS.md     # Hardware metrics to the cluster (macos.host-metrics)
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
 ├── docs/PASSKEYS.md         # Passkey prompts off (browser.passkeys-off)
@@ -87,6 +88,7 @@ A feature's `hooks/` holds the scripts its `[hooks]` and `[check]` tables name
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
 | `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene`; setting `disk_hygiene.cache_drive` |
+| `macos.host-metrics` | desktop | darwin | Brewfile: `node_exporter`, `macmon`, `smartmontools`; `~/.config/otel-agent/conf.d/host-metrics.yaml`; LaunchAgents `com.ashtonian.node-exporter`, `com.ashtonian.macmon`, `com.ashtonian.host-metrics` (once otel-agent is enrolled); settings `host_metrics.*`; check and apply hooks keep the scrape targets right; requires `agents.otel-agent` |
 | `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions`; check and apply hooks keep the listed folders excluded |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
@@ -197,7 +199,8 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/codex-app-server](bin/codex-app-server) | Call `stable-exec codex app-server --remote-control` on its own socket; `--print-endpoint` prints it |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
-| [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry to the cluster gateway through a disk queue; `converge` (run by sync), `status`, `ping` |
+| [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry, and any `conf.d` fragment's pipelines, to the cluster gateway through disk queues; `converge` (run by sync), `status`, `ping` |
+| [bin/host-metrics](bin/host-metrics) | Run `node_exporter` and `macmon serve` on 127.0.0.1 at the `host_metrics.*` ports and publish them as the collector's scrape targets; `collect` writes thermal pressure, battery and SMART textfiles; `status`, `check`, `converge` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Keep `go env GOCACHE` and each `GO_EXTRA_BUILD_CACHES` cache under `GO_CACHE_TRIM_MAX_GIB` (400): entries unused for `GO_CACHE_TRIM_HOURS` (24), then least recently used; `--dry-run` reports only |
 | [bin/disk-hygiene](bin/disk-hygiene) | Delete agent scratch unused for `DISK_HYGIENE_SCRATCH_DAYS` (7) and caches unused for `DISK_HYGIENE_CACHE_DAYS` (14), delete Codex sessions unwritten for `DISK_HYGIENE_TRANSCRIPT_DAYS` (90) through `codex delete`, keep the `DISK_HYGIENE_RELOCATE` caches on `DISK_HYGIENE_CACHE_DRIVE`, prune pnpm stores, cap LaunchAgent logs; `--dry-run` reports only |
 | [bin/check-private-names](bin/check-private-names) | Fail when a tracked line names something an overlay keeps private (its `denylist.txt`); sync runs the same check before publishing |
@@ -217,6 +220,8 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.ashtonian.codex-remote-control | Always on; default Unix socket; soft file limit 65,536 | `~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log` |
 | com.ashtonian.opencode | Always on; HTTP server; default `127.0.0.1:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on while enrolled (`otel-agent enroll`); OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
+| com.ashtonian.node-exporter, com.ashtonian.macmon | Always on once installed and otel-agent is enrolled; HTTP `127.0.0.1:9100`/`9101` (settings `host_metrics.*`) | `~/Library/Logs/host-metrics/{node-exporter,macmon}.{log,err}` |
+| com.ashtonian.host-metrics | Every 60 seconds and at load, at low I/O priority | `~/Library/Logs/host-metrics/collect.{log,err}` |
 | com.ashtonian.gitstead | Every 15 minutes and at load, through `gate-lock run`, once gitstead and the gate lock are installed | `~/.local/share/gitstead/gitstead.log` |
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |
 | com.ashtonian.disk-hygiene | Daily at 04:15, or at wake after a missed run | `~/Library/Logs/disk-hygiene/disk-hygiene.{log,err}` |

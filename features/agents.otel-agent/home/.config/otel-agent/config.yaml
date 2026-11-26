@@ -90,11 +90,14 @@ processors:
   batch:
     timeout: 5s
 
-# One exporter per signal, so each queue is sized for its own volume. Queues are
+# One exporter per signal, and one for hardware metrics, so each queue is sized
+# for its own volume and a backlog in one never starves another. Queues are
 # measured in serialized bytes and sized for a week off the LAN at studio's
-# rate: log events are about 860 bytes each (~80 MB/day), metric points about
-# 480 bytes (~270 MB/day). When a queue is full, new data is dropped and counted
-# in otelcol_exporter_enqueue_failed_*.
+# rate: log events are about 860 bytes each (~80 MB/day), agent metric points
+# about 480 bytes (~270 MB/day), hardware metric points about 84 bytes (~280 a
+# minute, ~34 MB/day). Loki and Mimir refuse data more than a week old, which
+# bounds a lossless outage whatever the queue holds. When a queue is full, new
+# data is dropped and counted in otelcol_exporter_enqueue_failed_*.
 exporters:
   otlp_http/logs: &gateway
     endpoint: ${env:OTEL_AGENT_GATEWAY}
@@ -120,6 +123,15 @@ exporters:
       storage: file_storage/queue
       sizer: bytes
       queue_size: 2147483648 # 2 GiB, about 8 days
+  # Hardware metrics, for the conf.d pipeline macos.host-metrics adds; never
+  # started on a Mac without it.
+  otlp_http/host:
+    <<: *gateway
+    sending_queue:
+      enabled: true
+      storage: file_storage/queue
+      sizer: bytes
+      queue_size: 335544320 # 320 MiB, about 10 days
 
 service:
   extensions: [health_check, file_storage/queue]

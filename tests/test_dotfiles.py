@@ -1640,6 +1640,38 @@ else:
         self.assertFalse(self.agent('com.ashtonian.otel-agent').exists())
         self.assertFalse((self.launchd / 'com.ashtonian.otel-agent').exists(), 'unloaded too')
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'macos.host-metrics is a macOS feature')
+    def test_a_desktop_mac_sends_hardware_metrics_once_enrolled_and_cleans_up_when_off(self):
+        brewfile = self.converge('base,dev,desktop')
+        for formula in ('node_exporter', 'macmon', 'smartmontools'):
+            self.assertIn(f'brew "{formula}" # macos.host-metrics', brewfile)
+        fragment = self.home / '.config/otel-agent/conf.d/host-metrics.yaml'
+        self.assertEqual(fragment.resolve(), FEATURES / 'macos.host-metrics/home' / fragment.relative_to(self.home))
+        self.assertTrue((self.home / '.config/otel-agent/config.yaml').is_symlink(), 'beside the collector config')
+        env = (self.home / '.config/dotfiles/generated/env.sh').read_text()
+        for name, value in (('HOST_METRICS_NODE_EXPORTER_PORT', 9100), ('HOST_METRICS_MACMON_PORT', 9101),
+                            ('HOST_METRICS_SMART_INTERVAL', 300)):
+            self.assertIn(f"{name}='{value}'; export {name}", env)
+        self.assertTrue((self.home / '.local/state/host-metrics/targets').is_dir(), 'the apply hook made it')
+        labels = ('com.ashtonian.node-exporter', 'com.ashtonian.macmon', 'com.ashtonian.host-metrics')
+        doctor = self.dotfiles('doctor').stdout
+        for label in labels:
+            self.assertIn(f'waiting     {label}: installs once', doctor, 'until otel-agent is enrolled')
+            self.assertFalse(self.agent(label).exists())
+
+        # Turned off: its link, jobs and state go; the collector config stays.
+        state = self.home / '.local/state/host-metrics/targets'
+        (state / 'node-exporter.json').write_text('[]\n')
+        (self.home / 'Library/Logs/host-metrics').mkdir(parents=True)
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '\n[features]\ndisable = ["macos.host-metrics"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertFalse(fragment.exists() or fragment.is_symlink())
+        self.assertFalse((self.home / '.local/state/host-metrics').exists())
+        self.assertFalse((self.home / 'Library/Logs/host-metrics').exists())
+        self.assertTrue((self.home / '.config/otel-agent/config.yaml').is_symlink())
+
     @unittest.skipUnless(sys.platform == 'darwin', 'tool.muxy is a macOS feature')
     def test_a_desktop_mac_gets_muxy_from_the_app_and_its_server_list_job(self):
         brewfile = self.converge('base,dev,desktop')  # with the stand-in Muxy
@@ -2813,6 +2845,18 @@ class OtelAgent(Fixture):
         self.assertEqual(stat.S_IMODE((self.state / 'queue').stat().st_mode), 0o700)
         self.assertTrue((self.state / 'serving').read_text().strip())
 
+    def test_serve_adds_each_conf_d_fragment_after_the_config_by_name(self):
+        self.install_collector()
+        self.enroll()
+        fragments = self.config.parent / 'conf.d'
+        fragments.mkdir()
+        for name in ('b.yaml', 'a.yaml', 'notes.txt'):
+            (fragments / name).write_text('receivers: {}\n')
+        p = self.run_agent('serve')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = dict(line.split('=', 1) for line in p.stdout.splitlines())
+        self.assertEqual(lines['args'], f'--config={self.config} --config={fragments}/a.yaml --config={fragments}/b.yaml')
+
     def test_host_environment_overrides_the_enrolled_name(self):
         self.install_collector()
         self.enroll('mbp')
@@ -2986,6 +3030,18 @@ class OtelAgent(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertIn(f'kickstart -k {self.target}', self.calls())
         self.assertIn('restarted the collector', p.stdout)
+        # A feature adds a pipeline, then goes.
+        self.assertEqual(self.run_agent('serve').returncode, 0)
+        fragment = self.config.parent / 'conf.d/host-metrics.yaml'
+        fragment.parent.mkdir()
+        fragment.write_text('receivers: {}\n')
+        restarts = lambda: self.calls().count(f'kickstart -k {self.target}')
+        self.assertEqual(self.run_agent('converge').returncode, 0)
+        self.assertEqual(restarts(), 2)
+        self.assertEqual(self.run_agent('serve').returncode, 0)
+        fragment.unlink()
+        self.assertEqual(self.run_agent('converge').returncode, 0)
+        self.assertEqual(restarts(), 3)
 
     def test_converge_reports_a_collector_apply_did_not_load(self):
         self.install_collector()
@@ -3014,7 +3070,11 @@ class OtelAgent(Fixture):
             'otelcol_exporter_queue_capacity{data_type="logs",exporter="otlp_http/logs"} 8.05306368e+08\n'
             'otelcol_exporter_queue_capacity{data_type="metrics",exporter="otlp_http/metrics"} 2.147483648e+09\n'
             'otelcol_exporter_queue_size{data_type="metrics",exporter="otlp_http/metrics"} 0\n'
+            'otelcol_exporter_queue_capacity{data_type="metrics",exporter="otlp_http/host"} 3.3554432e+08\n'
+            'otelcol_exporter_queue_size{data_type="metrics",exporter="otlp_http/host"} 1.048576e+06\n'
             'otelcol_exporter_sent_log_records{exporter="otlp_http/logs"} 12\n')
+        (self.config.parent / 'conf.d').mkdir()
+        (self.config.parent / 'conf.d/host-metrics.yaml').write_text('receivers: {}\n')
         self.cli('curl', f'case "$*" in *8889*) cat {metrics} ;; esac')
         p = self.run_agent('status')
         self.assertEqual(p.returncode, 0, p.stderr)
@@ -3022,8 +3082,10 @@ class OtelAgent(Fixture):
         self.assertIn('host:      mbp', p.stdout)
         self.assertIn(f'queue:     3 MiB on disk in {self.state}/queue', p.stdout)
         self.assertIn('health:    ok', p.stdout)
-        self.assertRegex(p.stdout, r'queue logs +1\.5 of 768 MiB')
-        self.assertRegex(p.stdout, r'queue metrics +0\.0 of 2048 MiB')
+        self.assertIn('fragments: host-metrics.yaml', p.stdout)
+        self.assertRegex(p.stdout, r'queue otlp_http/logs +1\.5 of 768 MiB')
+        self.assertRegex(p.stdout, r'queue otlp_http/metrics +0\.0 of 2048 MiB')
+        self.assertRegex(p.stdout, r'queue otlp_http/host +1\.0 of 320 MiB')
         self.assertRegex(p.stdout, r'otelcol_exporter_sent_log_records +12')
 
     def test_unknown_command_is_a_usage_error(self):
@@ -3051,12 +3113,252 @@ class OtelAgent(Fixture):
         # that acknowledge delivered batches.
         text = self.CONFIG.read_text()
         queues = [int(size) for size in re.findall(r'^\s+queue_size: (\d+)', text, re.M)]
-        self.assertEqual(len(queues), 2, 'one queue per signal')
-        self.assertEqual(len(re.findall(r'^\s+storage: file_storage/queue$', text, re.M)), 2)
-        self.assertEqual(len(re.findall(r'^\s+sizer: bytes$', text, re.M)), 2)
+        self.assertEqual(len(queues), 3, 'one queue per signal, and one for hardware metrics')
+        self.assertEqual(len(re.findall(r'^\s+storage: file_storage/queue$', text, re.M)), 3)
+        self.assertEqual(len(re.findall(r'^\s+sizer: bytes$', text, re.M)), 3)
         max_size = int(re.search(r'^\s+max_size: (\d+)', text, re.M)[1])
         self.assertGreaterEqual(max_size, 1.4 * max(queues))
         self.assertRegex(text, r'(?m)^\s+on_rebound: true$')
+
+
+@unittest.skipUnless(sys.platform == 'darwin', 'host-metrics reads macOS registries through plutil')
+class HostMetrics(Fixture):
+    """bin/host-metrics against stand-ins for the exporters and the macOS tools
+    it reads: notifyutil, ioreg, diskutil, smartctl and lsof."""
+
+    SCRIPT = ROOT / 'bin/host-metrics'
+    FRAGMENT = FEATURES / 'macos.host-metrics/home/.config/otel-agent/conf.d/host-metrics.yaml'
+
+    def setUp(self):
+        super().setUp()
+        self.home = self.path / 'home'
+        self.home.mkdir()
+        self.state = self.home / '.local/state/host-metrics'
+        self.textfile = self.state / 'textfile'
+        self.fake = self.path / 'fake'
+        self.fake.mkdir()
+        self.env.update(HOME=str(self.home), FAKE=str(self.fake), HOST_METRICS_NODE_EXPORTER_PORT='9100',
+                        HOST_METRICS_MACMON_PORT='9101', HOST_METRICS_SMART_INTERVAL='300')
+        self.env.pop('HOST_METRICS_STATE', None)
+        for name in ('node_exporter', 'macmon'):
+            self.cli(name, 'printf "%s\\n" "$0" "$@"')
+        self.cli('sysctl', 'echo "${FAKE_ARM64:-1}"')
+        self.cli('lsof', 'cat "$FAKE/lsof" 2>/dev/null; exit 0')
+        self.cli('notifyutil', 'echo "com.apple.system.thermalpressurelevel ${FAKE_THERMAL:-0}"')
+        self.cli('ioreg', 'cat "$FAKE/battery.plist" 2>/dev/null; exit 0')
+        self.cli('diskutil', 'case "$1" in list) cat "$FAKE/disks.plist" ;; info) cat "$FAKE/info-$3.plist" ;; esac')
+        self.cli('smartctl', 'printf "%s\\n" "$*" >> "$FAKE/smartctl-calls"\n'
+                 'for last; do :; done; disk=${last#/dev/}\n'
+                 'cat "$FAKE/smart-$disk.json"; exit "$(cat "$FAKE/smart-$disk.exit")"')
+        self.disks()
+
+    def run_metrics(self, *args):
+        return subprocess.run(['/bin/bash', str(self.SCRIPT), *args], cwd=self.path, env=self.env,
+                              capture_output=True, text=True, timeout=30)
+
+    def disks(self, *disks):
+        """diskutil's physical disks: each (name, bytes, smartctl's JSON, exit status)."""
+        (self.fake / 'disks.plist').write_bytes(plistlib.dumps({'WholeDisks': [d[0] for d in disks]}))
+        for name, size, report, status in disks:
+            (self.fake / f'info-{name}.plist').write_bytes(plistlib.dumps({'TotalSize': size}))
+            (self.fake / f'smart-{name}.json').write_text(json.dumps(report))
+            (self.fake / f'smart-{name}.exit').write_text(str(status))
+
+    def nvme(self, model, serial, used, written_units):
+        return {'device': {'name': 'ignored', 'type': 'nvme', 'protocol': 'NVMe'},
+                'model_name': model, 'serial_number': serial, 'firmware_version': '1.0',
+                'smart_status': {'passed': True}, 'temperature': {'current': 31},
+                'power_on_time': {'hours': 3121}, 'power_cycle_count': 321,
+                'nvme_smart_health_information_log': {
+                    'critical_warning': 0, 'available_spare': 100, 'available_spare_threshold': 99,
+                    'percentage_used': used, 'data_units_written': written_units, 'data_units_read': 7,
+                    'media_errors': 0, 'num_err_log_entries': 0}}
+
+    def textfile_lines(self, name):
+        return (self.textfile / name).read_text().splitlines()
+
+    def test_node_exporter_publishes_its_loopback_address_and_serves_the_textfiles(self):
+        p = self.run_metrics('node-exporter')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        args = p.stdout.splitlines()
+        self.assertEqual(args[0], str(self.bin / 'node_exporter'))
+        self.assertIn('--web.listen-address=127.0.0.1:9100', args)
+        self.assertIn(f'--collector.textfile.directory={self.textfile}', args)
+        self.assertIn('--collector.filesystem.mount-points-include=^/$', args, 'no external volume is read')
+        self.assertIn('--no-collector.thermal', args)
+        self.assertEqual((self.state / 'targets/node-exporter.json').read_text(), '[{"targets": ["127.0.0.1:9100"]}]\n')
+        self.assertTrue(self.textfile.is_dir())
+
+    def test_a_port_another_process_holds_stops_the_exporter_and_withdraws_its_target(self):
+        (self.state / 'targets').mkdir(parents=True)
+        (self.state / 'targets/node-exporter.json').write_text('[{"targets": ["127.0.0.1:9100"]}]\n')
+        (self.fake / 'lsof').write_text('p4242\ncsomething\n')
+        p = self.run_metrics('node-exporter')
+        self.assertEqual(p.returncode, 75)
+        self.assertIn('port 9100 is taken by something', p.stderr)
+        self.assertEqual(p.stdout, '', 'node_exporter did not start')
+        self.assertFalse((self.state / 'targets/node-exporter.json').exists(), 'the collector does not scrape it')
+
+    def test_ports_come_from_the_generated_settings_and_must_be_valid(self):
+        del self.env['HOST_METRICS_NODE_EXPORTER_PORT']
+        generated = self.home / '.config/dotfiles/generated/env.sh'
+        generated.parent.mkdir(parents=True)
+        generated.write_text("export HOST_METRICS_NODE_EXPORTER_PORT='9200'\n")
+        p = self.run_metrics('node-exporter')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('--web.listen-address=127.0.0.1:9200', p.stdout.splitlines())
+        self.env['HOST_METRICS_NODE_EXPORTER_PORT'] = '80'
+        p = self.run_metrics('node-exporter')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn("HOST_METRICS_NODE_EXPORTER_PORT='80': want a whole number from 1024 to 65535", p.stderr)
+
+    def test_macmon_samples_once_a_minute_on_loopback_and_only_on_apple_silicon(self):
+        p = self.run_metrics('macmon')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stdout.splitlines()[1:], ['serve', '--host', '127.0.0.1', '--port', '9101', '--interval', '60000'])
+        self.assertEqual((self.state / 'targets/macmon.json').read_text(), '[{"targets": ["127.0.0.1:9101"]}]\n')
+        self.env['FAKE_ARM64'] = '0'
+        p = self.run_metrics('macmon')
+        self.assertEqual(p.returncode, 78)
+        self.assertIn('Intel Mac', p.stderr)
+
+    def test_collect_writes_thermal_pressure_and_no_battery_on_a_desktop(self):
+        self.env['FAKE_THERMAL'] = '2'
+        (self.fake / 'battery.plist').write_bytes(plistlib.dumps([{'BatteryInstalled': False}]))
+        (self.textfile).mkdir(parents=True)
+        (self.textfile / 'battery.prom').write_text('macos_battery_cycle_count 1\n')  # from before
+        p = self.run_metrics('collect')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('macos_thermal_pressure_level 2', self.textfile_lines('thermal.prom'))
+        self.assertFalse((self.textfile / 'battery.prom').exists())
+        self.assertEqual([f.name for f in self.textfile.iterdir() if not f.name.endswith('.prom')], [], 'no scratch left')
+
+    def test_an_unreadable_thermal_pressure_removes_the_old_reading_and_fails_the_run(self):
+        self.textfile.mkdir(parents=True)
+        (self.textfile / 'thermal.prom').write_text('macos_thermal_pressure_level 0\n')
+        self.env['FAKE_THERMAL'] = 'unknown'
+        p = self.run_metrics('collect')
+        self.assertEqual(p.returncode, 1)
+        self.assertIn('unexpected thermal pressure reading', p.stderr)
+        self.assertFalse((self.textfile / 'thermal.prom').exists())
+
+    def test_collect_reads_a_laptop_battery_where_either_macos_layout_keeps_it(self):
+        capacities = {'DesignCapacity': 6075, 'NominalChargeCapacity': 5136, 'AppleRawMaxCapacity': 4986}
+        expected = ['macos_battery_cycle_count 402', 'macos_battery_design_cycle_count 1000',
+                    'macos_battery_design_capacity_ampere_hours 6.075',
+                    'macos_battery_nominal_capacity_ampere_hours 5.136',
+                    'macos_battery_max_capacity_ampere_hours 4.986']
+        for layout in ({'BatteryData': capacities}, capacities):  # macOS 27, then earlier releases
+            entry = {'BatteryInstalled': True, 'CycleCount': 402, 'DesignCycleCount9C': 1000, **layout}
+            (self.fake / 'battery.plist').write_bytes(plistlib.dumps([entry]))
+            p = self.run_metrics('collect')
+            self.assertEqual(p.returncode, 0, p.stderr)
+            samples = [line for line in self.textfile_lines('battery.prom') if not line.startswith('#')]
+            self.assertEqual(samples, expected)
+
+    def test_smart_uses_smartctl_exporter_names_for_every_disk_that_answers(self):
+        apple = self.nvme('APPLE SSD AP0512Z', 'apple-serial', 7, 429601058)
+        external = self.nvme('Example "Pro" 2TB', 'ext-serial', 0, 10)
+        self.disks(('disk0', 500277792768, apple, 4),   # Apple's SSD: no error-information log page
+                   ('disk4', 2000398934016, external, 0),
+                   ('disk6', 1, {}, 2))                 # asleep, or would not open
+        p = self.run_metrics('collect')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = self.textfile_lines('smart.prom')
+        for line in ('smartctl_device{device="disk0",interface="nvme",protocol="NVMe",model_name="APPLE SSD AP0512Z",'
+                     'serial_number="apple-serial",firmware_version="1.0"} 1',
+                     'smartctl_device{device="disk4",interface="nvme",protocol="NVMe",model_name="Example \\"Pro\\" 2TB",'
+                     'serial_number="ext-serial",firmware_version="1.0"} 1',
+                     'smartctl_device_smartctl_exit_status{device="disk0"} 4',
+                     'smartctl_device_smart_status{device="disk0"} 1',
+                     'smartctl_device_percentage_used{device="disk0"} 7',
+                     'smartctl_device_bytes_written{device="disk0"} 219955741696000',
+                     'smartctl_device_bytes_read{device="disk4"} 3584000',
+                     'smartctl_device_power_on_seconds{device="disk0"} 11235600',
+                     'smartctl_device_temperature{device="disk0",temperature_type="current"} 31',
+                     'smartctl_device_capacity_bytes{device="disk4"} 2000398934016',
+                     'smartctl_device_available_spare_threshold{device="disk0"} 99'):
+            self.assertIn(line, lines)
+        self.assertFalse([line for line in lines if 'disk6' in line], 'a disk that did not answer has no samples')
+        self.assertIn('smartctl read nothing from disk6 (exit 2)', p.stderr)
+        families = [line.split()[2] for line in lines if line.startswith('# TYPE')]
+        self.assertEqual(len(families), len(set(families)), 'one HELP and TYPE per family')
+        self.assertEqual(lines.count('# TYPE smartctl_device_bytes_written counter'), 1)
+
+    def test_smart_waits_for_its_interval(self):
+        self.disks(('disk0', 1, self.nvme('m', 's', 1, 1), 0))
+        calls = lambda: (self.fake / 'smartctl-calls').read_text().splitlines()
+        self.assertEqual(self.run_metrics('collect').returncode, 0)
+        self.assertEqual(calls(), ['--json --all --nocheck=standby /dev/disk0'])
+        self.assertEqual(self.run_metrics('collect').returncode, 0)
+        self.assertEqual(len(calls()), 1, 'not again within the interval')
+        earlier = time.time() - 290  # within the margin for a late run
+        os.utime(self.textfile / 'smart.prom', (earlier, earlier))
+        self.assertEqual(self.run_metrics('collect').returncode, 0)
+        self.assertEqual(len(calls()), 2)
+
+    def publish(self, name, port):
+        (self.state / 'targets').mkdir(parents=True, exist_ok=True)
+        (self.state / f'targets/{name}.json').write_text(f'[{{"targets": ["127.0.0.1:{port}"]}}]\n')
+
+    def check(self):
+        p = self.run_metrics('check')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def test_check_wants_the_target_directory_and_exporters_where_their_settings_say(self):
+        targets = self.state / 'targets'
+        self.assertEqual(self.check(), {'state': 'drift', 'detail': f'no target directory {targets}'})
+        p = self.run_metrics('converge')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        ok = {'state': 'ok', 'detail': 'the target directory exists and each exporter listens where its setting says'}
+        self.assertEqual(self.check(), ok, 'nothing running yet: launchd starts each exporter on its setting')
+        self.publish('node-exporter', 9100)
+        self.publish('macmon', 9101)
+        self.assertEqual(self.check(), ok)
+        self.env['HOST_METRICS_MACMON_PORT'] = '9301'
+        self.assertEqual(self.check(), {'state': 'drift', 'detail': 'macmon listens on 127.0.0.1:9101, its setting says 127.0.0.1:9301'})
+
+    def test_converge_restarts_a_moved_exporter_and_forgets_one_not_running(self):
+        self.publish('node-exporter', 9100)
+        self.publish('macmon', 9101)
+        self.env.update(HOST_METRICS_NODE_EXPORTER_PORT='9200', HOST_METRICS_MACMON_PORT='9201')
+        # launchd restarts the job, whose entry point publishes the new address.
+        self.loaded('com.ashtonian.node-exporter', running=True)
+        self.cli('launchctl', LAUNCHCTL_STUB.replace(
+            'kickstart) [ -f "$dir/${3##*/}" ] || exit 113 ;;',
+            'kickstart) [ -f "$dir/${3##*/}" ] || exit 113; '
+            f'printf \'[{{"targets": ["127.0.0.1:9200"]}}]\\n\' > {self.state}/targets/node-exporter.json ;;'))
+        p = self.run_metrics('converge')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn(f'kickstart -k gui/{os.getuid()}/com.ashtonian.node-exporter', self.launchctl_calls())
+        self.assertFalse((self.state / 'targets/macmon.json').exists(), 'macmon is not loaded, so not running')
+        self.assertEqual(self.check()['state'], 'ok', self.check())
+
+    def test_status_shows_the_jobs_targets_and_textfile_ages(self):
+        self.loaded('com.ashtonian.node-exporter', running=True)
+        self.publish('node-exporter', 9100)
+        self.textfile.mkdir(parents=True)
+        (self.textfile / 'thermal.prom').write_text('macos_thermal_pressure_level 0\n')
+        self.cli('curl', 'printf "# HELP x\\nx 1\\ny 2\\n"')
+        p = self.run_metrics('status')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertRegex(p.stdout, r'com\.ashtonian\.node-exporter +running')
+        self.assertRegex(p.stdout, r'com\.ashtonian\.macmon +not loaded')
+        self.assertRegex(p.stdout, r'node-exporter +127\.0\.0\.1:9100, 2 samples')
+        self.assertRegex(p.stdout, r'macmon +no target published')
+        self.assertRegex(p.stdout, r'thermal\.prom +\d+s old')
+        self.assertRegex(p.stdout, r'smart\.prom +absent')
+
+    def test_the_collector_scrapes_where_the_entry_points_publish(self):
+        fragment = self.FRAGMENT.read_text()
+        for name in ('node-exporter', 'macmon'):
+            self.assertIn(f'"${{env:HOME}}/.local/state/host-metrics/targets/{name}.json"', fragment)
+        self.assertRegex(fragment, r'(?m)^      exporters: \[otlp_http/host\]$')
+        self.assertRegex(OtelAgent.CONFIG.read_text(), r'(?m)^  otlp_http/host:$', 'config.yaml defines its exporter')
+
+    def test_unknown_command_is_a_usage_error(self):
+        self.assertEqual(self.run_metrics('bogus').returncode, 64)
 
 
 class AgentMcp(Fixture):

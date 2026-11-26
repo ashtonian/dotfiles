@@ -184,6 +184,9 @@ profiles enable without running an installer.
 | `com.ashtonian.codex-remote-control` | `agents.codex` (dev) | Service | `/opt/homebrew/bin/codex` |
 | `com.ashtonian.opencode` | `agents.opencode` (desktop) | Service | opencode, and its `server-password` ([setup](../features/agents.opencode/README.md)) |
 | `com.ashtonian.otel-agent` | `agents.otel-agent` (desktop) | Service, while enrolled | `otel-agent enroll`'s endpoint, token and host |
+| `com.ashtonian.node-exporter` | `macos.host-metrics` (desktop) | Service ([host metrics](HOST-METRICS.md)) | `/opt/homebrew/bin/node_exporter`, `otel-agent enroll`'s host |
+| `com.ashtonian.macmon` | `macos.host-metrics` (desktop) | Service | `/opt/homebrew/bin/macmon`, `otel-agent enroll`'s host |
+| `com.ashtonian.host-metrics` | `macos.host-metrics` (desktop) | Every 60 seconds and at load | `/opt/homebrew/bin/node_exporter`, `/opt/homebrew/bin/smartctl`, `otel-agent enroll`'s host |
 
 On each run, for each agent its features declare:
 

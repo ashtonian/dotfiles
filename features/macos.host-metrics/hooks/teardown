@@ -1,0 +1,6 @@
+#!/bin/sh
+# hooks.teardown, once the feature's LaunchAgents are gone: remove the
+# published targets, the textfiles and the logs. Standalone: apply runs a copy
+# of it.
+set -eu
+rm -rf -- "$HOME/.local/state/host-metrics" "$HOME/Library/Logs/host-metrics"

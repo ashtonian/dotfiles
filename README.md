@@ -215,7 +215,8 @@ Each LaunchAgent is a template in the feature that declares it
 (`features/<id>/launchagents/`), and `dotfiles apply`, which every sync runs,
 installs, loads, reloads and removes them as the profiles say. An agent whose
 program or setup is missing waits for it: the Codex service for the codex cask,
-OpenCode for its local setup, the telemetry collector for `otel-agent enroll`. The full list, the one-time macOS
+OpenCode for its local setup, the telemetry collector and the hardware
+exporters for `otel-agent enroll`. The full list, the one-time macOS
 prompts, and what apply does when a template changes are in
 [OPERATIONS.md](docs/OPERATIONS.md#launchagents).
 
@@ -735,6 +736,16 @@ deletes identities and tool content and forwards the rest to the cluster's OTLP
 gateway, where the Coding Agents dashboard shows tokens, cost, tools and latency
 per harness and repository. Setup and operations:
 [docs/AGENT-TELEMETRY.md](docs/AGENT-TELEMETRY.md).
+
+### Host metrics
+
+On desktop Macs, `macos.host-metrics` runs `node_exporter` and `macmon serve` on
+loopback and writes thermal pressure, battery and SMART readings for them to
+serve (`bin/host-metrics`). The telemetry collector scrapes them every minute
+and forwards the samples through their own disk queue to the cluster, where the
+Macs dashboard shows power, temperatures, fans, pressure, SSD wear and writes,
+and battery health, and Mimir's ruler alerts on SSD and battery health. Setup
+and operations: [docs/HOST-METRICS.md](docs/HOST-METRICS.md).
 
 AI-assisted development workflows from `lib_sh/claude.sh`:
 

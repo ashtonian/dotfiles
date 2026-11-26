@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Every minute, writes the textfiles node_exporter serves: thermal pressure and
+  battery health on every run, SMART every host_metrics.smart_interval seconds
+  (bin/host-metrics collect, docs/HOST-METRICS.md). Nothing runs while the Mac
+  sleeps.
+  dotfiles apply installs it for the macos.host-metrics feature, with $HOME replaced.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.ashtonian.host-metrics</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>$HOME/.dotfiles/bin/host-metrics</string>
+        <string>collect</string>
+    </array>
+    <key>WorkingDirectory</key>
+    <string>$HOME</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>PATH</key>
+        <string>/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+    <key>StartInterval</key>
+    <integer>60</integer>
+    <key>RunAtLoad</key>
+    <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>LowPriorityIO</key>
+    <true/>
+    <key>Nice</key>
+    <integer>10</integer>
+    <key>StandardOutPath</key>
+    <string>$HOME/Library/Logs/host-metrics/collect.log</string>
+    <key>StandardErrorPath</key>
+    <string>$HOME/Library/Logs/host-metrics/collect.err</string>
+</dict>
+</plist>
