@@ -235,7 +235,9 @@ sessions.
 Sync holds `logs/sync.flock` using macOS lockf (the weekly update holds it for
 its whole run too, so the two never overlap), syncs the overlays `machine.toml`
 lists (the engine names their checkouts) before the dotfiles merge, whose check
-plans the manifest against them, and runs `dotfiles apply` right after
+plans the manifest against them, and the overlays it held back again after it.
+An overlay commit merges only when the dotfiles on disk plan the manifest with
+it (`overlay_ready`; `upstream_ready` for dotfiles). Sync runs `dotfiles apply` right after
 the dotfiles merge (refusing to merge an engine layout this machine cannot
 install: no `machine.toml`, no Go, or an upstream engine that does not build here
 or cannot plan the manifest), then installs the generated Brewfile's missing packages with

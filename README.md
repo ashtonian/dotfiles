@@ -169,12 +169,28 @@ uses the engine, sync checks that this machine can install it: the machine has
 `~/.config/dotfiles/machine.toml` (otherwise it logs the profiles upstream
 offers), and the upstream's own engine builds with this machine's Go and plans
 that manifest (`dotfiles check`). If any of that fails, sync neither merges nor
-pushes, and the checkout stays as it is. Sync brings this machine's overlays up
-to date (see [Overlays](#overlays)) before that check, so it plans the manifest
-against the overlays `dotfiles apply` will read: enabling a feature that only an
-overlay's incoming commit defines does not hold the dotfiles merge back. When
-the merged engine names an overlay the earlier one did not, sync brings that one
-up to date in the same run.
+pushes, and the checkout stays as it is.
+
+Each overlay's incoming commits (see [Overlays](#overlays)) are checked the
+same way: they merge only if the dotfiles checkout this run leaves on disk
+plans the manifest with them. Sync takes the overlays first, then dotfiles,
+then the overlays it held back once dotfiles has moved, so every merge is
+planned against what `dotfiles apply` will read:
+
+- An overlay commit that enables a feature dotfiles does not have yet waits
+  for the dotfiles commit that adds it. Both merge in the run that brings it,
+  even when the overlay is published first.
+- An overlay commit that removes a feature `machine.toml` enables never merges.
+- A feature that only an overlay's incoming commit defines does not hold the
+  dotfiles merge back.
+- A change made in both checkouts at once, such as a feature renamed in
+  dotfiles and in the profile that enables it, merges both in one run.
+- A held-back merge fails the run, `logs/sync.log` gives `dotfiles check`'s
+  reason, and the next run tries it again. Apply keeps running on what is on
+  disk.
+
+When the merged engine names an overlay the earlier one did not, sync brings
+that one up to date in the same run.
 
 ### Manual Sync Commands
 
@@ -361,7 +377,11 @@ profiles = ["base", "dev", "desktop", "studio", "personal"]
   another client's.
 - A listed overlay that is not cloned stops `apply` (exit 2) instead of
   removing what its features installed. Sync pulls and publishes each listed
-  overlay, to its own remote, before `apply` reads it.
+  overlay, to its own remote, before `apply` reads it, and merges an incoming
+  commit only when this machine's dotfiles plan it
+  ([Sync System](#sync-system)). An overlay commit can therefore name a
+  feature dotfiles is about to gain: until a machine has it, that machine
+  keeps the overlay where it was.
 - Taking an overlay off the list removes what its features installed on the
   next `apply`.
 - An overlay's `denylist.txt` lists the names it keeps private, one per line

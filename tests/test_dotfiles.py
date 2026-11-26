@@ -1208,11 +1208,13 @@ class SyncFeaturesLayout(SignedRepo):
 
 # A stand-in engine for a sync's checkouts: `overlays` names the first LISTED
 # paths in DOTFILES_TEST_OVERLAYS, and `check` fails as the real engine does
-# while the first of them does not define the feature machine.toml enables.
+# while the first of them, read from --overlay-dir as the real engine reads
+# it, does not define the feature machine.toml enables.
 CHECKOUTS_ENGINE = """package main
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -1224,7 +1226,13 @@ func main() {
 	case "overlays":
 		os.Stdout.WriteString(strings.Join(listed, "\\n") + "\\n")
 	case "check":
-		if _, err := os.Stat(listed[0] + "/features/personal.tool/feature.toml"); err != nil {
+		first := listed[0]
+		for i, arg := range os.Args[:len(os.Args)-1] {
+			if arg == "--overlay-dir" {
+				first = filepath.Join(os.Args[i+1], filepath.Base(listed[0]))
+			}
+		}
+		if _, err := os.Stat(first + "/features/personal.tool/feature.toml"); err != nil {
 			os.Stderr.WriteString("dotfiles: feature resolution failed: machine enables unknown feature \\"personal.tool\\"\\n")
 			os.Exit(2)
 		}
@@ -1233,8 +1241,47 @@ func main() {
 """
 
 
+class Checkouts(SignedRepo):
+    """Repositories with an origin that another machine publishes to."""
+
+    def run_git(self, repo, *args):
+        return subprocess.run(['git', '-C', str(repo), *args], env=self.env, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    def commit(self, repo, files, message):
+        """Commit FILES, a text per path, or None to delete it."""
+        for name, text in files.items():
+            if text is None:
+                self.run_git(repo, 'rm', '-q', name)
+                continue
+            (repo / name).parent.mkdir(parents=True, exist_ok=True)
+            (repo / name).write_text(text)
+            self.run_git(repo, 'add', name)
+        self.run_git(repo, 'commit', '-q', '-m', message)
+
+    def with_origin(self, repo):
+        origin = self.path / f'{repo.name}.git'
+        self.run_git(self.path, 'init', '-q', '--bare', '-b', 'master', str(origin))
+        self.run_git(repo, 'remote', 'add', 'origin', str(origin))
+        self.run_git(repo, 'push', '-q', '-u', 'origin', 'master')
+
+    def published(self, repo, files, message):
+        """REPO commits and publishes FILES: both this machine and its origin have it."""
+        self.commit(repo, files, message)
+        self.run_git(repo, 'push', '-q', 'origin', 'master')
+
+    def incoming(self, repo, files, message):
+        """Another machine publishes MESSAGE to REPO's origin, which REPO has fetched but not merged."""
+        self.published(repo, files, message)
+        self.run_git(repo, 'reset', '-q', '--hard', 'HEAD~1')
+        return self.run_git(repo, 'rev-parse', 'origin/master')
+
+    def head(self, repo):
+        return self.run_git(repo, 'rev-parse', 'HEAD')
+
+
 @unittest.skipUnless(shutil.which('go'), 'Go required to build the engines')
-class SyncCheckouts(SignedRepo):
+class SyncCheckouts(Checkouts):
     """sync_checkouts: the dotfiles merge is checked against the overlays apply will read, and
     an overlay only the merged engine names is synced in the same run."""
 
@@ -1271,30 +1318,6 @@ class SyncCheckouts(SignedRepo):
                 'go.mod': 'module example.invalid/engine\n\ngo 1.21\n',
                 'cmd/dotfiles/main.go': CHECKOUTS_ENGINE.replace('LISTED', str(overlays))}
 
-    def run_git(self, repo, *args):
-        return subprocess.run(['git', '-C', str(repo), *args], env=self.env, check=True,
-                              capture_output=True, text=True).stdout.strip()
-
-    def commit(self, repo, files, message):
-        for name, text in files.items():
-            (repo / name).parent.mkdir(parents=True, exist_ok=True)
-            (repo / name).write_text(text)
-        self.run_git(repo, 'add', *files)
-        self.run_git(repo, 'commit', '-q', '-m', message)
-
-    def with_origin(self, repo):
-        origin = self.path / f'{repo.name}.git'
-        self.run_git(self.path, 'init', '-q', '--bare', '-b', 'master', str(origin))
-        self.run_git(repo, 'remote', 'add', 'origin', str(origin))
-        self.run_git(repo, 'push', '-q', '-u', 'origin', 'master')
-
-    def incoming(self, repo, files, message):
-        """Another machine publishes MESSAGE to REPO's origin, which REPO has fetched but not merged."""
-        self.commit(repo, files, message)
-        self.run_git(repo, 'push', '-q', 'origin', 'master')
-        self.run_git(repo, 'reset', '-q', '--hard', 'HEAD~1')
-        return self.run_git(repo, 'rev-parse', 'origin/master')
-
     def sync(self):
         return self.bash('sync_checkouts', timeout=120)
 
@@ -1310,6 +1333,125 @@ class SyncCheckouts(SignedRepo):
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertEqual(self.run_git(self.overlays[1], 'rev-parse', 'HEAD'), self.overlay_upstream[1])
         self.assertEqual(p.stdout.count('INFO: Syncing personal'), 1, 'each overlay is synced once per run')
+
+
+def feature(id):
+    return {f'features/{id}/feature.toml': f'id = "{id}"\ndescription = "{id}"\ncategory = "tools"\n'}
+
+
+def enabling(*ids):
+    return '[features]\nenable = [' + ', '.join(f'"{id}"' for id in ids) + ']\n'
+
+
+@unittest.skipUnless(shutil.which('go'), 'Go required to build the engine')
+class SyncOverlayGate(Checkouts):
+    """The real engine in a dotfiles checkout of its own, and one overlay: an overlay
+    commit merges only when the dotfiles the run leaves on disk plan machine.toml with it,
+    so apply, doctor and check keep working."""
+
+    def setUp(self):
+        super().setUp()
+        home = Path(self.env['HOME'])
+        self.overlay = home / '.dotfiles-overlays/personal'
+        self.engine = home / '.local/bin/dotfiles'
+        self.machine = home / '.config/dotfiles/machine.toml'
+        go = {name: subprocess.run(['go', 'env', name], capture_output=True, text=True, check=True).stdout.strip()
+              for name in ('GOCACHE', 'GOMODCACHE')}
+        self.env.pop('XDG_CONFIG_HOME', None)
+        self.env.update(DOTFILES_DIR=str(self.repo), DOTFILES_BIN=str(self.engine),
+                        DOTFILES_SYSTEM_ROOT=str(self.path / 'system'), **go)
+        self.machine.parent.mkdir(parents=True)
+        self.machine.write_text('overlays = ["personal"]\nprofiles = ["base", "personal"]\n')
+        (self.repo / 'logs').mkdir()
+        sources = ('go.mod', 'go.sum', 'cmd', 'internal')
+        for name in sources:
+            if (ROOT / name).is_dir():
+                shutil.copytree(ROOT / name, self.repo / name)
+            else:
+                shutil.copy2(ROOT / name, self.repo / name)
+        self.run_git(self.repo, 'add', *sources)
+        self.commit(self.repo, {**feature('tool.one'), 'profiles/base.toml': enabling('tool.one')}, 'engine')
+        self.with_origin(self.repo)
+        self.run_git(self.path, 'init', '-q', '-b', 'master', str(self.overlay))
+        self.configure_signing(self.overlay)
+        self.commit(self.overlay, {'profiles/personal.toml': ''}, 'initial')
+        self.with_origin(self.overlay)
+
+    def sync(self):
+        return self.bash('sync_checkouts', timeout=300)
+
+    def engine_run(self, command):
+        return subprocess.run([str(self.engine), command, '--repo', str(self.repo)], env=self.env,
+                              capture_output=True, text=True, timeout=60)
+
+    def assert_engine_plans(self, features):
+        for command in ('check', 'apply', 'doctor'):
+            p = self.engine_run(command)
+            self.assertEqual(p.returncode, 0, f'{command}: {p.stdout}{p.stderr}')
+        self.assertIn(f'ok: {features} features plan', self.engine_run('check').stdout)
+
+    def test_an_overlay_commit_enabling_a_feature_dotfiles_lacks_waits_until_dotfiles_has_it(self):
+        before = self.head(self.overlay)
+        enables = self.incoming(self.overlay, {'profiles/personal.toml': enabling('tool.example')}, 'tool.example')
+        p = self.bash('build_engine', timeout=300)
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        # Merged as sync merged every overlay before, it leaves nothing that plans.
+        self.run_git(self.overlay, 'merge', '-q', '--ff-only', enables)
+        for command in ('check', 'apply', 'doctor'):
+            p = self.engine_run(command)
+            self.assertEqual(p.returncode, 2, f'{command}: {p.stdout}{p.stderr}')
+            self.assertIn('enables unknown feature "tool.example"', p.stderr)
+        self.run_git(self.overlay, 'reset', '-q', '--hard', before)
+
+        p = self.sync()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.head(self.overlay), before)
+        self.assertIn('enables unknown feature "tool.example"', p.stdout, "the engine's reason is in the log")
+        self.assertIn('Overlay personal stays at its current commit', p.stdout)
+        self.assert_engine_plans(1)
+
+        # The run that brings the feature merges both.
+        upstream = self.incoming(self.repo, feature('tool.example'), 'tool.example')
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((self.head(self.repo), self.head(self.overlay)), (upstream, enables))
+        self.assert_engine_plans(2)
+
+    def test_an_overlay_commit_waits_while_the_dotfiles_merge_it_needs_is_held_back(self):
+        before = self.head(self.overlay)
+        upstream = self.incoming(self.repo, feature('tool.example'), 'tool.example')
+        self.incoming(self.overlay, {'profiles/personal.toml': enabling('tool.example')}, 'tool.example')
+        self.edit('tracked', minutes_ago=0)  # someone is editing dotfiles, so sync leaves it
+        p = self.sync()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('repo changed in the last 30 minutes', p.stdout)
+        self.assertNotEqual(self.head(self.repo), upstream)
+        self.assertEqual(self.head(self.overlay), before)
+        self.assert_engine_plans(1)
+
+    def test_a_feature_renamed_in_dotfiles_and_in_the_overlay_merges_both_in_one_run(self):
+        self.published(self.repo, feature('tool.old'), 'tool.old')
+        self.published(self.overlay, {'profiles/personal.toml': enabling('tool.old')}, 'tool.old')
+        upstream = self.incoming(self.repo, {**feature('tool.new'), 'features/tool.old/feature.toml': None},
+                                 'tool.old is tool.new')
+        renamed = self.incoming(self.overlay, {'profiles/personal.toml': enabling('tool.new')}, 'tool.new')
+        p = self.sync()
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertEqual((self.head(self.repo), self.head(self.overlay)), (upstream, renamed))
+        self.assertIn('only with the overlay commits held back for it', p.stdout)
+        self.assertEqual(p.stdout.count('INFO: Syncing personal'), 2, 'tried again once dotfiles moved')
+        self.assert_engine_plans(2)
+
+    def test_an_overlay_commit_removing_a_feature_this_machine_enables_is_held_back(self):
+        self.published(self.overlay, feature('personal.tool'), 'personal.tool')
+        self.machine.write_text(self.machine.read_text() + '\n[features]\nenable = ["personal.tool"]\n')
+        before = self.head(self.overlay)
+        self.incoming(self.overlay, {'features/personal.tool/feature.toml': None}, 'no personal.tool')
+        p = self.sync()
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertEqual(self.head(self.overlay), before)
+        self.assertIn('unknown feature "personal.tool"', p.stdout)
+        self.assert_engine_plans(2)
 
 
 @unittest.skipUnless(shutil.which('go'), 'Go required to build the engine')
