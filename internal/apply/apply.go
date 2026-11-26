@@ -101,10 +101,11 @@ type Problem struct {
 // Waiting is a change apply leaves for a later run: a LaunchAgent's install
 // until a path it needs exists, its reload or removal while that would stop
 // the job in the middle of a run, a link held while a path that owns its
-// place exists (link_unless_exists), or putting back an app setting while its
-// app is not available.
+// place exists (link_unless_exists), putting back an app setting while its
+// app is not available, or a feature whose check reports it pending until a
+// restart.
 type Waiting struct {
-	Subject string // the LaunchAgent's label, the link's path, or the app setting's <store>:<key>
+	Subject string // the LaunchAgent's label, the link's path, the app setting's <store>:<key>, or the feature's id
 	Reason  string
 }
 

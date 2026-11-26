@@ -1435,6 +1435,44 @@ else:
         self.assertFalse(codex.exists())
         self.assertTrue(claude.exists())
 
+    @unittest.skipUnless(sys.platform == 'darwin', 'Local Network privacy is macOS only')
+    def test_the_local_network_allow_lists_wait_for_apply_sudo_then_for_a_restart(self):
+        self.install_muxy()
+        self.assertEqual(self.dotfiles('init', '--profiles', 'base').returncode, 0)
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '\n[features]\nenable = ["macos.local-network"]\n\n[settings]\n'
+                           '"local_network.ethernet" = "192.0.2.0/24"\n"local_network.wifi" = "198.51.100.0/24"\n')
+        plist = self.system.resolve() / 'Library/Preferences/com.apple.network.local-network.plist'
+
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('problem     macos.local-network: missing: AllowedEthernetLocalNetworkAddresses is empty, '
+                      'want 192.0.2.0/24; AllowedWiFiLocalNetworkAddresses is empty, want 198.51.100.0/24; '
+                      'run `dotfiles apply --sudo`', p.stdout)
+        self.assertFalse(plist.exists())
+
+        # The test's system root is writable, so dotfiles-local-network needs no sudo.
+        p = self.dotfiles('apply', '--sudo')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('hook        macos.local-network -> missing', p.stdout)
+        self.assertEqual(plistlib.loads(plist.read_bytes()), {'AllowedEthernetLocalNetworkAddresses': ['192.0.2.0/24'],
+                                                              'AllowedWiFiLocalNetworkAddresses': ['198.51.100.0/24']})
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertIn('waiting     macos.local-network: restart this Mac', doctor.stdout)
+        self.assertEqual(self.dotfiles('apply').returncode, 0, 'a pending restart is not a problem')
+
+        self.env['DOTFILES_BOOT_TIME'] = str(int(plist.stat().st_mtime) + 1)  # the Mac has restarted
+        doctor = self.dotfiles('doctor')
+        self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
+        self.assertNotIn('macos.local-network', doctor.stdout)
+
+        machine.write_text(machine.read_text().replace('enable = ["macos.local-network"]', 'enable = []'))
+        p = self.dotfiles('apply', '--sudo')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('teardown    macos.local-network -> hooks.teardown', p.stdout)
+        self.assertEqual(plistlib.loads(plist.read_bytes()), {})
+
     def test_doctor_reports_an_xdg_config_home_it_does_not_install_into(self):
         self.converge('base')
         self.env['XDG_CONFIG_HOME'] = str(self.path / 'elsewhere')
@@ -2432,6 +2470,104 @@ class DotfilesAgents(Fixture):
         self.assertEqual(p.returncode, 0, p.stderr)
         self.assertFalse(self.claude.exists())
         self.assertFalse(self.codex.exists())
+
+
+@unittest.skipUnless(sys.platform == 'darwin', 'Local Network privacy is macOS only')
+class LocalNetwork(Fixture):
+    """bin/dotfiles-local-network against a system root of the test's own."""
+
+    def setUp(self):
+        super().setUp()
+        root = self.path / 'root'
+        (root / 'Library/Preferences').mkdir(parents=True)
+        self.plist = root.resolve() / 'Library/Preferences/com.apple.network.local-network.plist'
+        self.env.update(DOTFILES_SYSTEM_ROOT=str(root), DOTFILES_MACOS_VERSION='27.2.1',
+                        DOTFILES_LOCAL_NETWORK_ETHERNET='192.0.2.0/24 2001:db8::/32',
+                        DOTFILES_LOCAL_NETWORK_WIFI='198.51.100.0/24')
+        self.env.pop('DOTFILES_BOOT_TIME', None)
+
+    def tool(self, *args):
+        return subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-local-network'), *args], cwd=self.path,
+                              env=self.env, capture_output=True, text=True, timeout=20)
+
+    def check(self):
+        p = self.tool('check', '--json')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        return json.loads(p.stdout)
+
+    def domain(self):
+        return plistlib.loads(self.plist.read_bytes())
+
+    def write(self, *args):
+        subprocess.run(['defaults', 'write', str(self.plist.with_suffix('')), *args], check=True, timeout=20)
+
+    def booted(self, after_the_write):
+        written = int(self.plist.stat().st_mtime)
+        self.env['DOTFILES_BOOT_TIME'] = str(written + 1 if after_the_write else written - 1)
+
+    def test_install_writes_both_lists_which_wait_for_a_restart(self):
+        self.assertEqual(self.check(), {'state': 'missing', 'detail':
+            'AllowedEthernetLocalNetworkAddresses is empty, want 192.0.2.0/24 2001:db8::/32; '
+            'AllowedWiFiLocalNetworkAddresses is empty, want 198.51.100.0/24'})
+        p = self.tool('install')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('restart this Mac', p.stderr)
+        self.assertEqual(self.domain(), {'AllowedEthernetLocalNetworkAddresses': ['192.0.2.0/24', '2001:db8::/32'],
+                                         'AllowedWiFiLocalNetworkAddresses': ['198.51.100.0/24']})
+        self.booted(after_the_write=False)
+        self.assertEqual(self.check()['state'], 'pending', 'written after the last boot, so not in effect yet')
+        self.booted(after_the_write=True)
+        self.assertEqual(self.check(), {'state': 'ok', 'detail': ''})
+        again = self.tool('install')
+        self.assertEqual((again.returncode, again.stdout, again.stderr), (0, '', ''), 'nothing to write')
+
+    def test_install_replaces_what_the_lists_hold_and_keeps_other_keys(self):
+        self.write('AllowedEthernetLocalNetworkAddresses', '-array', '10.0.0.0/8')
+        self.write('AllowedWiFiLocalNetworkAddresses', '-string', '198.51.100.0/24')
+        self.write('Unrelated', '-string', 'kept')
+        self.assertEqual(self.check(), {'state': 'drift', 'detail':
+            'AllowedEthernetLocalNetworkAddresses holds 10.0.0.0/8, want 192.0.2.0/24 2001:db8::/32; '
+            'AllowedWiFiLocalNetworkAddresses holds <a string, not a list>, want 198.51.100.0/24'})
+        self.assertEqual(self.tool('install').returncode, 0)
+        self.assertEqual(self.domain(), {'AllowedEthernetLocalNetworkAddresses': ['192.0.2.0/24', '2001:db8::/32'],
+                                         'AllowedWiFiLocalNetworkAddresses': ['198.51.100.0/24'],
+                                         'Unrelated': 'kept'})
+
+    def test_an_empty_setting_is_an_empty_list(self):
+        self.write('AllowedWiFiLocalNetworkAddresses', '-array', '198.51.100.0/24')
+        self.env['DOTFILES_LOCAL_NETWORK_WIFI'] = ''
+        self.assertEqual(self.tool('install').returncode, 0)
+        self.assertEqual(self.domain()['AllowedWiFiLocalNetworkAddresses'], [])
+        self.booted(after_the_write=True)
+        self.assertEqual(self.check()['state'], 'ok')
+
+    def test_refuses_a_setting_that_is_not_a_network(self):
+        for value in ('198.51.100.1/24', '198.51.100.0/33', '0.0.0.0/0', '256.0.0.0/8', '198.51.100.0', 'lan'):
+            with self.subTest(value):
+                self.env['DOTFILES_LOCAL_NETWORK_WIFI'] = value
+                self.assertEqual(self.check(), {'state': 'error', 'detail':
+                    f'setting local_network.wifi: {value} is not a network in CIDR form '
+                    '(an address with no host bits, prefix 1 or longer)'})
+                p = self.tool('install')
+                self.assertEqual(p.returncode, 65, p.stderr)
+                self.assertFalse(self.plist.exists(), 'nothing is written')
+
+    def test_needs_macos_15_5(self):
+        self.env['DOTFILES_MACOS_VERSION'] = '15.4.1'
+        self.assertEqual(self.check(), {'state': 'error', 'detail': 'macOS 15.4.1 ignores the allow-lists; they need 15.5 or later'})
+        self.assertEqual(self.tool('install').returncode, 69)
+        self.env['DOTFILES_MACOS_VERSION'] = '15.5'
+        self.assertEqual(self.check()['state'], 'missing')
+
+    def test_uninstall_deletes_both_lists_and_keeps_other_keys(self):
+        self.assertEqual(self.tool('install').returncode, 0)
+        self.write('Unrelated', '-string', 'kept')
+        p = self.tool('uninstall')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertIn('restart this Mac', p.stderr)
+        self.assertEqual(self.domain(), {'Unrelated': 'kept'})
+        again = self.tool('uninstall')
+        self.assertEqual((again.returncode, again.stdout, again.stderr), (0, '', ''))
 
 
 class ClaudeLaunchers(Fixture):

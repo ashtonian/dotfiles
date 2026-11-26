@@ -1,0 +1,3 @@
+#!/bin/sh
+# hooks.apply: write the allow-lists; dotfiles-local-network asks for sudo.
+exec "$DOTFILES_DIR/bin/dotfiles-local-network" install

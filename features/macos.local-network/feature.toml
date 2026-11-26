@@ -1,0 +1,28 @@
+id = "macos.local-network"
+description = "Local Network privacy allow-lists for the networks this Mac administers, so no tool needs its own grant (docs/LOCAL-NETWORK.md)"
+category = "macos"
+platforms = ["darwin"]
+
+# The allow-lists are a system domain, so an administrator writes them: every
+# apply and doctor runs the check, and `dotfiles apply --sudo` writes the lists
+# when it reports anything but ok or pending. bin/dotfiles-local-network does
+# the work; the teardown deletes both lists.
+[hooks]
+apply = "hooks/install"
+teardown = "hooks/uninstall"
+sudo = true
+
+[check]
+script = "hooks/check"
+
+[settings."local_network.ethernet"]
+type = "string"
+default = ""
+env = "DOTFILES_LOCAL_NETWORK_ETHERNET"
+doc = "Space-separated CIDR networks that every program may reach over wired interfaces without a Local Network grant (AllowedEthernetLocalNetworkAddresses). A site's networks, so an overlay profile sets them"
+
+[settings."local_network.wifi"]
+type = "string"
+default = ""
+env = "DOTFILES_LOCAL_NETWORK_WIFI"
+doc = "Space-separated CIDR networks that every program may reach over Wi-Fi without a Local Network grant (AllowedWiFiLocalNetworkAddresses). A site's networks, so an overlay profile sets them"
