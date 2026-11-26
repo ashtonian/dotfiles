@@ -23,8 +23,9 @@
 #
 # Claude Code, Codex and OpenCode export OTLP to 127.0.0.1:4318 (HTTP) or :4317
 # (gRPC). The collector deletes identities and tool content and forwards metrics
-# and log events to the gateway, queueing on disk while it is unreachable. See
-# docs/AGENT-TELEMETRY.md.
+# and log events to the gateway, queueing on disk while it is unreachable. Other
+# features add pipelines as fragments in conf.d beside the config, such as
+# macos.host-metrics's hardware metrics. See docs/AGENT-TELEMETRY.md.
 set -euo pipefail
 
 # One pinned release of the contrib distribution (for file_storage) and the
@@ -41,6 +42,7 @@ home=${OTEL_AGENT_HOME:-$HOME/.local/share/otel-agent}                     # gat
 state=${OTEL_AGENT_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/otel-agent} # disk queue, serving stamp
 libexec=${OTEL_AGENT_LIBEXEC:-$HOME/.local/libexec/otelcol}
 config=${OTEL_AGENT_CONFIG:-$HOME/.config/otel-agent/config.yaml}
+fragments=${config:h}/conf.d
 case $(uname -m) in
 	arm64) platform=darwin_arm64 ;;
 	x86_64) platform=darwin_amd64 ;;
@@ -124,11 +126,21 @@ install_release() {
 	done
 }
 
+# config_files prints the files the collector reads, one per line: the config,
+# then each fragment in conf.d by name. The collector merges them in that
+# order: a fragment adds components and pipelines, and replaces a list it names.
+config_files() {
+	print -r -- $config
+	print -rl -- $fragments/*.yaml(N)
+}
+
 # fingerprint identifies what a collector starts from: the pinned release, its
-# config and this script. serve records it and converge restarts the collector
-# when it no longer matches. dotfiles apply restarts it when its plist changes.
+# config files and this script. serve records it and converge restarts the
+# collector when it no longer matches, so a fragment a feature adds or removes
+# takes effect at the next sync. dotfiles apply restarts it when its plist changes.
 fingerprint() {
-	{ print -r -- $OTELCOL_VERSION; cat $config $self } | shasum -a 256 | cut -d' ' -f1
+	local -a files=("${(@f)$(config_files)}")
+	{ print -r -- $OTELCOL_VERSION; print -rl -- $files; cat $files $self } | shasum -a 256 | cut -d' ' -f1
 }
 
 agent_loaded() {
@@ -241,7 +253,12 @@ cmd_serve() {
 	local -a backups=($queue/*.backup(N.om))
 	(( $#backups <= 1 )) || rm -f $backups[2,-1]
 	fingerprint >$state/serving
-	exec $otelcol --config=$config
+	local -a args=()
+	local file
+	for file in "${(@f)$(config_files)}"; do
+		args+=(--config=$file)
+	done
+	exec $otelcol $args
 }
 
 cmd_status() {
@@ -264,25 +281,27 @@ cmd_status() {
 	else
 		print "queue:     empty ($queue)"
 	fi
+	local -a added=($fragments/*.yaml(N:t))
+	(( ! $#added )) || print "fragments: ${(j:, :)added}"
 	local problem
 	problem=$(config_problem)
 	[[ -z $problem ]] || print "problem:   $problem"
 	if curl -fsS -m 2 $health_url >/dev/null 2>&1; then print "health:    ok"; else print "health:    unreachable"; fi
 	local metrics
 	metrics=$(curl -fsS -m 2 $metrics_url 2>/dev/null) || return 0
-	# Totals since the collector started, summed over exporters; the queue per
-	# signal, in bytes, against its capacity.
+	# Totals since the collector started, summed over exporters; each
+	# exporter's queue, in bytes, against its capacity.
 	print -r -- $metrics | awk '
 		/^otelcol_(receiver_accepted|receiver_refused|exporter_sent|exporter_send_failed|exporter_enqueue_failed)_/ {
 			name = $1; sub(/\{.*/, "", name); total[name] += $NF
 		}
 		/^otelcol_exporter_queue_(size|capacity)\{/ {
-			signal = $1; sub(/.*data_type="/, "", signal); sub(/".*/, "", signal)
-			if ($1 ~ /_size\{/) size[signal] += $NF; else capacity[signal] += $NF
+			exporter = $1; sub(/.*exporter="/, "", exporter); sub(/".*/, "", exporter)
+			if ($1 ~ /_size\{/) size[exporter] += $NF; else capacity[exporter] += $NF
 		}
 		END {
 			for (name in total) printf "  %-48s %d\n", name, total[name]
-			for (signal in capacity) printf "  %-48s %.1f of %d MiB\n", "queue " signal, size[signal] / 1048576, capacity[signal] / 1048576
+			for (exporter in capacity) printf "  %-48s %.1f of %d MiB\n", "queue " exporter, size[exporter] / 1048576, capacity[exporter] / 1048576
 		}' | sort
 }
 

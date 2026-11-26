@@ -1,0 +1,43 @@
+# This Mac's hardware metrics (the macos.host-metrics feature,
+# docs/HOST-METRICS.md): bin/otel-agent hands the collector every conf.d file
+# after config.yaml, and maps merge, so this adds one receiver and one
+# pipeline. The pipeline sends through config.yaml's otlp_http/host exporter,
+# whose queue is its own: a backlog of host metrics never fills the agents'.
+#
+# Both exporters listen on 127.0.0.1 at ports from the feature's settings. The
+# entry points in bin/host-metrics publish them as file_sd target lists; a list
+# that does not exist (an exporter not installed yet) is no target and no error.
+receivers:
+  prometheus/host:
+    config:
+      global:
+        scrape_interval: 60s
+        scrape_timeout: 20s
+      scrape_configs:
+        - job_name: mac-node
+          file_sd_configs:
+            - files: ["${env:HOME}/.local/state/host-metrics/targets/node-exporter.json"]
+              refresh_interval: 1m
+          metric_relabel_configs:
+            # Per-collector timings, and interface counters no panel reads.
+            - source_labels: [__name__]
+              regex: 'node_scrape_collector_duration_seconds|node_network_(receive|transmit)_(multicast|colls)_total|node_network_noproto_total'
+              action: drop
+        - job_name: macmon
+          file_sd_configs:
+            - files: ["${env:HOME}/.local/state/host-metrics/targets/macmon.json"]
+              refresh_interval: 1m
+          metric_relabel_configs:
+            # Power, temperatures, fans, pressure and usage. node_exporter has
+            # disk and network rates; macmon_all_power_watts is a deprecated
+            # copy of macmon_chip_power_watts.
+            - source_labels: [__name__]
+              regex: 'macmon_((cpu|gpu|ane|ram|gpu_ram|chip|sys|dcs|dc_in)_power_watts|(cpu|gpu)_temp_celsius|fan_speed_rpm|memory_(pressure_level|pressure_percent|ram_total_bytes|ram_used_bytes|swap_total_bytes|swap_used_bytes)|(cpu|pcpu|ecpu|gpu)_usage_ratio|gpu_freq_mhz)'
+              action: keep
+
+service:
+  pipelines:
+    metrics/host:
+      receivers: [prometheus/host]
+      processors: [memory_limiter, resource/host, batch]
+      exporters: [otlp_http/host]

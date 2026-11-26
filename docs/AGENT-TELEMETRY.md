@@ -21,6 +21,10 @@ with it queued, and delivers it once the gateway answers again. Loki and Mimir
 accept a backlog up to 7 days old. The queues hold about 8 to 9 days of
 studio's volume, so the backends' 7-day window, not the disk, is the bound.
 
+The same collector forwards each Mac's hardware metrics, through a queue of
+their own, when the `macos.host-metrics` feature adds its pipeline
+([HOST-METRICS.md](HOST-METRICS.md)).
+
 What arrives per harness:
 
 | Harness | Configured in | Metrics | Events |
@@ -43,8 +47,9 @@ binary and the config together:
 1. Every sync runs `otel-agent converge` right after `dotfiles apply`. It
    installs the pinned release if it is missing, removes other releases, and
    restarts the collector (`launchctl kickstart -k`) when the release, the
-   config or `bin/otel-agent` differ from what the running collector started
-   from (`serve` records a fingerprint of them in
+   config, the set or content of its `conf.d` fragments, or `bin/otel-agent`
+   differ from what the running collector started from (`serve` records a
+   fingerprint of them in
    `~/.local/state/otel-agent/serving`). A changed LaunchAgent template needs
    no fingerprint: `dotfiles apply` reloads the job itself.
    A Mac that never enrolled is skipped; one enrolled before host names fails
@@ -68,6 +73,7 @@ so macOS asks for the Local Network grant once per release on each Mac.
 | `OTEL_AGENT_STATE` | environment | `$XDG_STATE_HOME/otel-agent`, `~/.local/state/otel-agent` | Runtime state: the disk queue (`queue/`, mode 0700) and the `serving` fingerprint. |
 | `OTEL_AGENT_LIBEXEC` | environment | `~/.local/libexec/otelcol` | Where the pinned collector is installed, one directory per version and platform. |
 | `OTEL_AGENT_CONFIG` | environment | `~/.config/otel-agent/config.yaml` | Collector config (feature `agents.otel-agent`). |
+| Config fragments | `conf.d/*.yaml` beside `OTEL_AGENT_CONFIG` | none | Passed to the collector after the config, in name order, as further `--config` files. The collector merges them: maps merge key by key, a list replaces the one before it. A feature adds a receiver and pipeline this way (`macos.host-metrics`); a fragment must not redefine a pipeline or list another fragment uses. |
 | `OTEL_AGENT_HOST` | environment | unset | Overrides the enrolled host name for `serve`; validated like it. |
 | `OTEL_AGENT_KUBE_CONTEXT` | environment | kubectl's current context | Context `otel-agent enroll` reads the cluster with; `--context` overrides it. |
 | Collector | `bin/otel-agent` | `otelcol-contrib` 0.165.0, `darwin_arm64` or `darwin_amd64` by `uname -m`, SHA-256 pinned per platform | The contrib distribution, for the `file_storage` extension. Its version may differ from the gateway's; OTLP is compatible across them. |
@@ -77,8 +83,9 @@ so macOS asks for the Local Network grant once per release on each Mac.
 | Batch | `config.yaml` `batch` | 5 s or 8,192 items | One queue entry per batch. |
 | Log events queue | `config.yaml` `otlp_http/logs` `sending_queue` | 768 MiB of serialized data (`sizer: bytes`) | About 9 days at studio's rate (~93,000 events a day at ~860 bytes each, ~80 MB a day). |
 | Metric points queue | `config.yaml` `otlp_http/metrics` `sending_queue` | 2 GiB of serialized data (`sizer: bytes`) | About 8 days at studio's rate (~520,000 points a day: Claude Code sums at ~480 bytes, Codex histograms at ~840 bytes, ~270 MB a day). |
+| Hardware metrics queue | `config.yaml` `otlp_http/host` `sending_queue` | 320 MiB of serialized data (`sizer: bytes`) | About 9.5 days at studio's rate (~420,000 points a day at ~84 bytes, ~35 MB a day). The exporter is in no pipeline, so never started and given no queue file, unless `macos.host-metrics` adds its fragment. |
 | Full queue | `config.yaml` | new data dropped, oldest kept | Counted in `otelcol_exporter_enqueue_failed_*`. A batch larger than the room left is dropped whole. |
-| Queue files | `config.yaml` `file_storage/queue` | one bbolt file per exporter in `$OTEL_AGENT_STATE/queue`, `max_size` 3 GiB each | A file holds about 1.3 times its queue's bytes: about 1 GiB (logs) and 2.7 GiB (metrics) when both queues are full, 3.7 GiB in all. `max_size` is the backstop above the larger queue. |
+| Queue files | `config.yaml` `file_storage/queue` | one bbolt file per exporter in `$OTEL_AGENT_STATE/queue`, `max_size` 3 GiB each | A file holds about 1.3 times its queue's bytes: about 1 GiB (logs), 2.7 GiB (metrics) and 420 MiB (hardware) when every queue is full, 4.1 GiB in all. `max_size` is the backstop above the largest queue. |
 | Queue durability | `config.yaml` `file_storage/queue` | `fsync: true`, `recreate: true` | Every write is synced, so a power loss keeps what was accepted. A file that fails to open as corrupt is renamed to `<file>.<time>.backup` and replaced; `serve` keeps only the newest backup. |
 | Queue compaction | `config.yaml` `file_storage/queue` `compaction` | at start, and online once a file that grew past 100 MiB holds under 10 MiB | Returns a drained backlog's space to the disk. |
 | Retry | `config.yaml` `retry_on_failure` | 5 s backing off to 5 min, no time limit | Data waits in the queue until delivered or until a permanent error (see Operations). |
@@ -127,7 +134,7 @@ otel-agent install                       # download + verify the pinned collecto
 otel-agent converge                      # what sync runs after apply: install the pinned release, restart on change
 otel-agent check                         # exit 0 when the collector can start, else print why and exit 78
 otel-agent serve                         # LaunchAgent entry point
-otel-agent status                        # service, collector, host, queue on disk, health, counters, queue per signal
+otel-agent status                        # service, collector, host, fragments, queue on disk, health, counters, queue per exporter
 otel-agent ping                          # send one test event ({service_name="otel-agent"} in Loki)
 ~/.dotfiles/sync.sh otel-agent           # the sync step alone
 ```
@@ -206,10 +213,10 @@ and reloads the collector on the new release.
 
 - **Health:** `otel-agent status`. `exporter_sent_*` should grow with agent
   activity; `exporter_send_failed_*` and `exporter_enqueue_failed_*` should stay
-  at 0, and each signal's queue near 0 MiB while the gateway is reachable.
-- **Queue:** `status` prints the files' size on disk and each signal's queued
+  at 0, and each exporter's queue near 0 MiB while the gateway is reachable.
+- **Queue:** `status` prints the files' size on disk and each exporter's queued
   bytes against its capacity (`otelcol_exporter_queue_size` and
-  `otelcol_exporter_queue_capacity`, both in bytes, by `data_type`). The
+  `otelcol_exporter_queue_capacity`, both in bytes, by `exporter`). The
   queue files are memory-mapped, so a large backlog shows in the process's RSS
   (`otelcol_process_memory_rss`) as file-backed pages the system can reclaim;
   the Go heap (`otelcol_process_runtime_heap_alloc_bytes`) stays small.
@@ -229,7 +236,7 @@ and reloads the collector on the new release.
   start; the stderr log says why. `no host name configured` or `no gateway
   configured`: run `otel-agent enroll HOST`. launchd does not restart a Mac
   that is not enrolled, so the refusal is logged once.
-- *The disk queue is full.* `status` shows a signal's queue at its capacity,
+- *The disk queue is full.* `status` shows an exporter's queue at its capacity,
   `exporter_enqueue_failed_*` grows, and the log shows `Exporting failed.
   Rejecting data.` with `sending queue is full`. New data is dropped and the
   oldest kept. Restore the gateway path (LAN, VPN, the gateway's
@@ -313,7 +320,7 @@ and reloads the collector on the new release.
 | File | Purpose |
 | --- | --- |
 | [bin/otel-agent](../bin/otel-agent) | enroll / configure / install / converge / check / serve / status / ping |
-| [features/agents.otel-agent/home/.config/otel-agent/config.yaml](../features/agents.otel-agent/home/.config/otel-agent/config.yaml) | Collector pipelines, redaction and the disk queue |
+| [features/agents.otel-agent/home/.config/otel-agent/config.yaml](../features/agents.otel-agent/home/.config/otel-agent/config.yaml) | Collector pipelines, redaction and the disk queues, the hardware metrics' included |
 | [features/agents.otel-agent/launchagents/com.ashtonian.otel-agent.plist](../features/agents.otel-agent/launchagents/com.ashtonian.otel-agent.plist) | LaunchAgent, kept alive while the Mac is enrolled |
 | [features/agents.otel-agent/feature.toml](../features/agents.otel-agent/feature.toml) | `dotfiles apply` installs the LaunchAgent once the enrollment files exist, and removes it when they go |
 | [lib_sh/launch-agent.sh](../lib_sh/launch-agent.sh) | `configure` and `install` restart a loaded collector, or run apply to install it |

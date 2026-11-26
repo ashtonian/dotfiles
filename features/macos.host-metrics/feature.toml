@@ -1,0 +1,56 @@
+id = "macos.host-metrics"
+description = "This Mac's power, temperatures, fans, pressure, SSD health and battery, sent to the cluster through otel-agent (docs/HOST-METRICS.md)"
+category = "macos"
+platforms = ["darwin"]
+requires = ["agents.otel-agent"]
+
+[provides]
+# macmon is Apple silicon only; the feature has no Intel support.
+brew = ["node_exporter", "macmon", "smartmontools"]
+link = [".config/otel-agent/conf.d/host-metrics.yaml"]
+
+# Each job waits for its program and for otel-agent's enrollment: without the
+# collector nothing reads what they serve.
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.node-exporter.plist"
+when_exists = ["/opt/homebrew/bin/node_exporter", "~/.local/share/otel-agent/host"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.macmon.plist"
+when_exists = ["/opt/homebrew/bin/macmon", "~/.local/share/otel-agent/host"]
+
+[[provides.launch_agent]]
+plist = "launchagents/com.ashtonian.host-metrics.plist"
+when_exists = ["/opt/homebrew/bin/node_exporter", "/opt/homebrew/bin/smartctl", "~/.local/share/otel-agent/host"]
+
+[settings."host_metrics.node_exporter_port"]
+type = "int"
+default = 9100
+env = "HOST_METRICS_NODE_EXPORTER_PORT"
+doc = "The port node_exporter listens on, on 127.0.0.1 only. Change it on a Mac where something else holds the port; apply restarts the exporter and the collector follows"
+
+[settings."host_metrics.macmon_port"]
+type = "int"
+default = 9101
+env = "HOST_METRICS_MACMON_PORT"
+doc = "The port macmon serve listens on, on 127.0.0.1 only. Change it on a Mac where something else holds the port; apply restarts macmon and the collector follows"
+
+[settings."host_metrics.smart_interval"]
+type = "int"
+default = 300
+env = "HOST_METRICS_SMART_INTERVAL"
+doc = "Seconds between SMART readings of each physical disk (60 to 86400). Wear and write counters move slowly; each reading wakes nothing, since a disk in standby is skipped"
+
+[settings."host_metrics.smartctl_timeout"]
+type = "int"
+default = 60
+env = "HOST_METRICS_SMARTCTL_TIMEOUT"
+doc = "Seconds one disk's smartctl read may take (1 to 300) before it is ended and the disk reported as not answering (exit status 2)"
+
+# A port setting changed: restart the exporter on the new port.
+[hooks]
+apply = "hooks/apply"
+teardown = "hooks/teardown"
+
+[check]
+script = "hooks/check"
