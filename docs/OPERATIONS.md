@@ -11,7 +11,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `DOTFILES_DIR` | Directory path | `~/.dotfiles` | Sync, updater, and the `dotfiles` engine's repository (`--repo`); sync resolves the physical path |
 | `SYNC_DIR` | Directory path | `~/.sync` | Sync's auxiliary repos |
 | `DOTFILES_OVERLAY_DIR` | Directory path | `~/.dotfiles-overlays` | The engine's `--overlay-dir`: one overlay checkout per context, at `<dir>/<overlay>`. Sync asks the engine (`dotfiles overlays`) which to sync, so it never needs this itself |
-| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh`, `bin/otel-agent` and `bin/agent-monitor` run the same path |
+| `DOTFILES_BIN` | File path | `~/.local/bin/dotfiles` | The engine binary sync builds from the checkout (when `go.mod`, `go.sum`, `cmd/` or `internal/` is newer than it) and runs as `dotfiles apply`; `install.sh` and `bin/otel-agent` run the same path |
 | `DOTFILES_LAUNCHCTL` | File path | `/bin/launchctl` | The launchctl the engine runs to load and unload LaunchAgents; tests point it at a stand-in |
 | `DOTFILES_MUXY_APP` | Directory path | unset: `~/Applications/Muxy.app` if it holds the tool, else `/Applications/Muxy.app` | The Muxy app whose `Contents/MacOS/muxy` the engine runs to read and set Muxy settings; when set, the only one tried |
 | `XPC_SERVICE_NAME` | launchd label | set by launchd in a job's processes | The job a `dotfiles apply` runs in. apply never reloads or unloads that job, which would stop the run; a later apply outside it does ([LaunchAgents](#launchagents)) |
@@ -87,9 +87,8 @@ The `dotfiles` engine's flags:
 
 OpenCode's [config tables](../features/agents.opencode/README.md#config) cover its bind
 address, port, gateway files, worker binaries, concurrency, and retention. The
-agent dashboard's are in [AGENT-MONITOR.md](AGENT-MONITOR.md#config), the agent
-telemetry collector's in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config), and
-`muxy-reconcile`'s in [MUXY.md](MUXY.md#config).
+agent telemetry collector's are in [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#config),
+and `muxy-reconcile`'s in [MUXY.md](MUXY.md#config).
 LaunchAgents do not read `~/.zshrc.local`. Set a service's variables in its
 template's `EnvironmentVariables` (`features/<id>/launchagents/`); the next
 `dotfiles apply` writes the plist and reloads the job. apply never overwrites an
@@ -181,8 +180,6 @@ profiles enable without running an installer.
 | `com.ashtonian.gpg-agent` | `tool.gpg-agent` (base) | Service, GUI login only | `/opt/homebrew/bin/gpgconf` |
 | `com.ashtonian.muxy-reconcile` | `tool.muxy` (desktop) | At load, when a server list is added or removed, when apply rewrites its generated files (`muxy.reconcile`, `muxy.exclude_servers`), and hourly | `/Applications/Muxy.app`, `/opt/homebrew/bin/python3` |
 | `com.ashtonian.codex-remote-control` | `agents.codex` (dev) | Service | `/opt/homebrew/bin/codex` |
-| `com.ashtonian.agent-monitor` | `agents.agent-monitor` (dev) | Service, while the data link resolves | `agent-monitor install`'s release |
-| `com.ashtonian.agent-monitor-gate` | `agents.agent-monitor` (dev) | Service | `agent-monitor lan enable`'s token |
 | `com.ashtonian.opencode` | `agents.opencode` (desktop) | Service | opencode, and its `server-password` ([setup](../features/agents.opencode/README.md)) |
 | `com.ashtonian.otel-agent` | `agents.otel-agent` (desktop) | Service, while enrolled | `otel-agent enroll`'s endpoint, token and host |
 
@@ -223,7 +220,6 @@ macOS asks once for some of these jobs; answer on the Mac's screen:
 | `com.ashtonian.gitstead` | Allow `bash` (the gate lock) and `gitstead` to access files on a removable volume, where the Studio and the mini keep their repositories |
 | `com.ashtonian.codex-remote-control` | Full Disk Access for `~/.local/libexec/codex-stable/bin/codex` ([Codex service](#codex-service)) |
 | `com.ashtonian.opencode` | Full Disk Access for `~/.local/libexec/opencode-stable/bin/opencode` |
-| `com.ashtonian.agent-monitor` | Allow node to access the data volume; the gate: allow node to accept incoming connections |
 | `com.ashtonian.otel-agent` | Allow `otelcol-contrib` to find devices on the local network, once per release |
 
 `com.ashtonian.go-cache-trim` runs `bin/go-cache-trim` every hour over
@@ -430,8 +426,7 @@ template sets a soft limit of 65,536. `dotfiles apply` reloads the job when the
 template changes; `kickstart -k` alone keeps the previously loaded settings. If sessions repeatedly
 drop, inspect the log and `launchctl list` for duplicate jobs before removing a
 specific stale job. OpenCode has separate [operations instructions](../features/agents.opencode/README.md#operations),
-and so do the [agent dashboard](AGENT-MONITOR.md#operations) and the
-[telemetry collector](AGENT-TELEMETRY.md#operations).
+and so does the [telemetry collector](AGENT-TELEMETRY.md#operations).
 
 ### gitstead sync
 

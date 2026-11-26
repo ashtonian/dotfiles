@@ -27,7 +27,6 @@ This file maps the checked-in implementation.
 ├── lib_sh/                  # Libraries sourced by Zsh or config.sh
 ├── tests/test_dotfiles.py   # Regression suite
 ├── docs/OPERATIONS.md       # Configuration and operations
-├── docs/AGENT-MONITOR.md    # Local Claude Code / Codex agent dashboard
 ├── docs/AGENT-TELEMETRY.md  # Agent OpenTelemetry to the cluster (otel-agent)
 ├── docs/AGENT-MCP.md        # Per-repository MCP servers through agent-mcp
 ├── docs/SPOTLIGHT.md        # Spotlight privacy exclusions (macos.spotlight)
@@ -58,7 +57,6 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | Feature | Profiles | Platforms | Installs |
 | ------- | -------- | --------- | -------- |
 | `agents.agent-mcp` | dev | darwin, linux | `~/.config/agent-mcp`, `~/.local/bin/agent-mcp`, the credential helpers in `~/.claude/mcp` (`github-headers.sh`, `context7-headers.sh`, `grafana.sh`) |
-| `agents.agent-monitor` | dev | darwin | LaunchAgents `com.ashtonian.agent-monitor` (after `agent-monitor install`), `com.ashtonian.agent-monitor-gate` (after `agent-monitor lan enable`) |
 | `agents.claude` | dev | all | `~/.claude/rules/claude-code.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation` and `agents.rules`; sync installs Claude Code natively where it is on |
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | `~/.codex/AGENTS.md` (a link to `generated/AGENTS.md`); `agent_rules` fragment `codex-rules.md`; LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` and `agents.rules` |
@@ -147,7 +145,7 @@ snippet caches. The weekly updater fast-forwards Zinit core, then runs
 | [iterm2.sh](lib_sh/iterm2.sh) | Terminal titles, badges, Claude/iTerm helpers |
 | [opencode.sh](lib_sh/opencode.sh) | `oc` attaches in $PWD; `ocweb` opens the UI and copies its password |
 | [rotate-log.sh](lib_sh/rotate-log.sh) | `rotate_log`: move an outgrown log aside and keep its newest archives (`sync.sh`, `dotfiles-update.sh`) |
-| [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`, `bin/agent-monitor`) |
+| [launch-agent.sh](lib_sh/launch-agent.sh) | `start_launch_agent`: restart a loaded LaunchAgent, or have `dotfiles apply` install it once its setup step ran (`bin/otel-agent`) |
 | [brew-root.sh](lib_sh/brew-root.sh) | `brew_root_available`, `brew_casks_needing_root`: which Homebrew steps a run without a terminal must leave for one (`sync.sh`, `dotfiles-update.sh`) |
 | [machine-setting.sh](lib_sh/machine-setting.sh) | `machine_setting`: a setting's value as `dotfiles apply` generated it into `env.sh`, for scripts LaunchAgents run (`bin/disk-hygiene`, `dotfiles-update.sh`) |
 | [private-names.sh](lib_sh/private-names.sh) | `private_names_found`: tracked lines that name something on an overlay's `denylist.txt` (`sync.sh`, `bin/check-private-names`) |
@@ -194,8 +192,6 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | [bin/stable-exec](bin/stable-exec) | Refresh a verified Homebrew copy under `~/.local/libexec/<tool>-stable`, then execute it |
 | [bin/codex-app-server](bin/codex-app-server) | Call `stable-exec codex app-server --remote-control` on its own socket; `--print-endpoint` prints it |
 | [bin/opencode-server](bin/opencode-server) | Load local password, then call `stable-exec opencode serve` |
-| [bin/agent-monitor](bin/agent-monitor) | Install the pinned agent dashboard and its hooks; `serve` runs it on loopback, `gate` its LAN gate |
-| [bin/agent-monitor-gate.mjs](bin/agent-monitor-gate.mjs) | Token-checked LAN relay to the loopback dashboard; refuses hook routes |
 | [features/agents.agent-mcp/home/.local/bin/agent-mcp](features/agents.agent-mcp/home/.local/bin/agent-mcp) | Start an MCP server by name with its pinned binary and flags, per harness (Claude Code, Codex) |
 | [bin/otel-agent](bin/otel-agent) | Enroll this Mac with its own gateway token and install the pinned OpenTelemetry Collector (contrib); `serve` forwards agent telemetry to the cluster gateway through a disk queue; `converge` (run by sync), `status`, `ping` |
 | [bin/go-cache-trim](bin/go-cache-trim) | Keep `go env GOCACHE` and each `GO_EXTRA_BUILD_CACHES` cache under `GO_CACHE_TRIM_MAX_GIB` (400): entries unused for `GO_CACHE_TRIM_HOURS` (24), then least recently used; `--dry-run` reports only |
@@ -216,8 +212,6 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | com.dotfiles.update | Friday 09:00 local time; runs `dotfiles-update.sh` directly, as the sync agent does | `logs/update.log`, `/tmp/dotfiles-update.{out,err}` |
 | com.ashtonian.codex-remote-control | Always on; default Unix socket; soft file limit 65,536 | `~/Library/Logs/CodexHomebrew/remote-control.{stdout,stderr}.log` |
 | com.ashtonian.opencode | Always on; HTTP server; default `127.0.0.1:4096` | `~/Library/Logs/opencode/server.{stdout,stderr}.log` |
-| com.ashtonian.agent-monitor | While its data link resolves; HTTP `127.0.0.1:4820` | `~/Library/Logs/agent-monitor/server.{stdout,stderr}.log` |
-| com.ashtonian.agent-monitor-gate | After `agent-monitor lan enable`; HTTP `$AGENT_MONITOR_GATE_HOST:4821` (default `0.0.0.0`), token required | `~/Library/Logs/agent-monitor/gate.{stdout,stderr}.log` |
 | com.ashtonian.otel-agent | Always on while enrolled (`otel-agent enroll`); OTLP `127.0.0.1:4318`/`4317` | `~/Library/Logs/otel-agent/collector.{stdout,stderr}.log` |
 | com.ashtonian.gitstead | Every 15 minutes and at load, through `gate-lock run`, once gitstead and the gate lock are installed | `~/.local/share/gitstead/gitstead.log` |
 | com.ashtonian.go-cache-trim | Every hour and at load, when go is installed | `~/Library/Logs/go-cache-trim/trim.{log,err}` |

@@ -1304,7 +1304,7 @@ sudo $firewall --setstealthmode on
 ok
 
 # Signed apps may accept connections without a prompt; anything unsigned asks
-# first. docs/AGENT-MONITOR.md covers allowing the LAN gate if it is blocked.
+# first.
 running "Allow signed software to receive incoming connections."
 sudo $firewall --setallowsigned on
 sudo $firewall --setallowsignedapp on

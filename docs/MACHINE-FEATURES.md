@@ -506,7 +506,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | --- | --- |
 | shell | `shell.core`, `shell.prompt.dracula`, `shell.plugins.autosuggest`, `shell.plugins.syntax-highlighting`, `shell.plugins.autopair`, `shell.plugins.fzf`, `shell.plugins.you-should-use`, `shell.zoxide`, `shell.atuin`, `shell.direnv`, `shell.mise`, `shell.modern-aliases`, `shell.safety-aliases`, `shell.greeting`, `shell.gitstead` |
 | shell.omz | `shell.omz.git`, `shell.omz.colored-man-pages`, `shell.omz.extract`, `shell.omz.docker-compose`, `shell.omz.terraform`, `shell.omz.golang`, `shell.omz.rsync`, `shell.omz.tmux`, `shell.omz.web-search`, `shell.omz.copyfile`, `shell.omz.encode64`, `shell.omz.gpg-agent` |
-| agents | `agents.claude`, `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.delegation`, `agents.repo-guard`, `agents.opencode`, `agents.agent-monitor`, `agents.agent-mcp`, `agents.otel-agent` |
+| agents | `agents.claude`, `agents.claude.bash`, `agents.claude.telemetry`, `agents.claude.mcp`, `agents.codex`, `agents.codex.bash`, `agents.codex.telemetry`, `agents.delegation`, `agents.repo-guard`, `agents.opencode`, `agents.agent-mcp`, `agents.otel-agent` |
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
 | backup | `backup.mackup`, `backup.mackup.<app>` for each app in Mackup's catalog, including `backup.mackup.macosx` |
@@ -515,7 +515,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |
 | tools | `tool.toggl-focus`, `tool.gitstead`, `tool.go-cache-trim`, `tool.disk-hygiene`, `tool.aws-profile`, `tool.gpg-signing`, `tool.karabiner`, `tool.muxy` |
-| security | `security.listeners-loopback` (opencode binds to loopback; the agent-monitor gate is the only LAN listener, opt-in and token-checked) |
+| security | `security.listeners-loopback` (opencode binds to loopback and the Codex app-server to a Unix socket; no feature listens on the LAN) |
 
 ## Mackup
 
@@ -1116,7 +1116,7 @@ and its status. Decided entries record who decided.
 | D0.2 | Updates and sync run automatically on every machine; a local status page shows feature and automation health | owner |
 | D1 | Role profiles `base`, `dev`, `desktop`, `server` and `work`, plus host profiles that hold only host facts such as volume paths (`studio`). studio runs `base, dev, desktop, studio`; the Mac mini `base, dev, desktop, server`; the work machine `base, dev, work`. Personal-only features are enabled by `desktop`, which the work machine does not use | owner |
 | D2 | Entry points (`~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin`, `~/.bashrc`, `~/.bash_profile`, `~/.gitconfig`, `~/.ssh/config`) are one-line local stubs `apply` creates once; the shared files they load are linked per file under `~/.config` and `~/.ssh` | owner |
-| D4 | No Tailscale. opencode listens on loopback only (`OPENCODE_HOSTNAME` opts in to another address); the agent-monitor gate stays the opt-in LAN listener for the cluster proxy, token-checked, with its address set by `AGENT_MONITOR_GATE_HOST` | owner |
+| D4 | No Tailscale. opencode listens on loopback only (`OPENCODE_HOSTNAME` opts in to another address), and no feature listens on the LAN | owner |
 | D7 | Mackup runs only in copy mode through the engine; link mode is never used, backup never modifies an original, and restore is per app with snapshot and rollback | owner |
 | D8 | Mackup's store is a private git repository with one directory per machine | owner |
 | D10 | Mackup backs up every app it supports wherever the app's files exist; profiles turn off apps a role does not use, and credential files are removed by generated overrides | owner |
