@@ -25,7 +25,7 @@ const checkOutputLimit = 64 << 10
 const hookWaitDelay = 5 * time.Second
 
 // checkStates are the states a check reports; see manifest.Check.
-var checkStates = []string{"ok", "drift", "missing", "error"}
+var checkStates = []string{"ok", "pending", "drift", "missing", "error"}
 
 type checkResult struct {
 	State  string `json:"state"`
@@ -40,9 +40,10 @@ func (c checkResult) String() string {
 }
 
 // hook records h's teardown hook and runs its check. While the check reports
-// anything but ok, the apply hook runs and the check runs again to confirm
-// it; a sudo hook outside `apply --sudo` is reported instead. A hook or check
-// that fails is a problem for the owner, never the end of the run.
+// anything but ok or pending, the apply hook runs and the check runs again to
+// confirm it; a sudo hook outside `apply --sudo` is reported instead. Pending,
+// before or after the hook, waits for the restart its detail names. A hook or
+// check that fails is a problem for the owner, never the end of the run.
 func (r *runner) hook(h plan.Hook) error {
 	if h.Teardown != "" {
 		script, err := os.ReadFile(h.Teardown)
@@ -59,7 +60,11 @@ func (r *runner) hook(h plan.Hook) error {
 	if err != nil {
 		return r.hookFailed(h.Feature, err)
 	}
-	if before.State == "ok" {
+	switch before.State {
+	case "ok":
+		return nil
+	case "pending":
+		r.wait(h.Feature, before.Detail)
 		return nil
 	}
 	switch {
@@ -77,7 +82,11 @@ func (r *runner) hook(h plan.Hook) error {
 		if err != nil {
 			return r.hookFailed(h.Feature, err)
 		}
-		if after.State != "ok" {
+		switch after.State {
+		case "ok":
+		case "pending":
+			r.wait(h.Feature, after.Detail)
+		default:
 			r.problem(h.Feature, "hooks.apply ran, and the check still reports "+after.String())
 			return nil
 		}

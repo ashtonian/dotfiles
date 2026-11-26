@@ -149,7 +149,9 @@ type Hooks struct {
 
 // Check is a script, relative to the feature's directory, that reports the
 // feature's own state without changing anything. It prints one JSON object,
-// {"state": "ok|drift|missing|error", "detail": "..."}, and exits 0.
+// {"state": "ok|pending|drift|missing|error", "detail": "..."}, and exits 0.
+// pending means the state is in place and takes effect after a restart, which
+// the detail names: apply runs no hook for it and lists it as waiting.
 type Check struct {
 	Script string `toml:"script"`
 	// Timeout bounds one run, as a Go duration; DefaultCheckTimeout when empty.

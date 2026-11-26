@@ -199,7 +199,7 @@ sudo     = false              # the hooks need an administrator; they run only f
 timeout  = "5m"               # each hook run; at most 1h
 
 [check]
-script  = ""                  # prints one JSON object: {"state": "ok|drift|missing|error", "detail": "..."}
+script  = ""                  # prints one JSON object: {"state": "ok|pending|drift|missing|error", "detail": "..."}
 timeout = "10s"               # at most 2m
 ```
 
@@ -225,9 +225,15 @@ fails (`dotfiles check` reports it).
   "detail": …}`, with no other fields; `ok` means there is nothing to do. Any
   other exit status, other output, more than 64 KiB, or a run past
   `check.timeout` (10 s) is a problem for the feature.
-- **`hooks.apply`** runs while the check reports anything but `ok`, and the
-  check runs again after it: a result still not `ok` is a problem (`hooks.apply
-  ran, and the check still reports …`). It needs a check, so the engine never
+- **`pending`** means the state is in place and takes effect after a restart,
+  which the detail names, such as a system setting macOS reads at boot. apply
+  runs no hook for it and lists it as waiting (`dotfiles doctor` prints
+  `waiting <feature>: <detail>`), not as a problem; the check reports `ok` once
+  the restart has happened. `macos.local-network` uses it
+  ([LOCAL-NETWORK.md](LOCAL-NETWORK.md)).
+- **`hooks.apply`** runs while the check reports anything but `ok` or
+  `pending`, and the check runs again after it: a result that is neither is a
+  problem (`hooks.apply ran, and the check still reports …`). It needs a check, so the engine never
   runs a hook to find out whether it was needed. A dry run reports `would hook
   <feature> -> <state>: <detail>`; a check without an apply hook reports its
   result as a problem.
@@ -553,7 +559,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
 | backup | `backup.mackup`, `backup.mackup.<app>` for each app in Mackup's catalog, including `backup.mackup.macosx` |
-| macOS | `macos.defaults.finder`, `macos.defaults.dock`, `macos.defaults.keyboard`, `macos.defaults.trackpad`, `macos.defaults.screenshots`, `macos.firewall`, `macos.power.server`, `macos.remote-login`, `macos.spotlight` |
+| macOS | `macos.defaults.finder`, `macos.defaults.dock`, `macos.defaults.keyboard`, `macos.defaults.trackpad`, `macos.defaults.screenshots`, `macos.firewall`, `macos.local-network`, `macos.power.server`, `macos.remote-login`, `macos.spotlight` |
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |

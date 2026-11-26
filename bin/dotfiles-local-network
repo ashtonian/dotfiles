@@ -1,0 +1,267 @@
+#!/usr/bin/env bash
+#===============================================================================
+# dotfiles-local-network - exempt the networks this Mac administers from
+#                          macOS Local Network privacy
+#===============================================================================
+#
+# USAGE:
+#   dotfiles-local-network install         write both allow-lists from the settings (asks for sudo when needed)
+#   dotfiles-local-network check [--json]  compare them with the settings; --json prints the result as a
+#                                          feature check does (dotfiles apply and doctor run it)
+#   dotfiles-local-network uninstall       delete both allow-lists
+#
+# The feature macos.local-network runs these as its hooks (docs/LOCAL-NETWORK.md).
+#
+# Local Network privacy blocks a program's connections to the subnets of the
+# Mac's own interfaces until that program is granted, and macOS records each
+# grant per executable: every upgrade of an ad-hoc signed Homebrew formula is a
+# new program, and a tool that exits right after its failed connection never
+# gets the prompt (FB16131937). Apple's address allow-lists (TN3179, macOS 15.5
+# and later) instead treat every address in the listed networks as not local,
+# for every program: AllowedEthernetLocalNetworkAddresses for wired interfaces,
+# AllowedWiFiLocalNetworkAddresses for Wi-Fi. nesessionmanager reads them with
+# CFPreferencesCopyAppValue, which includes the system-wide domain in
+# /Library/Preferences, so that file is the one written: anyone can read it,
+# and only an administrator can change it. A change takes effect after a
+# restart, which check reports as pending until the Mac has booted since.
+#
+# The feature owns both keys: install replaces what they hold, an empty setting
+# is an empty list, and uninstall deletes them.
+#
+# ENVIRONMENT:
+#   DOTFILES_LOCAL_NETWORK_ETHERNET  space-separated CIDR networks for wired interfaces
+#   DOTFILES_LOCAL_NETWORK_WIFI      space-separated CIDR networks for Wi-Fi
+#   DOTFILES_SYSTEM_ROOT             prefix for the system domain (tests); empty means /
+#   DOTFILES_BOOT_TIME               the last boot, in epoch seconds (tests); read from kern.boottime otherwise
+#   DOTFILES_MACOS_VERSION           the macOS version (tests); read from sw_vers otherwise
+#
+# EXIT STATUS: 0 ok; 1 check found a list that differs or waits for a restart
+# (check --json exits 0 and says so in its result); 64 usage; 65 a setting
+# holds something that is not a network; 69 not macOS 15.5 or later;
+# 74 the domain could not be written.
+set -euo pipefail
+
+# cfprefsd keeps a domain named through a symlink (/var for /private/var) in
+# memory only, so a test root is resolved first.
+root=${DOTFILES_SYSTEM_ROOT:-}
+[[ -z $root ]] || root=$(cd -P -- "$root" && pwd)
+domain="$root/Library/Preferences/com.apple.network.local-network"
+plist="$domain.plist"
+keys=(AllowedEthernetLocalNetworkAddresses AllowedWiFiLocalNetworkAddresses)
+json=0
+
+# json_result <state> <detail>: one feature check result (manifest.Check).
+json_result() {
+    local detail=${2//\\/\\\\}
+    printf '{"state": "%s", "detail": "%s"}\n' "$1" "${detail//\"/\\\"}"
+}
+
+# die <status> <message>. Under check --json the message is the check's error
+# result instead, since the engine reads a result from a check that exits 0.
+die() {
+    if [[ $json == 1 ]]; then
+        json_result error "$2"
+        exit 0
+    fi
+    printf 'dotfiles-local-network: %s\n' "$2" >&2
+    exit "$1"
+}
+
+require_macos() {
+    [[ "$(uname -s)" == Darwin ]] || die 69 "Local Network privacy is macOS's; this is $(uname -s)"
+    local version major minor
+    version=${DOTFILES_MACOS_VERSION:-$(sw_vers -productVersion)}
+    major=${version%%.*}
+    minor=${version#"$major"}
+    minor=${minor#.}
+    minor=${minor%%.*}
+    if (( major < 15 || (major == 15 && ${minor:-0} < 5) )); then
+        die 69 "macOS $version ignores the allow-lists; they need 15.5 or later"
+    fi
+}
+
+setting_of() { # setting_of <key>: the setting that fills it
+    case "$1" in
+        AllowedEthernetLocalNetworkAddresses) printf 'local_network.ethernet' ;;
+        AllowedWiFiLocalNetworkAddresses) printf 'local_network.wifi' ;;
+    esac
+}
+
+wanted_of() { # wanted_of <key>: its setting's value
+    case "$1" in
+        AllowedEthernetLocalNetworkAddresses) printf '%s' "${DOTFILES_LOCAL_NETWORK_ETHERNET:-}" ;;
+        AllowedWiFiLocalNetworkAddresses) printf '%s' "${DOTFILES_LOCAL_NETWORK_WIFI:-}" ;;
+    esac
+}
+
+# valid_network <cidr>: an IPv4 network with no host bits set, or an IPv6
+# prefix. /0 is refused: it would exempt every address on every network.
+valid_network() {
+    local cidr=$1 address prefix
+    [[ $cidr == */* ]] || return 1
+    address=${cidr%/*}
+    prefix=${cidr##*/}
+    [[ $prefix =~ ^[0-9]{1,3}$ ]] || return 1
+    prefix=$((10#$prefix))
+    (( prefix > 0 )) || return 1
+    if [[ $address =~ ^([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})\.([0-9]{1,3})$ ]]; then
+        local octet value=0
+        for octet in "${BASH_REMATCH[@]:1}"; do
+            (( 10#$octet <= 255 )) || return 1
+            value=$(( (value << 8) | 10#$octet ))
+        done
+        (( prefix <= 32 )) || return 1
+        (( (value & ((1 << (32 - prefix)) - 1)) == 0 ))
+        return
+    fi
+    [[ $address == *:* && $address =~ ^[0-9A-Fa-f:]+$ ]] && (( prefix <= 128 ))
+}
+
+# validate_settings: every network in both settings is one valid_network
+# accepts. It runs in the main shell, so die reaches the caller.
+validate_settings() {
+    local key network
+    for key in "${keys[@]}"; do
+        for network in $(wanted_of "$key"); do
+            valid_network "$network" ||
+                die 65 "setting $(setting_of "$key"): $network is not a network in CIDR form (an address with no host bits, prefix 1 or longer)"
+        done
+    done
+}
+
+# networks_of <key>: its setting's networks, one per line.
+networks_of() {
+    local network
+    for network in $(wanted_of "$1"); do printf '%s\n' "$network"; done
+}
+
+# current_of <key>: the networks the domain holds, one per line. An absent key
+# holds none; a value that is not a list of strings is reported as one line
+# that no setting can match.
+current_of() {
+    [[ -f $plist ]] || return 0
+    local type i=0 value
+    type=$(plutil -type "$1" "$plist" 2>/dev/null) || return 0
+    if [[ $type != array ]]; then
+        printf '<a %s, not a list>\n' "$type"
+        return 0
+    fi
+    while value=$(plutil -extract "$1.$i" raw -o - "$plist" 2>/dev/null); do
+        printf '%s\n' "$value"
+        i=$((i + 1))
+    done
+}
+
+boot_time() {
+    if [[ -n ${DOTFILES_BOOT_TIME:-} ]]; then
+        printf '%s' "$DOTFILES_BOOT_TIME"
+        return
+    fi
+    local boot
+    boot=$(sysctl -n kern.boottime)
+    boot=${boot#*sec = }
+    printf '%s' "${boot%%,*}"
+}
+
+# changed_since_boot: the domain was written after the last boot, so the lists
+# in it are not in effect yet.
+changed_since_boot() {
+    [[ -f $plist ]] || return 1
+    (( $(stat -f %m "$plist") > $(boot_time) ))
+}
+
+# as_owner <command...>: run directly when the domain's directory is writable
+# (a test root), otherwise through sudo.
+as_owner() {
+    local dir
+    dir=$(dirname "$plist")
+    while [[ ! -e $dir ]]; do dir=$(dirname "$dir"); done
+    if [[ -w $dir ]]; then "$@"; else sudo "$@"; fi
+}
+
+joined() { # joined <lines>: the lines as one space-separated list
+    local out=""
+    local line
+    while IFS= read -r line; do out+="${out:+ }$line"; done <<< "$1"
+    printf '%s' "$out"
+}
+
+check() {
+    local key wanted current want_text state=ok detail=""
+    for key in "${keys[@]}"; do
+        wanted=$(networks_of "$key")
+        current=$(current_of "$key")
+        [[ $wanted == "$current" ]] && continue
+        if [[ -z $current ]]; then
+            [[ $state == drift ]] || state=missing
+            detail+="${detail:+; }$key is empty, want $(joined "$wanted")"
+        else
+            state=drift
+            want_text=$(joined "$wanted")
+            detail+="${detail:+; }$key holds $(joined "$current"), want ${want_text:-nothing}"
+        fi
+    done
+    if [[ $state == ok ]] && changed_since_boot; then
+        state=pending
+        detail="restart this Mac: the Local Network allow-lists changed after the last boot and are not in effect yet"
+    fi
+    if [[ $json == 1 ]]; then
+        json_result "$state" "$detail"
+        return 0
+    fi
+    printf '%-8s %s\n' "$state" "${detail:-$plist}"
+    [[ $state == ok ]]
+}
+
+install() {
+    local key wanted want_text line changed=0
+    local -a networks
+    for key in "${keys[@]}"; do
+        wanted=$(networks_of "$key")
+        [[ $wanted == "$(current_of "$key")" ]] && continue
+        networks=()
+        [[ -z $wanted ]] || while IFS= read -r line; do networks+=("$line"); done <<< "$wanted"
+        as_owner defaults write "$domain" "$key" -array ${networks[@]+"${networks[@]}"} ||
+            die 74 "could not write $key to $domain"
+        want_text=$(joined "$wanted")
+        printf 'wrote    %s %s\n' "$key" "${want_text:-nothing}"
+        changed=1
+    done
+    if [[ $changed == 1 ]]; then
+        printf 'dotfiles-local-network: restart this Mac to put the allow-lists into effect\n' >&2
+    fi
+}
+
+uninstall() {
+    local key changed=0
+    for key in "${keys[@]}"; do
+        if [[ ! -f $plist ]] || ! plutil -type "$key" "$plist" > /dev/null 2>&1; then continue; fi
+        as_owner defaults delete "$domain" "$key" || die 74 "could not delete $key from $domain"
+        printf 'deleted  %s\n' "$key"
+        changed=1
+    done
+    if [[ $changed == 1 ]]; then
+        printf 'dotfiles-local-network: restart this Mac to take the allow-lists out of effect\n' >&2
+    fi
+}
+
+usage='usage: dotfiles-local-network install|check [--json]|uninstall'
+
+main() {
+    local command=${1:-}
+    shift || true
+    while (( $# )); do
+        case "$1" in
+            --json) [[ $command == check ]] || die 64 "$usage"; json=1 ;;
+            *) die 64 "$usage" ;;
+        esac
+        shift
+    done
+    case "$command" in
+        install | check) require_macos; validate_settings; "$command" ;;
+        uninstall) require_macos; uninstall ;;
+        *) die 64 "$usage" ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,3 @@
+#!/bin/sh
+# hooks.teardown: delete the allow-lists.
+exec "$DOTFILES_DIR/bin/dotfiles-local-network" uninstall

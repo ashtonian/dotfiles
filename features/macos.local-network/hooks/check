@@ -1,0 +1,3 @@
+#!/bin/sh
+# check.script: whether the allow-lists hold the settings, and are in effect.
+exec "$DOTFILES_DIR/bin/dotfiles-local-network" check --json

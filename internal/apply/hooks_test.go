@@ -83,6 +83,39 @@ func TestAHookThatDoesNotConvergeIsAProblem(t *testing.T) {
 	assert.Zero(t, kinds(report)["hook"])
 }
 
+func TestAPendingCheckWaitsForItsRestart(t *testing.T) {
+	m := newMachine(t)
+	m.withConvergingHook("")
+	m.script("features/tool/check.sh", `if [ -f "$HOME/.tool-restarted" ]; then echo '{"state": "ok", "detail": ""}'
+elif [ -f "$HOME/.tool-ok" ]; then echo '{"state": "pending", "detail": "restart this machine"}'
+else echo '{"state": "drift", "detail": "not converged"}'; fi
+`)
+	waiting := func(r *Report) []Waiting {
+		var out []Waiting
+		for _, w := range r.Waiting {
+			if w.Subject == "tool" {
+				out = append(out, w)
+			}
+		}
+		return out
+	}
+
+	first := m.run(false)
+	assert.Empty(t, first.Problems, "a hook whose result waits for a restart has converged")
+	assert.Equal(t, 1, kinds(first)["hook"])
+	assert.Equal(t, []Waiting{{Subject: "tool", Reason: "restart this machine"}}, waiting(first))
+
+	second := m.run(false)
+	assert.Empty(t, second.Problems)
+	assert.Empty(t, second.Actions, "a pending check runs no hook")
+	assert.Equal(t, 1, m.runs(".tool-runs"))
+	assert.Equal(t, []Waiting{{Subject: "tool", Reason: "restart this machine"}}, waiting(second))
+
+	require.NoError(t, os.WriteFile(m.at(".tool-restarted"), nil, 0o644))
+	third := m.run(false)
+	assert.Empty(t, waiting(third), "nothing waits once the check reports ok")
+}
+
 func TestASudoHookRunsOnlyFromApplySudo(t *testing.T) {
 	m := newMachine(t)
 	m.withConvergingHook("sudo = true\n")
