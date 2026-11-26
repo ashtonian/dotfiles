@@ -257,17 +257,17 @@ signing_ready() {
     [[ -n "$name" && -n "$email" && -n "$key" ]] && command -v "$program" >/dev/null
 }
 
-# receive_only REPO_DIR BRANCH HAS_REMOTE: sync a repository that cannot sign.
-# Receiving needs no identity, and a machine whose identity comes from an
+# receive_only REPO_DIR BRANCH HAS_REMOTE [GATE]: sync a repository that cannot
+# sign. Receiving needs no identity, and a machine whose identity comes from an
 # overlay gets it only by receiving that overlay first: a fast-forward brings
 # it, and the apply after the merges installs it. Whatever needs a commit
 # (local edits, local commits, a branch that diverged) waits for the identity
-# and fails the run.
+# and fails the run. GATE is sync_git_repo's.
 receive_only() {
-    local repo_dir="$1" branch="$2" has_remote="$3" result=0
+    local repo_dir="$1" branch="$2" has_remote="$3" gate="${4:-}" result=0
     log "WARN: ${repo_dir##*/} has no signing identity (Git user.name, user.email, user.signingkey and a working gpg.program); receiving only"
     if [[ "$has_remote" == true ]]; then
-        if [[ "$repo_dir" == "$DOTFILES_DIR" ]] && ! upstream_ready "origin/$branch"; then return 1; fi
+        if [[ -n "$gate" ]] && ! "$gate" "$repo_dir" "origin/$branch"; then return "$SYNC_HELD_BACK"; fi
         if ! run_logged git merge --ff-only "origin/$branch"; then
             log "ERROR: ${repo_dir##*/} cannot fast-forward to origin/$branch; merging needs a signing identity"
             result=1
@@ -324,18 +324,66 @@ integrate_remote() {
     fi
 }
 
-# upstream_ready REF: merging REF must leave this machine installable. When REF
-# uses the feature engine, this machine needs its manifest, and REF's own
-# engine has to build here and plan that manifest, before the merge. A merge
-# that brought a layout the engine cannot install would leave every link the
-# current layout made pointing at moved or changed files, with nothing to
-# replace them: no shell config, no git identity for the next sync.
+# sync_git_repo's status when its gate held the incoming merge back: the
+# checkout keeps its commit, and a later run tries again.
+SYNC_HELD_BACK=75
+
+# Overlay checkouts whose incoming commits overlay_ready held back this run,
+# one per line, until sync_overlays tries them again.
+HELD_OVERLAYS=''
+
+# plans_machine ENGINE REPO [DIR REF]...: ENGINE plans machine.toml with REPO's
+# features and the overlays machine.toml lists, each as its checkout is on
+# disk except every DIR given, read as REF's tree. The overlays are laid out in
+# a scratch --overlay-dir, so no checkout moves to be checked. dotfiles check's
+# output is logged only when it cannot plan: on success it lists every app
+# setting, which would fill the log on each run.
+plans_machine() {
+    local engine="$1" repo="$2" view dirs dir output status=0
+    shift 2
+    view=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-overlays.XXXXXX") || return
+    if ! dirs=$("$engine" overlays --machine "$MACHINE_FILE" 2>&1); then
+        output=$dirs
+        status=1
+    fi
+    while [[ $status -eq 0 ]] && IFS= read -r dir; do
+        [[ -z "$dir" ]] || ln -s "$dir" "$view/${dir##*/}" || status=1
+    done <<< "$dirs"
+    while [[ $status -eq 0 && $# -ge 2 ]]; do
+        dir="$view/${1##*/}"
+        if ! { rm -f -- "$dir" && mkdir "$dir" && git -C "$1" archive --format=tar "$2" | tar -x -f - -C "$dir"; }; then
+            output="cannot read $2 from ${1##*/}"
+            status=1
+        fi
+        shift 2
+    done
+    if [[ $status -eq 0 ]]; then
+        output=$("$engine" check --repo "$repo" --machine "$MACHINE_FILE" --overlay-dir "$view" 2>&1) || status=$?
+    fi
+    if [[ $status -ne 0 ]]; then
+        printf '%s\n' "$output" | tee -a "$LOG_FILE"
+    fi
+    rm -rf -- "$view"
+    return "$status"
+}
+
+# upstream_ready DIR REF: merging REF into the dotfiles checkout at DIR must
+# leave this machine installable. When REF uses the feature engine, this
+# machine needs its manifest, and REF's own engine has to build here and plan
+# that manifest, before the merge. A merge that brought a layout the engine
+# cannot install would leave every link the current layout made pointing at
+# moved or changed files, with nothing to replace them: no shell config, no
+# git identity for the next sync. The plan reads the overlays as they are on
+# disk; when that fails and overlay_ready held some back this run, it is tried
+# with their incoming commits too, since a change made in both (a feature
+# renamed in dotfiles and in the profile that enables it) needs both merges.
+# Those overlays follow in this run, once dotfiles has moved.
 upstream_ready() {
-    local ref="$1" profiles tree status=0
-    git cat-file -e "$ref:features" 2>/dev/null || return 0
-    [[ -n "$(git rev-list --max-count=1 "HEAD..$ref")" ]] || return 0
+    local dir="$1" ref="$2" profiles tree overlay incoming held=() status=0
+    git -C "$dir" cat-file -e "$ref:features" 2>/dev/null || return 0
+    [[ -n "$(git -C "$dir" rev-list --max-count=1 "HEAD..$ref")" ]] || return 0
     if [[ ! -f "$MACHINE_FILE" ]]; then
-        profiles=$(git ls-tree --name-only "$ref:profiles" 2>/dev/null | sed 's/\.toml$//' | tr '\n' ' ')
+        profiles=$(git -C "$dir" ls-tree --name-only "$ref:profiles" 2>/dev/null | sed 's/\.toml$//' | tr '\n' ' ')
         log "ERROR: $ref installs machine features and this machine has no $MACHINE_FILE; skipping merge and push until it lists this machine's profiles, such as: profiles = [\"base\", \"dev\"] (available: ${profiles% })"
         return 1
     fi
@@ -344,16 +392,43 @@ upstream_ready() {
         return 1
     fi
     tree=$(mktemp -d "${TMPDIR:-/tmp}/dotfiles-upstream.XXXXXX") || return
-    if git archive --format=tar "$ref" | tar -x -f - -C "$tree" &&
-        (cd "$tree" && run_logged env GOTOOLCHAIN=local go build -trimpath -o "$tree/.dotfiles-check" ./cmd/dotfiles) &&
-        run_logged "$tree/.dotfiles-check" check --repo "$tree" --machine "$MACHINE_FILE"; then
+    if ! { git -C "$dir" archive --format=tar "$ref" | tar -x -f - -C "$tree" &&
+        (cd "$tree" && run_logged env GOTOOLCHAIN=local go build -trimpath -o "$tree/.dotfiles-check" ./cmd/dotfiles); }; then
+        log "ERROR: $ref's engine does not build with this machine's Go (see above); skipping merge and push"
+        rm -rf -- "$tree"
+        return 1
+    fi
+    while IFS= read -r overlay; do
+        [[ -n "$overlay" ]] || continue
+        if incoming=$(git -C "$overlay" rev-parse -q --verify '@{upstream}'); then
+            held+=("$overlay" "$incoming")
+        fi
+    done <<< "$HELD_OVERLAYS"
+    if plans_machine "$tree/.dotfiles-check" "$tree"; then
+        status=0
+    elif [[ ${#held[@]} -gt 0 ]] && plans_machine "$tree/.dotfiles-check" "$tree" "${held[@]}"; then
+        log "INFO: $ref plans $MACHINE_FILE only with the overlay commits held back for it; merging, and those overlays follow"
         status=0
     else
-        log "ERROR: $ref's engine does not build with this machine's Go or cannot plan $MACHINE_FILE (see above); skipping merge and push"
+        log "ERROR: $ref's engine cannot plan $MACHINE_FILE with this machine's overlays (see above); skipping merge and push"
         status=1
     fi
     rm -rf -- "$tree"
     return "$status"
+}
+
+# overlay_ready DIR REF: merging REF into the overlay at DIR must leave this
+# machine installable as well. The engine and features this run leaves on
+# disk (the dotfiles checkout as it is, merged or held back) plan machine.toml
+# with REF's tree in DIR's place. Otherwise the overlay keeps its commit:
+# a commit that enables a feature this checkout of dotfiles lacks waits for
+# dotfiles to have it, and sync_overlays tries it again once dotfiles moves.
+overlay_ready() {
+    local dir="$1" ref="$2"
+    [[ -n "$(git -C "$dir" rev-list --max-count=1 "HEAD..$ref")" ]] || return 0
+    plans_machine "$DOTFILES_BIN" "$DOTFILES_DIR" "$dir" "$ref" && return 0
+    log "INFO: ${dir##*/}'s incoming commits cannot be planned with this checkout of dotfiles (see above); holding them back until dotfiles has synced"
+    return 1
 }
 
 github_repo() {
@@ -388,8 +463,13 @@ verify_github_commits() {
     done <<< "$commits"
 }
 
+# sync_git_repo REPO_DIR [AUTO_RESOLVE] [GATE]: publish the repository's tracked
+# edits and merge its remote. GATE, a function given REPO_DIR and the incoming
+# ref, runs before each merge, so a commit fetched for a retried push is
+# checked too; when it refuses, nothing is merged or pushed and the status is
+# SYNC_HELD_BACK.
 sync_git_repo() (
-    local repo_dir="$1" auto_resolve="${2:-false}" branch changes untracked sha commits repo attempt
+    local repo_dir="$1" auto_resolve="${2:-false}" gate="${3:-}" branch changes untracked sha commits repo attempt
     cd "$repo_dir" || return
     git rev-parse --git-dir >/dev/null 2>&1 || { log "WARN: Not a Git repository: $repo_dir"; return 1; }
     repo_idle || return
@@ -407,7 +487,7 @@ sync_git_repo() (
         run_logged git fetch origin || return
     fi
     if ! signing_ready; then
-        receive_only "$repo_dir" "$branch" "$has_remote"
+        receive_only "$repo_dir" "$branch" "$has_remote" "$gate"
         return
     fi
     changes=$(git status --porcelain --untracked-files=no) || return
@@ -435,8 +515,8 @@ sync_git_repo() (
         log "ERROR: Install gh to verify GitHub commit signatures before publishing"
         return 1
     fi
-    if [[ "$repo_dir" == "$DOTFILES_DIR" ]] && ! upstream_ready "origin/$branch"; then return 1; fi
     for attempt in 1 2 3; do
+        if [[ -n "$gate" ]] && ! "$gate" "$repo_dir" "origin/$branch"; then return "$SYNC_HELD_BACK"; fi
         integrate_remote "$branch" "$auto_resolve" || return
         commits=$(git rev-list "origin/$branch..HEAD") || return
         [[ -n "$commits" ]] || return 0
@@ -463,43 +543,72 @@ sync_auxiliary_repos() {
     done
     return "$result"
 }
-sync_dotfiles() { sync_git_repo "$DOTFILES_DIR"; }
+sync_dotfiles() { sync_git_repo "$DOTFILES_DIR" false upstream_ready; }
 
 # The overlay checkouts this run has handled, one per line.
 SYNCED_OVERLAYS=''
 
+# in_list LIST ENTRY: ENTRY is one of LIST's lines.
+in_list() { [[ $'\n'"$1" == *$'\n'"$2"$'\n'* ]]; }
+
 # sync_overlays: bring each overlay machine.toml lists (one private checkout per
 # context this machine belongs to) up to date before apply reads it. The engine
 # names them, so where overlays live is decided in one place. Each is handled
-# once per run, however often the overlays are listed.
+# once per run, however often the overlays are listed, except one whose
+# incoming commits overlay_ready held back: the next listing tries it again
+# (sync_checkouts lists them again once dotfiles has moved). HELD_OVERLAYS
+# names the overlays this listing held back.
 sync_overlays() {
-    local dirs dir result=0
+    local dirs dir status retry=$HELD_OVERLAYS result=0
     [[ -f "$MACHINE_FILE" ]] || return 0
     build_engine || return
     if ! dirs=$("$DOTFILES_BIN" overlays --machine "$MACHINE_FILE"); then
         log "ERROR: Cannot list the overlays in $MACHINE_FILE"
         return 1
     fi
+    HELD_OVERLAYS=''
     while IFS= read -r dir; do
         [[ -n "$dir" ]] || continue
-        if [[ $'\n'"$SYNCED_OVERLAYS" == *$'\n'"$dir"$'\n'* ]]; then continue; fi
-        SYNCED_OVERLAYS+="$dir"$'\n'
+        if in_list "$SYNCED_OVERLAYS" "$dir"; then
+            in_list "$retry" "$dir" || continue
+        else
+            SYNCED_OVERLAYS+="$dir"$'\n'
+        fi
         if [[ ! -d "$dir/.git" && ! -f "$dir/.git" ]]; then
             log "ERROR: $MACHINE_FILE lists overlay ${dir##*/}, which is not cloned at $dir; clone its repository there, or remove it from the list"
             result=1
             continue
         fi
-        sync_git_repo "$dir" || result=1
+        status=0
+        sync_git_repo "$dir" false overlay_ready || status=$?
+        if [[ $status -eq $SYNC_HELD_BACK ]]; then
+            HELD_OVERLAYS+="$dir"$'\n'
+        elif [[ $status -ne 0 ]]; then
+            result=1
+        fi
     done <<< "$dirs"
     return "$result"
 }
 
-# sync_checkouts: the overlays, then dotfiles. The check that gates the dotfiles
-# merge plans machine.toml against the overlay checkouts, so they have to be the
-# ones apply will read: checked against the overlays as they were, a feature
-# that only an incoming overlay commit defines holds the merge back, and one an
-# incoming commit removes passes the check and then fails apply. The merged
-# engine can name overlays the earlier one did not, so it lists them again.
+# report_held_overlays: an overlay still held back fails the run, naming it, and
+# the next run tries it again.
+report_held_overlays() {
+    local dir
+    [[ -n "$HELD_OVERLAYS" ]] || return 0
+    while IFS= read -r dir; do
+        [[ -z "$dir" ]] || log "ERROR: Overlay ${dir##*/} stays at its current commit: its incoming commits cannot be planned with this machine's dotfiles (see above); the next sync tries again"
+    done <<< "$HELD_OVERLAYS"
+    return 1
+}
+
+# sync_checkouts: the overlays, then dotfiles, then the overlays again if
+# dotfiles moved, so every merge is planned against what apply will read.
+# An overlay commit merges when the dotfiles on disk plan it (overlay_ready).
+# The dotfiles merge is planned against the overlays as they then are, or with
+# the overlay commits held back for it (upstream_ready). Once dotfiles has
+# moved, the held overlays are tried again, along with any overlay the merged
+# engine names that the earlier one did not. A merge still held back fails the
+# run; the next run tries it again.
 sync_checkouts() {
     local before after status=0
     sync_overlays || status=1
@@ -509,6 +618,7 @@ sync_checkouts() {
     if [[ "$after" != "$before" ]]; then
         sync_overlays || status=1
     fi
+    report_held_overlays || status=1
     return "$status"
 }
 
@@ -638,7 +748,7 @@ run_mode() {
             if [[ $status -eq 0 ]]; then log "INFO: Sync complete"; else log "ERROR: Sync completed with failures"; fi
             ;;
         dotfiles) check_connectivity || return 0; sync_dotfiles || status=$? ;;
-        overlays) check_connectivity || return 0; sync_overlays || status=$? ;;
+        overlays) check_connectivity || return 0; sync_overlays || status=$?; report_held_overlays || status=1 ;;
         repos) check_connectivity || return 0; sync_auxiliary_repos || status=$? ;;
         build) build_engine || status=$? ;;
         apply) apply_features || status=$? ;;
