@@ -1063,6 +1063,12 @@ npx --yes markdownlint-cli2@0.23.3 \
 The [Markdown configuration](.markdownlint.json) permits wide command tables and
 keyboard markup, and keeps table spacing consistent.
 
+CI ([`ci.yml`](.github/workflows/ci.yml)) runs the engine tests on macOS and
+Linux and this suite on macOS, for pushes to `master` and pull requests from
+this repository's own branches. A pull request from a fork runs nothing, and
+its skipped jobs count as passing, so check an outside change by pushing its
+commits to a branch here.
+
 ## Security
 
 This repository is public and auto-pushed. Keep credentials, keys, private host
