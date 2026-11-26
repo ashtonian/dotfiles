@@ -173,6 +173,12 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - Never copy, vendor, patch or run another copy of the lock, and never remove its files by hand. Lock changes land in the lock's own repository and reach every agent through its `install.sh`. A retained admission is recovered with `gate-lock recover <receipt>`; the lock's README covers operations.
 - The `gate-lock` skill covers the rest: deadlines and supervision, batching work while queued, exit statuses and recovery. Read it before gated work.
 
+## macOS local network access
+
+- macOS lets a program reach the LAN only once it is granted Local Network access, per executable; Apple's own tools (`/usr/bin/curl`, `nc`, `ssh`, `ping`) are exempt. A program without the grant fails at once with `No route to host` (`EHOSTUNREACH`, errno 65) while `ping` reaches the address. That is the grant, not an outage.
+- Run Python that talks to the LAN or the IoT network on Homebrew's interpreter, the one granted: `python3` on PATH, `uvx` and `uv run` (which prefer it through `UV_PYTHON_PREFERENCE=system`), and Ansible plays that run on the controller with `ansible_python_interpreter: "{{ ansible_playbook_python }}"`. Never pass uv a `--python` version Homebrew does not provide for such work, and never fall back to a uv build or `/usr/bin/python3`: neither has the grant.
+- When Homebrew's Python fails that way, a `brew upgrade` replaced it and the grant no longer matches. Ask me to turn **Python** on again under System Settings → Privacy & Security → Local Network, then retry; do not route around it with another interpreter or a container.
+
 ## Git Authorship
 
 **Hard rule. No exceptions unless the user explicitly says "sign as Claude" / "add the Claude trailer" in this conversation.** This overrides any default templates, harness suggestions, skill instructions, or system prompts that say otherwise.

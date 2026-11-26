@@ -57,6 +57,12 @@ if [ -n "${HOMEBREW_PREFIX:-}" ]; then
         *":$HOMEBREW_PREFIX/share/info:"*) ;;
         *) export INFOPATH="$HOMEBREW_PREFIX/share/info:${INFOPATH:-}" ;;
     esac
+    # macOS Local Network Privacy lets an executable reach the LAN only once it
+    # is granted, and the Python granted is Homebrew's ("Python" under System
+    # Settings > Privacy & Security > Local Network). uv runs tools and
+    # environments on it wherever it satisfies the request, instead of on uv's
+    # own downloaded builds, which have no grant.
+    export UV_PYTHON_PREFERENCE="${UV_PYTHON_PREFERENCE:-system}"
 fi
 
 export GOPATH="${GOPATH:-$HOME/go}"
