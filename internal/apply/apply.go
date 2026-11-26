@@ -13,6 +13,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"maps"
 	"os"
@@ -65,6 +66,14 @@ type Env struct {
 	// this way before it installs packages, so a job that runs at load does
 	// not start in the middle of the install.
 	LeaveLaunchAgents bool
+	// Sudo runs the hooks that need administrator rights (hooks.sudo), which
+	// an unattended run reports instead. They get HookStdin, the owner's
+	// terminal, for sudo's password prompt.
+	Sudo      bool
+	HookStdin io.Reader
+	// HookOutput receives what hooks print, and checks' standard error.
+	// Discarded when nil.
+	HookOutput io.Writer
 }
 
 // Launchd loads and unloads jobs in the user's launchd GUI domain.
@@ -78,7 +87,7 @@ type Launchd interface {
 
 // Action is one change apply makes, or would make in a dry run.
 type Action struct {
-	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref (Forget), adopt, agent, update-agent, load, reload, unload, remove-agent
+	Kind   string // link, relink, unlink, copy, update-copy, remove-copy, write, remove, stub, unfold, move-home, retire, pref, update-pref, restore-pref, forget-pref (Forget), adopt, agent, update-agent, load, reload, unload, remove-agent, hook, teardown
 	Path   string
 	Detail string
 }
@@ -196,10 +205,15 @@ func Run(ctx context.Context, p *plan.Plan, prev *State, env Env, dryRun bool) (
 		func() error { return eachItem(r, p.Prefs, r.pref) },
 		func() error { return eachItem(r, p.Retire, r.retire) },
 		r.rescueStowTree,
+		// After what the features install, which a hook may use, and before
+		// their LaunchAgents start.
+		func() error { return eachItem(r, p.Hooks, r.hook) },
 		agents,
 		func() error { return r.teardown(p) },
 		func() error { return r.teardownPrefs(p) },
 		teardownAgents,
+		// Once a removed feature's jobs have stopped.
+		func() error { return r.teardownHooks(p) },
 	}
 	for _, step := range steps {
 		if err := step(); err != nil {

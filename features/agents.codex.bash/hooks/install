@@ -1,0 +1,3 @@
+#!/bin/sh
+# hooks.apply: write the file; dotfiles-agents asks for sudo when it must.
+exec "$DOTFILES_DIR/bin/dotfiles-agents" install codex

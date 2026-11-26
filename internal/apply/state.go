@@ -12,9 +12,9 @@ import (
 )
 
 // stateVersion is the state file format this build writes. Version 2 added
-// prefs; a build that knows only version 1 refuses a version 2 file rather
-// than save over it without them.
-const stateVersion = 2
+// prefs and version 3 teardowns; a build refuses a newer file rather than
+// save over it without what it does not know.
+const stateVersion = 3
 
 // State records what apply installed, so a later run can tell its own files
 // from the user's and remove exactly what it added when a feature goes away.
@@ -33,6 +33,18 @@ type State struct {
 	Prefs map[string]PrefRecord `json:"prefs"`
 	// Agents maps each LaunchAgent label apply installed to its plist.
 	Agents map[string]AgentRecord `json:"agents"`
+	// Teardowns maps each enabled feature with a teardown hook to a copy of
+	// it, which runs once the feature is no longer enabled, even if it is gone
+	// from the repository by then.
+	Teardowns map[string]TeardownRecord `json:"teardowns"`
+}
+
+// TeardownRecord is a feature's teardown hook as apply last planned it.
+type TeardownRecord struct {
+	Script         []byte   `json:"script"` // the script's contents
+	Sudo           bool     `json:"sudo,omitempty"`
+	TimeoutSeconds int64    `json:"timeout_seconds"`
+	Env            []string `json:"env,omitempty"`
 }
 
 // AgentRecord is an installed LaunchAgent: its plist, the hash apply wrote it
@@ -82,6 +94,7 @@ func newState() *State {
 		Stubs:     map[string]bool{},
 		Prefs:     map[string]PrefRecord{},
 		Agents:    map[string]AgentRecord{},
+		Teardowns: map[string]TeardownRecord{},
 	}
 }
 
@@ -100,11 +113,12 @@ func (s *State) overlay(o *State) {
 	maps.Copy(s.Stubs, o.Stubs)
 	maps.Copy(s.Prefs, o.Prefs)
 	maps.Copy(s.Agents, o.Agents)
+	maps.Copy(s.Teardowns, o.Teardowns)
 }
 
 // LoadState reads the state file; a missing file is a machine apply has
 // never touched. A version 1 file, from before app settings existed, has no
-// prefs, which reads as none set. A file from a newer build is refused: saving
+// prefs, which reads as none set; one before version 3 has no teardowns. A file from a newer build is refused: saving
 // over it would drop what this build does not know.
 func LoadState(path string) (*State, error) {
 	data, err := os.ReadFile(path)
@@ -128,6 +142,9 @@ func LoadState(path string) (*State, error) {
 	s.Version = stateVersion
 	if s.Prefs == nil {
 		s.Prefs = map[string]PrefRecord{}
+	}
+	if s.Teardowns == nil {
+		s.Teardowns = map[string]TeardownRecord{}
 	}
 	return s, nil
 }

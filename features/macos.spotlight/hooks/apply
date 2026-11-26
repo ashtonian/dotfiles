@@ -1,0 +1,3 @@
+#!/bin/sh
+# Exclude the configured folders the check found Spotlight still indexing.
+exec "$DOTFILES_DIR/features/macos.spotlight/home/.local/bin/spotlight-exclusions" apply

@@ -1331,12 +1331,28 @@ class RealFeatures(Fixture):
         super().setUp()
         self.home = self.path / 'home'
         self.home.mkdir()
+        if sys.platform == 'darwin':
+            # Every macOS account has one; macos.spotlight's check would
+            # otherwise see the LaunchAgent step create it after the hooks ran.
+            (self.home / 'Library/Logs').mkdir(parents=True)
         self.env.update(HOME=str(self.home), XDG_CONFIG_HOME=str(self.home / '.config'),
                         XDG_STATE_HOME=str(self.home / '.local/state'))
         # Never the Muxy installed on this computer: install_muxy() points
         # here at a stand-in.
         self.env['DOTFILES_MUXY_APP'] = str(self.path / 'no-muxy.app')
         self.muxy_settings = self.path / 'muxy-settings.json'
+        # Nor this computer's Spotlight exclusion list, which macos.spotlight's
+        # hooks read and change.
+        self.env['SPOTLIGHT_EXCLUSIONS_STORE'] = str(self.path / 'spotlight-exclusions.json')
+        # Never this computer's root-owned agent configs either: a system
+        # root of the test's own, set up as `apply --sudo` leaves a Mac.
+        self.system = self.path / 'system'
+        self.env['DOTFILES_SYSTEM_ROOT'] = str(self.system)
+        p = subprocess.run(['/bin/bash', str(ROOT / 'bin/dotfiles-agents'), 'install'], env=self.env,
+                           capture_output=True, text=True, timeout=60)
+        if p.returncode == 69:
+            self.skipTest('bash 4 or later required by dotfiles-agents')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
 
     def install_muxy(self):
         """A stand-in for Muxy under the fresh home's ~/Applications, where the
@@ -1381,6 +1397,44 @@ else:
         self.assertEqual(doctor.returncode, 0, doctor.stdout + doctor.stderr)
         return (self.home / '.config/dotfiles/generated/Brewfile').read_text()
 
+    def test_root_configs_wait_for_apply_sudo_and_the_shell_says_so(self):
+        shutil.rmtree(self.system)  # a Mac before its first `apply --sudo`
+        self.install_muxy()
+        self.assertEqual(self.dotfiles('init', '--profiles', 'base,dev').returncode, 0)
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        claude = self.system / 'Library/Application Support/ClaudeCode/managed-settings.d/50-dotfiles.json'
+        if sys.platform != 'darwin':
+            claude = self.system / 'etc/claude-code/managed-settings.d/50-dotfiles.json'
+        codex = self.system / 'etc/codex/config.toml'
+        self.assertIn(f'problem     agents.claude.bash: missing: {claude} is missing; run `dotfiles apply --sudo`', p.stdout)
+        self.assertIn(f'problem     agents.codex.bash: missing: {codex} is missing; run `dotfiles apply --sudo`', p.stdout)
+        attention = self.home / '.local/state/dotfiles/attention'
+        self.assertEqual(attention.read_text().count('run `dotfiles apply --sudo`'), 2)
+        notice = subprocess.run(['/bin/zsh', '-fc', f'source {ROOT}/features/dotfiles.sync/zshrc.zsh'],
+                                env=self.env, capture_output=True, text=True, timeout=20)
+        self.assertIn('dotfiles: 2 problem(s) need you; the first: agents.claude.bash: missing', notice.stderr)
+
+        # The test's system root is writable, so dotfiles-agents needs no sudo.
+        p = self.dotfiles('apply', '--sudo')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('hook        agents.codex.bash -> missing', p.stdout)
+        self.assertTrue(claude.is_file() and codex.is_file())
+        self.assertFalse(attention.exists(), 'apply removes the notice once nothing needs the owner')
+        self.assertEqual(self.dotfiles('doctor').returncode, 0)
+
+        machine = self.home / '.config/dotfiles/machine.toml'
+        machine.write_text(machine.read_text() + '\n[features]\ndisable = ["agents.codex.bash"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 1, p.stdout + p.stderr)
+        self.assertIn('problem     agents.codex.bash: turned off, and its teardown needs administrator rights; run `dotfiles apply --sudo`', p.stdout)
+        self.assertTrue(codex.exists())
+        p = self.dotfiles('apply', '--sudo')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        self.assertIn('teardown    agents.codex.bash -> hooks.teardown', p.stdout)
+        self.assertFalse(codex.exists())
+        self.assertTrue(claude.exists())
+
     def test_doctor_reports_an_xdg_config_home_it_does_not_install_into(self):
         self.converge('base')
         self.env['XDG_CONFIG_HOME'] = str(self.path / 'elsewhere')
@@ -1389,10 +1443,11 @@ else:
         self.assertIn('problem     XDG_CONFIG_HOME', p.stdout)
 
     def test_apply_refuses_without_a_machine_manifest(self):
+        before = sorted(self.home.rglob('*'))
         p = self.dotfiles('apply')
         self.assertEqual(p.returncode, 2)
         self.assertIn('dotfiles init --profiles', p.stderr)
-        self.assertEqual(list(self.home.iterdir()), [], 'nothing is installed or removed')
+        self.assertEqual(sorted(self.home.rglob('*')), before, 'nothing is installed or removed')
 
     def test_check_plans_this_machine_without_touching_home(self):
         p = self.dotfiles('init', '--profiles', 'base,dev,desktop,server')
@@ -3412,6 +3467,33 @@ class SpotlightExclusions(Fixture):
 
     def test_missing_local_list_leaves_the_shared_list(self):
         self.assertEqual(self.configured('/usr/local\n'), ['/usr/local'])
+
+    def test_the_feature_check_reports_what_apply_would_exclude(self):
+        kept, new = self.path / 'kept', self.path / 'new'
+        kept.mkdir()
+        new.mkdir()
+        self.config(f'{kept}\n{new}\n{self.path / "absent"}\n')
+        store = self.path / 'store.json'
+        store.write_text(json.dumps([str(kept)]))
+        tool = self.FEATURE / 'home/.local/bin/spotlight-exclusions'
+        env = dict(self.env, SPOTLIGHT_EXCLUSIONS_FILE=str(self.path / 'exclusions'),
+                   SPOTLIGHT_EXCLUSIONS_STORE=str(store))
+
+        def check():
+            p = subprocess.run([sys.executable, str(tool), 'check', '--json'], env=env,
+                               capture_output=True, text=True, timeout=30)
+            self.assertEqual(p.returncode, 0, p.stderr)
+            return json.loads(p.stdout)
+
+        if sys.platform != 'darwin':
+            self.skipTest('Spotlight exists only on macOS')
+        self.assertEqual(check(), {'state': 'drift', 'detail': f'Spotlight indexes {new}'})
+        p = subprocess.run([sys.executable, str(tool), 'apply'], env=env, capture_output=True, text=True, timeout=30)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(json.loads(store.read_text()), [str(kept), str(new)])
+        self.assertEqual(check(), {'state': 'ok', 'detail': ''})
+        env['SPOTLIGHT_EXCLUSIONS_FILE'] = str(self.path / 'missing')
+        self.assertEqual(check()['state'], 'error', 'a check that cannot read its list says so, and exits 0')
 
     def fake_mdfind(self, results, status=0):
         """An mdfind on PATH that logs its scope and prints RESULTS (one path per line)."""

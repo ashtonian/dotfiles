@@ -73,6 +73,14 @@ func TestLoadFeaturesRejects(t *testing.T) {
 		{"a hold on a path it does not link", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/b\" = [\"~/.b\"]\n", `link_unless_exists names ".local/bin/b", which is not in link`},
 		{"a hold with no paths", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = []\n", "list the paths that hold it"},
 		{"a relative hold", "a", "id = \"a\"\n[provides]\nlink = [\".local/bin/a\"]\n[provides.link_unless_exists]\n\".local/bin/a\" = [\".local/bin/.a\"]\n", "must be absolute or start with ~/"},
+		{"an apply hook without a check", "a", "id = \"a\"\n[hooks]\napply = \"hooks/apply\"\n", "hooks.apply needs a check.script"},
+		{"sudo with no hooks", "a", "id = \"a\"\n[hooks]\nsudo = true\n[check]\nscript = \"check\"\n", "hooks.sudo marks the apply and teardown hooks"},
+		{"a hook timeout with no hooks", "a", "id = \"a\"\n[hooks]\ntimeout = \"1m\"\n", "hooks.timeout bounds"},
+		{"a check timeout with no check", "a", "id = \"a\"\n[check]\ntimeout = \"1s\"\n", "check.timeout needs a check.script"},
+		{"a check timeout that is not a duration", "a", "id = \"a\"\n[check]\nscript = \"check\"\ntimeout = \"soon\"\n", `check.timeout "soon" must be a duration`},
+		{"a hook timeout past the bound", "a", "id = \"a\"\n[hooks]\nteardown = \"t\"\ntimeout = \"2h\"\n", "at most 1h0m0s"},
+		{"a hook outside the feature", "a", "id = \"a\"\n[hooks]\nteardown = \"../t\"\n", "hooks.teardown: path \"../t\" leaves the feature directory"},
+		{"an unknown hooks key", "a", "id = \"a\"\n[hooks]\nbefore = \"x\"\n", "unknown keys: hooks.before"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

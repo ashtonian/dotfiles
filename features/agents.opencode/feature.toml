@@ -20,3 +20,7 @@ link = [".config/opencode"]
 [[provides.launch_agent]]
 plist = "launchagents/com.ashtonian.opencode.plist"
 when_exists = ["/opt/homebrew/bin/opencode", "~/.local/share/opencode/homelab/server-password"]
+
+# Turning the feature off removes the local setup in README.md here.
+[hooks]
+teardown = "hooks/teardown"

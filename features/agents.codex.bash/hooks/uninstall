@@ -1,0 +1,3 @@
+#!/bin/sh
+# hooks.teardown: remove the file, if dotfiles-agents wrote it.
+exec "$DOTFILES_DIR/bin/dotfiles-agents" uninstall codex

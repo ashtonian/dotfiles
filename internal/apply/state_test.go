@@ -18,6 +18,7 @@ func TestStateFromAnOlderBuildIsReadAndSavedAsThisOnes(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "/r/zshrc", s.Links["/h/.zshrc"])
 	assert.Empty(t, s.Prefs, "a version 1 file set no app settings")
+	assert.NotNil(t, s.Teardowns, "nor recorded a teardown")
 	require.NoError(t, s.Save(path))
 
 	var saved struct{ Version int }
@@ -29,7 +30,7 @@ func TestStateFromAnOlderBuildIsReadAndSavedAsThisOnes(t *testing.T) {
 
 func TestStateFromANewerBuildIsRefused(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "applied.json")
-	newer := []byte(`{"version": 3, "links": {}, "later": {"x": 1}}`)
+	newer := []byte(`{"version": 4, "links": {}, "later": {"x": 1}}`)
 	require.NoError(t, os.WriteFile(path, newer, 0o600))
 
 	_, err := LoadState(path)

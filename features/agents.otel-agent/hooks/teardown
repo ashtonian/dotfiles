@@ -1,0 +1,8 @@
+#!/bin/sh
+# hooks.teardown, once the collector's LaunchAgent is gone: forget the
+# enrollment (gateway URL, token, host name), and remove the disk queue, the
+# downloaded collector and its logs. Standalone: apply runs a copy of it.
+set -eu
+state=${XDG_STATE_HOME:-$HOME/.local/state}
+rm -rf -- "$HOME/.local/share/otel-agent" "$state/otel-agent" \
+	"$HOME/.local/libexec/otelcol" "$HOME/Library/Logs/otel-agent"

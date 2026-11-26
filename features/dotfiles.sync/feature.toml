@@ -3,5 +3,8 @@ description = "Every 4 hours: signed sync of this repository and ~/.sync, dotfil
 category = "dotfiles"
 platforms = ["darwin"]
 
+[provides]
+zshrc = "zshrc.zsh" # the problems the last apply left, in every new terminal
+
 [[provides.launch_agent]]
 plist = "launchagents/com.dotfiles.sync.plist"

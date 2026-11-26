@@ -4,14 +4,18 @@
 // Usage:
 //
 //	dotfiles init --profiles a,b [--force]  write this machine's manifest
-//	dotfiles apply [--dry-run]              install, update and remove what the features say,
-//	                                        LaunchAgents included
+//	dotfiles apply [--dry-run|--sudo]       install, update and remove what the features say,
+//	                                        LaunchAgents and hooks included; --sudo also runs
+//	                                        the hooks that need administrator rights
 //	dotfiles doctor                         report drift and conflicts without changing anything,
 //	                                        and the LaunchAgents waiting for a later run
 //	dotfiles status [--json]                list every feature, whether it is enabled, and why
 //	dotfiles check                          validate the manifests and plan this machine, reading nothing under $HOME
 //	dotfiles adopt [flags] <target>...      make local edits to managed copies (a path) or app
 //	                                        settings (<store>:<key>) the repository's version
+//
+// apply leaves the problems it could not resolve in the state directory's
+// attention file, which dotfiles.sync's zshrc shows in every new terminal.
 //
 // Exit status: 0 done; 1 doctor or apply left problems for the owner; 2 the
 // manifests are invalid or contradict each other, or the machine has none; 64
@@ -27,6 +31,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -40,6 +45,7 @@ import (
 	"time"
 
 	"github.com/ashtonian/dotfiles/internal/apply"
+	"github.com/ashtonian/dotfiles/internal/atomicfile"
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
 	"github.com/ashtonian/dotfiles/internal/plan"
@@ -61,7 +67,7 @@ const (
 
 func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	code := run(ctx, os.Args[1:], os.Stdout, os.Stderr)
+	code := run(ctx, os.Args[1:], os.Stdin, os.Stdout, os.Stderr)
 	stop()
 	os.Exit(code)
 }
@@ -69,6 +75,7 @@ func main() {
 // paths are the locations one run works with.
 type paths struct {
 	home, repo, machine, generated, state, lock string
+	attention                                   string // the problems the last apply left
 	config                                      string // ~/.config
 	overlays                                    string // holds one checkout per overlay, named for it
 }
@@ -81,6 +88,9 @@ type applyOptions struct {
 	launchctlTimeout     time.Duration
 	launchAgents         bool
 	stores               map[string]apply.PrefStore
+	// sudo runs the hooks that need administrator rights, reading stdin.
+	sudo  bool
+	stdin io.Reader
 }
 
 // prefStores builds the store for each app in prefs.Stores.
@@ -91,7 +101,7 @@ func prefStores(home, muxyApp string, appTimeout time.Duration) map[string]apply
 	}
 }
 
-func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
+func run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: dotfiles init|apply|doctor|status|check|overlays|adopt|forget [flags]")
 		return exitUsage
@@ -118,7 +128,12 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	launchctlTimeout := flags.Duration("launchctl-timeout", 30*time.Second, "apply: how long one launchctl call may take")
 	launchAgents := flags.Bool("launch-agents", true, "apply: install, load and remove LaunchAgents; false leaves them as they are")
 	appTimeout := flags.Duration("app-timeout", 15*time.Second, "apply, doctor, adopt: how long one call to an app's settings command may take")
+	sudo := flags.Bool("sudo", false, "apply: also run the hooks that need administrator rights, which ask for your password in this terminal")
 	if err := flags.Parse(args[1:]); err != nil {
+		return exitUsage
+	}
+	if *sudo && (cmd != "apply" || *dryRun) {
+		fmt.Fprintln(stderr, "dotfiles: --sudo runs hooks, so it goes with apply and not with --dry-run")
 		return exitUsage
 	}
 	if cmd != "adopt" && cmd != "forget" && flags.NArg() > 0 {
@@ -139,6 +154,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		generated: filepath.Join(config, "dotfiles", "generated"),
 		state:     filepath.Join(stateHome, "dotfiles", "applied.json"),
 		lock:      filepath.Join(stateHome, "dotfiles", "apply.lock"),
+		attention: filepath.Join(stateHome, "dotfiles", "attention"),
 	}
 	if p.machine == "" {
 		p.machine = filepath.Join(config, "dotfiles", "machine.toml")
@@ -147,7 +163,7 @@ func run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 	stores := prefStores(p.home, os.Getenv("DOTFILES_MUXY_APP"), *appTimeout)
 	opts := applyOptions{dryRun: *dryRun, lockWait: *lockWait, gitTimeout: *gitTimeout,
 		launchctl: envOr("DOTFILES_LAUNCHCTL", "/bin/launchctl"), launchctlTimeout: *launchctlTimeout, launchAgents: *launchAgents,
-		stores: stores}
+		stores: stores, sudo: *sudo, stdin: stdin}
 	switch cmd {
 	case "init":
 		return cmdInit(p, *overlays, *profiles, *force, stdout, stderr)
@@ -274,6 +290,10 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 			Tracked: func(rel string) bool { return tracked[filepath.ToSlash(rel)] }})
 	}
 	env.LeaveLaunchAgents = !opts.launchAgents
+	env.Sudo, env.HookOutput = opts.sudo, stderr
+	if opts.sudo {
+		env.HookStdin = opts.stdin
+	}
 	if runtime.GOOS == "darwin" && opts.launchAgents {
 		env.Launchd = launchd.New(opts.launchctl, os.Getuid(), opts.launchctlTimeout)
 		// launchd names the job a process runs in; a terminal's is no LaunchAgent's label.
@@ -302,9 +322,13 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		}
 		fmt.Fprintln(stdout)
 	}
-	problems := len(report.Problems)
+	var attention []string
+	problem := func(subject, detail string) {
+		attention = append(attention, subject+": "+detail)
+		fmt.Fprintf(stdout, "problem     %s: %s\n", subject, detail)
+	}
 	for _, pr := range report.Problems {
-		fmt.Fprintf(stdout, "problem     %s: %s\n", pr.Path, pr.Detail)
+		problem(pr.Path, pr.Detail)
 	}
 	if doctor {
 		// Expected states, not problems; apply prints them only as it acts.
@@ -319,12 +343,16 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		}
 	}
 	for _, id := range sortedKeys(l.result.Missing) {
-		problems++
-		fmt.Fprintf(stdout, "problem     %s: skipped until these settings have values: %v\n", id, l.result.Missing[id])
+		problem(id, fmt.Sprintf("skipped until these settings have values: %v", l.result.Missing[id]))
 	}
 	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" && filepath.Clean(xdg) != p.config {
-		problems++
-		fmt.Fprintf(stdout, "problem     XDG_CONFIG_HOME: it is %s, but dotfiles installs into %s, so git and zsh miss the shared configuration; unset it or set it to %s\n", xdg, p.config, p.config)
+		problem("XDG_CONFIG_HOME", fmt.Sprintf("it is %s, but dotfiles installs into %s, so git and zsh miss the shared configuration; unset it or set it to %s", xdg, p.config, p.config))
+	}
+	problems := len(attention)
+	if !dryRun {
+		if err := writeAttention(p.attention, attention); err != nil {
+			return exitFor(err, stderr)
+		}
 	}
 	if dryRun && len(report.Actions) > 0 {
 		// For doctor, pending changes are drift.
@@ -334,6 +362,25 @@ func cmdApply(ctx context.Context, p paths, opts applyOptions, doctor bool, stdo
 		return exitProblems
 	}
 	return exitOK
+}
+
+// writeAttention keeps the problems an apply left, one per line, where a new
+// terminal shows them; an unattended sync only logs them. It removes the file
+// once there are none.
+func writeAttention(path string, problems []string) error {
+	if len(problems) == 0 {
+		if err := os.Remove(path); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("removing %s: %w", path, err)
+		}
+		return nil
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return fmt.Errorf("creating the state directory: %w", err)
+	}
+	if err := atomicfile.Write(path, []byte(strings.Join(problems, "\n")+"\n"), 0o600); err != nil {
+		return fmt.Errorf("writing %s: %w", path, err)
+	}
+	return nil
 }
 
 // splitList returns the non-empty, trimmed items of a comma-separated list.

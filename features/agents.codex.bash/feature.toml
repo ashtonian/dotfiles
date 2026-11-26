@@ -1,0 +1,18 @@
+id = "agents.codex.bash"
+description = "Codex's system config: bash for agent commands, repo-guard and the delegation policy as managed hooks (README: Agent shells)"
+category = "agents"
+platforms = ["darwin", "linux"]
+# No requires: agents.codex is the macOS launchers and service, and Codex on
+# Linux reads this file too.
+
+# The system config is root's, so no agent can turn off the hooks that bind
+# it. Every apply and doctor runs the check; `dotfiles apply --sudo` installs
+# the file when the check reports anything but ok. bin/dotfiles-agents
+# renders it.
+[hooks]
+apply = "hooks/install"
+teardown = "hooks/uninstall"
+sudo = true
+
+[check]
+script = "hooks/check"

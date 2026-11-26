@@ -8,10 +8,13 @@ enable = [
   "brew.vscode",
   "brew.go-tools",
   "agents.claude",
+  # Root's agent configs; `dotfiles apply --sudo` installs them.
+  "agents.claude.bash",
   "agents.claude.theme",
   # Blocks Claude Code and Codex writes to the repositories the overlays protect.
   "agents.repo-guard",
   "agents.agent-mcp",
   # The Codex app-server.
   "agents.codex",
+  "agents.codex.bash",
 ]

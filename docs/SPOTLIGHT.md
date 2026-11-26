@@ -38,10 +38,14 @@ Spotlight already skips hidden folders (`~/.cache`, `~/.cargo`, `~/.claude`,
 ...) and `~/Library/Caches`, so the list names only visible folders. Whole
 volumes are switched off with `mdutil` instead (see [Operations](#operations)).
 
-`dotfiles apply` installs the tool but does not run it, because the engine has
-no feature hooks (rollout steps 6 and 7 add `[hooks]` and `[check]`). Run
-`spotlight-exclusions apply` after installing the feature and after editing
-either list.
+`dotfiles apply` installs the list and the tool, then runs the feature's check
+(`spotlight-exclusions check --json`) and, while a listed folder that exists is
+still indexed, its apply hook (`spotlight-exclusions apply`). So sync excludes a
+folder added to either list, or one that appears later (a toolchain installed
+since), on its next run, and `dotfiles doctor` reports `would hook
+macos.spotlight -> drift: Spotlight indexes <folder>` until then. No sudo is
+needed: mds takes the change from the logged-in user. Turning the feature off
+leaves the folders excluded; `spotlight-exclusions remove` takes them off.
 
 ## Config
 
@@ -51,6 +55,7 @@ either list.
 | Local exclusion list | `~/.config/spotlight/exclusions.local` (untracked) | none | The machine's own folders, in the same format, read after the shared list. Optional: a missing file adds nothing |
 | `SPOTLIGHT_EXCLUSIONS_FILE` | environment | `~/.config/spotlight/exclusions` | Shared list to read instead; the local list is the same path with `.local` appended |
 | `SPOTLIGHT_EXCLUSIONS_COUNT_TIMEOUT` | environment | `60` | Seconds the `mdfind` for each listed folder's parent may take under `check --counts` |
+| `SPOTLIGHT_EXCLUSIONS_STORE` | environment | unset: Spotlight's own list | A JSON list of paths used in place of Spotlight's exclusion list, read and written by every command; for tests, so a test convergence never changes this Mac's index |
 
 ## External Dependencies
 
@@ -66,6 +71,7 @@ either list.
 | --- | --- | --- |
 | `spotlight-exclusions apply [--dry-run]` | Adds every listed folder that exists and is not excluded yet; `--dry-run` prints them | 0, or 3 if mds refused one |
 | `spotlight-exclusions check [--counts]` | One line per listed folder: `excluded`, `MISSING` or `absent`; `--counts` adds how many items the index still holds under it, counted from one query per parent folder | 0, or 1 if a folder is `MISSING` |
+| `spotlight-exclusions check --json` | The feature's check result for the engine: `{"state": "ok", ...}`, `drift` naming the first `MISSING` folder and how many more, or `error` with the config or mds error | 0 |
 | `spotlight-exclusions list` | Prints Spotlight's whole exclusion list, including folders added in System Settings | 0 |
 | `spotlight-exclusions remove PATH...` | Takes folders off the list; any spelling of the folder (symlink, `/System/Volumes/Data/...`) matches its entry | 0, 1 if a path was not excluded, 3 if mds refused |
 
@@ -84,12 +90,14 @@ spotlight-exclusions check --counts   # every listed folder excluded, 0 items in
 python3 -B -m unittest tests.test_dotfiles.SpotlightExclusions -v
 ```
 
-The tests cover parsing the list and matching folders to exclusions; they never
-change the real list.
+The tests cover parsing the list, matching folders to exclusions, and the
+`check --json` and `apply` round trip against a `SPOTLIGHT_EXCLUSIONS_STORE`
+file; they never change the real list.
 
 ## Operations
 
-**Health:** `spotlight-exclusions check` exits 0. `check --counts` shows 0
+**Health:** `dotfiles doctor` reports nothing for `macos.spotlight`, and
+`spotlight-exclusions check` exits 0. `check --counts` shows 0
 under each excluded folder. `mdutil -as` shows which volumes are indexed.
 
 **Measuring the index:** count with a content-type query, which only the index
@@ -160,7 +168,8 @@ mdfind -onlyin ~ 'kMDItemContentTypeTree == "public.item"' | awk -F/ '{print $4}
 
 | File | Purpose |
 | --- | --- |
-| [features/macos.spotlight/feature.toml](../features/macos.spotlight/feature.toml) | Feature manifest: links the list and the tool |
+| [features/macos.spotlight/feature.toml](../features/macos.spotlight/feature.toml) | Feature manifest: links the list and the tool; its check and apply hooks |
+| [features/macos.spotlight/hooks/](../features/macos.spotlight/hooks/) | `check` and `apply`: run the repository's copy of the tool, so they work before the link exists |
 | [features/macos.spotlight/home/.config/spotlight/exclusions](../features/macos.spotlight/home/.config/spotlight/exclusions) | The folders to exclude, with reasons |
 | [features/macos.spotlight/home/.local/bin/spotlight-exclusions](../features/macos.spotlight/home/.local/bin/spotlight-exclusions) | `apply`, `check`, `list`, `remove` |
 | [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `SpotlightExclusions` tests |

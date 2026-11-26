@@ -1,0 +1,16 @@
+id = "agents.claude.bash"
+description = "Claude Code's managed-settings drop-in: bash for agent commands, attribution off, the delegation policy at every session start (README: Agent shells)"
+category = "agents"
+platforms = ["darwin", "linux"]
+requires = ["agents.claude"]
+
+# The drop-in is root's, so no agent can rewrite the settings that bind it.
+# Every apply and doctor runs the check; `dotfiles apply --sudo` installs the
+# file when the check reports anything but ok. bin/dotfiles-agents renders it.
+[hooks]
+apply = "hooks/install"
+teardown = "hooks/uninstall"
+sudo = true
+
+[check]
+script = "hooks/check"
