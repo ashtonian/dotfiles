@@ -764,6 +764,22 @@ spotlight-exclusions check    # exit 1 if a folder on the list is not excluded
 The list, the commands and troubleshooting:
 [docs/SPOTLIGHT.md](docs/SPOTLIGHT.md).
 
+## Local Network allow-lists
+
+macOS Local Network privacy blocks each program from the Mac's own subnets
+until it is granted, and Homebrew's ad-hoc signed tools lose their grant at
+every upgrade (`connect: no route to host`). Feature `macos.local-network`
+writes Apple's address allow-lists instead, so every program reaches the listed
+networks: an overlay profile enables it and sets `local_network.ethernet` and
+`local_network.wifi`, then
+
+```sh
+dotfiles apply --sudo     # write the lists; restart the Mac to put them into effect
+```
+
+`dotfiles doctor` lists it as waiting until the restart. Details and
+troubleshooting: [docs/LOCAL-NETWORK.md](docs/LOCAL-NETWORK.md).
+
 ## Passkeys off
 
 Feature `browser.passkeys-off` (desktop profile) stops websites, browsers and 1Password from
@@ -860,8 +876,9 @@ current Go before the migration reaches it; see
    step (`otel-agent enroll`, OpenCode's local files);
    apply loads each once its step has run
 
-6. **Agent shells and other root-owned files**: `dotfiles apply --sudo` (see [Agent shells](#agent-shells));
-   `dotfiles doctor` and the shell notice say when it is needed again
+6. **Agent shells and other root-owned files**: `dotfiles apply --sudo` (see [Agent shells](#agent-shells)
+   and [Local Network allow-lists](#local-network-allow-lists)); `dotfiles doctor` and the shell
+   notice say when it is needed again, and `dotfiles doctor` when a restart is
 
 Also log in to gh with the scopes and storage in
 [Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing
