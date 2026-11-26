@@ -559,7 +559,7 @@ The target catalog, grouped by category; each row is one toggle. Rollout step
 | sync and update | `sync.pull`, `sync.apply`, `sync.brew-install`, `sync.publish`, `sync.aux-repos`, `update.brew`, `update.mas`, `update.zinit`, `update.rustup`, `update.cargo`, `update.mise`, `update.uv-tools`, `status.refresh` |
 | packages | `brew.base`, `brew.dev`, `brew.desktop`, `brew.media`, `brew.mas`, `brew.vscode`, `brew.go-tools`, `brew.cargo-tools`, `winget.base`, `winget.dev`, `winget.desktop`, `flatpak.desktop` |
 | backup | `backup.mackup`, `backup.mackup.<app>` for each app in Mackup's catalog, including `backup.mackup.macosx` |
-| macOS | `macos.defaults.finder`, `macos.defaults.dock`, `macos.defaults.keyboard`, `macos.defaults.trackpad`, `macos.defaults.screenshots`, `macos.firewall`, `macos.local-network`, `macos.power.server`, `macos.remote-login`, `macos.spotlight` |
+| macOS | `macos.defaults.finder`, `macos.defaults.dock`, `macos.defaults.keyboard`, `macos.defaults.trackpad`, `macos.defaults.screenshots`, `macos.firewall`, `macos.host-metrics`, `macos.local-network`, `macos.power.server`, `macos.remote-login`, `macos.spotlight` |
 | Linux | `linux.linger`, `linux.firewall`, `linux.flatpak` |
 | Windows | `windows.powershell-profile`, `windows.developer-mode` (lets the engine use symlinks; needs admin once), `windows.terminal`, `windows.git-bash` |
 | browsers | see [Browsers](#browsers) |

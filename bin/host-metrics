@@ -1,0 +1,485 @@
+#!/usr/bin/env bash
+#===============================================================================
+# host-metrics - this Mac's hardware metrics, for otel-agent to forward
+#===============================================================================
+#
+# USAGE:
+#   host-metrics node-exporter   run node_exporter on 127.0.0.1 (a LaunchAgent's entry point)
+#   host-metrics macmon          run macmon serve on 127.0.0.1 (a LaunchAgent's entry point)
+#   host-metrics collect         write the files node_exporter's textfile collector
+#                                serves: thermal pressure and battery on every run,
+#                                SMART once HOST_METRICS_SMART_INTERVAL has passed,
+#                                each smartctl call bounded by HOST_METRICS_SMARTCTL_TIMEOUT
+#   host-metrics status          the three jobs, what the collector scrapes, and how
+#                                old each textfile is
+#   host-metrics check           the feature's check: whether the collector's target
+#                                directory exists and each running exporter listens
+#                                where its port setting says (JSON)
+#   host-metrics converge        the feature's apply hook: create the target directory,
+#                                and restart each exporter whose port setting changed
+#                                since it started
+#
+# The macos.host-metrics feature runs the first three as LaunchAgents. Each
+# exporter's entry point publishes the address it listens on under
+# $HOST_METRICS_STATE/targets, where otel-agent's collector finds it
+# (~/.config/otel-agent/conf.d/host-metrics.yaml), scrapes it every 60 s and
+# sends the samples to the cluster through a disk queue of their own. Nothing
+# listens beyond loopback. See docs/HOST-METRICS.md.
+set -euo pipefail
+
+# shellcheck source=lib_sh/machine-setting.sh
+source "$(dirname "${BASH_SOURCE[0]}")/../lib_sh/machine-setting.sh"
+
+# The collector's config names this directory, so it ignores XDG_STATE_HOME.
+state=${HOST_METRICS_STATE:-$HOME/.local/state/host-metrics}
+targets=$state/targets
+textfile=$state/textfile
+agents="com.ashtonian.node-exporter com.ashtonian.macmon com.ashtonian.host-metrics"
+
+die() { # die <exit status> <message>
+    echo "host-metrics: $2" >&2
+    exit "$1"
+}
+
+log() {
+    echo "$(date -u +%FT%TZ) $*" >&2
+}
+
+# setting NAME MIN MAX prints a whole-number setting: the environment's value,
+# else the one dotfiles apply generated from the feature's settings.
+setting() {
+    local name=$1 min=$2 max=$3 value
+    value=${!name:-$(machine_setting "$name")}
+    if [[ ! $value =~ ^[0-9]+$ ]] || (( value < min || value > max )); then
+        die 78 "$name='$value': want a whole number from $min to $max (a macos.host-metrics setting; run dotfiles apply)"
+    fi
+    printf '%s' "$value"
+}
+
+# claim NAME PORT publishes 127.0.0.1:PORT as where NAME listens, as a
+# Prometheus file_sd target list, once nothing else listens there: the
+# collector would otherwise scrape whatever holds the port.
+claim() {
+    local name=$1 port=$2 holder
+    holder=$(lsof -nP -iTCP:"$port" -sTCP:LISTEN -Fc 2>/dev/null | sed -n 's/^c//p' | head -n 1) || true
+    if [[ -n $holder ]]; then
+        rm -f "$targets/$name.json"
+        die 75 "port $port is taken by $holder; set another for $name (docs/HOST-METRICS.md, Config) and run dotfiles apply"
+    fi
+    mkdir -p "$targets"
+    printf '[{"targets": ["127.0.0.1:%s"]}]\n' "$port" >"$targets/$name.json.tmp"
+    mv -f "$targets/$name.json.tmp" "$targets/$name.json"
+}
+
+cmd_node_exporter() {
+    local port exporter
+    port=$(setting HOST_METRICS_NODE_EXPORTER_PORT 1024 65535)
+    exporter=$(command -v node_exporter) || die 69 "node_exporter is not installed; dotfiles apply installs it with the macos.host-metrics feature"
+    claim node-exporter "$port"
+    mkdir -p "$textfile"
+    # Filesystems: only the internal disk's. For each volume it reports,
+    # node_exporter asks the volume itself for its purgeable space, and on an
+    # external drive that needs macOS's removable-volumes grant, a prompt per
+    # node_exporter build; an unanswered one stalls other drive access.
+    # Thermal: macmon reports the CPU and GPU temperatures; this collector's
+    # 50-odd raw sensor series add nothing a dashboard reads.
+    exec "$exporter" \
+        --web.listen-address="127.0.0.1:$port" \
+        --web.disable-exporter-metrics \
+        --collector.textfile.directory="$textfile" \
+        --collector.filesystem.mount-points-include='^/$' \
+        --collector.netdev.device-include='^en[0-9]+$' \
+        --no-collector.thermal \
+        --log.format=json
+}
+
+cmd_macmon() {
+    local port monitor
+    if [[ $(sysctl -n hw.optional.arm64 2>/dev/null) != 1 ]]; then
+        die 78 "macmon reads Apple silicon's power and sensor counters; this is an Intel Mac"
+    fi
+    port=$(setting HOST_METRICS_MACMON_PORT 1024 65535)
+    monitor=$(command -v macmon) || die 69 "macmon is not installed; dotfiles apply installs it with the macos.host-metrics feature"
+    claim macmon "$port"
+    # One sample a minute, the collector's scrape interval, so power and usage
+    # are averages over the minute rather than one second of it.
+    exec "$monitor" serve --host 127.0.0.1 --port "$port" --interval 60000
+}
+
+# install NAME moves NAME.tmp over the textfile NAME in one rename: the
+# collector reads the directory on every scrape and must never see half a file.
+install() {
+    mv -f "$textfile/$1.tmp" "$textfile/$1"
+}
+
+collect_thermal() {
+    local reading level
+    if ! reading=$(notifyutil -g com.apple.system.thermalpressurelevel 2>&1); then
+        rm -f "$textfile/thermal.prom"
+        log "reading thermal pressure failed: $reading"
+        return 1
+    fi
+    level=${reading##* }
+    if [[ ! $level =~ ^[0-9]+$ ]]; then
+        rm -f "$textfile/thermal.prom"
+        log "unexpected thermal pressure reading: $reading"
+        return 1
+    fi
+    # The levels are OSThermalPressureLevel's macOS values (libkern/OSThermalNotification.h).
+    {
+        echo '# HELP macos_thermal_pressure_level Thermal pressure: 0 nominal, 1 moderate, 2 heavy, 3 trapping, 4 sleeping.'
+        echo '# TYPE macos_thermal_pressure_level gauge'
+        echo "macos_thermal_pressure_level $level"
+    } >"$textfile/thermal.prom.tmp"
+    install thermal.prom
+}
+
+# battery_value REGISTRY KEY prints a key of the battery's registry entry, as
+# `ioreg -a` saved it to REGISTRY: macOS 27 keeps the capacities under
+# BatteryData, earlier releases at the top level.
+battery_value() {
+    plutil -extract "0.$2" raw -o - "$1" 2>/dev/null ||
+        plutil -extract "0.BatteryData.$2" raw -o - "$1" 2>/dev/null
+}
+
+# battery_gauge NAME HELP VALUE [DIVISOR] writes one gauge, VALUE / DIVISOR
+# when given (mAh to Ah), or nothing when the registry lacks the value.
+battery_gauge() {
+    local name=$1 help=$2 value=$3 divisor=${4:-}
+    [[ $value =~ ^[0-9]+$ ]] || return 0
+    if [[ -n $divisor ]]; then
+        value=$(printf '%d.%03d' $(( value / divisor )) $(( value % divisor )))
+    fi
+    printf '# HELP %s %s\n# TYPE %s gauge\n%s %s\n' "$name" "$help" "$name" "$name" "$value"
+}
+
+collect_battery() {
+    local registry=$textfile/battery.plist.tmp
+    ioreg -rn AppleSmartBattery -a >"$registry" 2>/dev/null || true
+    # Desktop Macs have a placeholder entry with BatteryInstalled false.
+    if [[ $(battery_value "$registry" BatteryInstalled || true) != true ]]; then
+        rm -f "$registry" "$textfile/battery.prom"
+        return 0
+    fi
+    {
+        battery_gauge macos_battery_cycle_count 'Charge cycles completed.' "$(battery_value "$registry" CycleCount || true)"
+        battery_gauge macos_battery_design_cycle_count 'Charge cycles the battery is designed for.' "$(battery_value "$registry" DesignCycleCount9C || true)"
+        battery_gauge macos_battery_design_capacity_ampere_hours 'Capacity as designed.' "$(battery_value "$registry" DesignCapacity || true)" 1000
+        battery_gauge macos_battery_nominal_capacity_ampere_hours "Full-charge capacity System Settings' Maximum Capacity is reported from." "$(battery_value "$registry" NominalChargeCapacity || true)" 1000
+        battery_gauge macos_battery_max_capacity_ampere_hours 'Full-charge capacity as the gauge measures it (AppleRawMaxCapacity).' "$(battery_value "$registry" AppleRawMaxCapacity || true)" 1000
+    } >"$textfile/battery.prom.tmp"
+    rm -f "$registry"
+    install battery.prom
+}
+
+# smart_due INTERVAL succeeds once the SMART textfile is INTERVAL seconds old.
+# Runs come every 60 s, each a little early or late; the 30 s margin keeps a
+# 300 s interval from slipping to 360.
+smart_due() {
+    local file=$textfile/smart.prom age
+    [[ -f $file ]] || return 0
+    age=$(( $(date +%s) - $(stat -f %m "$file") ))
+    (( age + 30 >= $1 ))
+}
+
+# bounded SECONDS COMMAND... runs COMMAND, ending it once it runs past SECONDS;
+# timed_out says whether it did.
+bounded() {
+    local seconds=$1 pid watchdog status=0
+    shift
+    "$@" &
+    pid=$!
+    (sleep "$seconds" && kill -TERM "$pid" 2>/dev/null) &
+    watchdog=$!
+    wait "$pid" || status=$?
+    # Ending the watchdog's sleep ends the watchdog without its kill, so it
+    # exits 0 only when it ended the command.
+    pkill -P "$watchdog" 2>/dev/null || true
+    timed_out=0
+    if wait "$watchdog" 2>/dev/null; then
+        timed_out=1
+    fi
+    return "$status"
+}
+
+# sample NAME LABELS VALUE keeps one sample of a metric family until the
+# families are written; a missing value adds nothing.
+sample() {
+    [[ $3 =~ ^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] || return 0
+    printf '%s{%s} %s\n' "$1" "$2" "$3" >>"$work/$1"
+}
+
+# family NAME TYPE HELP writes a family's samples under one HELP and TYPE,
+# which the text format requires to precede all of them.
+family() {
+    [[ -s $work/$1 ]] || return 0
+    printf '# HELP %s %s\n# TYPE %s %s\n' "$1" "$3" "$1" "$2"
+    cat "$work/$1"
+}
+
+# The SMART families: smartctl_exporter 0.15.0's names, labels and help
+# (metrics.go), for what a Mac's disks report. The TYPE of four NVMe levels
+# is gauge where upstream says counter: through the collector, a counter that
+# falls reads as a reset. NAME TYPE HELP, in the order written.
+smart_families='smartctl_version gauge smartctl version
+smartctl_devices gauge Number of devices configured or dynamically discovered
+smartctl_device gauge Device info
+smartctl_device_smartctl_exit_status gauge Exit status of smartctl on device
+smartctl_device_capacity_blocks gauge Device capacity in blocks
+smartctl_device_capacity_bytes gauge Device capacity in bytes
+smartctl_device_nvme_capacity_bytes gauge NVMe device total capacity bytes
+smartctl_device_block_size gauge Device block size
+smartctl_device_power_on_seconds counter Device power on seconds
+smartctl_device_temperature gauge Device temperature celsius
+smartctl_device_power_cycle_count counter Device power cycle count
+smartctl_device_smart_status gauge General smart status
+smartctl_device_percentage_used gauge Device write percentage used
+smartctl_device_available_spare gauge Normalized percentage (0 to 100%) of the remaining spare capacity available
+smartctl_device_available_spare_threshold gauge When the Available Spare falls below the threshold indicated in this field, an asynchronous event completion may occur. The value is indicated as a normalized percentage (0 to 100%)
+smartctl_device_critical_warning gauge This field indicates critical warnings for the state of the controller
+smartctl_device_media_errors counter Contains the number of occurrences where the controller detected an unrecovered data integrity error. Errors such as uncorrectable ECC, CRC checksum failure, or LBA tag mismatch are included in this field
+smartctl_device_num_err_log_entries counter Contains the number of Error Information log entries over the life of the controller
+smartctl_device_bytes_read counter Bytes the host read
+smartctl_device_bytes_written counter Bytes the host wrote'
+
+# smart_samples turns one disk's smartctl JSON into FAMILY<TAB>LABELS<TAB>VALUE
+# lines, computed as smartctl_exporter 0.15.0 computes them (smartctl.go),
+# except that a value smartctl did not report is left out rather than sent as
+# 0, and smartctl_device_capacity_bytes falls back to the NVMe controller's
+# capacity, then to diskutil's ($size): smartctl reports no user_capacity on
+# macOS.
+# shellcheck disable=SC2016 # jq's variables, not the shell's
+smart_samples='
+def text: if . == null then "" else tostring | gsub("^\\s+|\\s+$"; "") end;
+def esc: text | gsub("[[:cntrl:]]"; "") | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"");
+def sample($family; $labels): select(type == "number") | "\($family)\t\($labels)\t\(.)";
+def flag: if type == "boolean" then (if . then 1 else 0 end) else . end;
+("device=\"\($device | esc)\"") as $d
+| .nvme_smart_health_information_log as $health
+| (
+    ([
+        $d,
+        "interface=\"\(.device.type | esc)\"",
+        "protocol=\"\(.device.protocol | esc)\"",
+        "model_family=\"\(.model_family // "unknown" | esc)\"",
+        "model_name=\"\((.model_name // .scsi_model_name) | text | if . == "" then "unknown" else . end | esc)\"",
+        "serial_number=\"\(.serial_number | esc)\"",
+        "ata_additional_product_id=\"\(.ata_additional_product_id // "unknown" | esc)\"",
+        "firmware_version=\"\(.firmware_version | esc)\"",
+        "ata_version=\"\(.ata_version.string | esc)\"",
+        "sata_version=\"\(.sata_version.string | esc)\"",
+        "form_factor=\"\(.form_factor.name | esc)\"",
+        "scsi_vendor=\"\(.scsi_vendor | esc)\"",
+        "scsi_product=\"\(.scsi_product | esc)\"",
+        "scsi_revision=\"\(.scsi_revision | esc)\"",
+        "scsi_version=\"\(.scsi_version | esc)\""
+    ] | join(",") as $info | 1 | sample("smartctl_device"; $info)),
+    (.user_capacity.blocks | sample("smartctl_device_capacity_blocks"; $d)),
+    ((.user_capacity.bytes // .nvme_total_capacity // $size) | sample("smartctl_device_capacity_bytes"; $d)),
+    (.nvme_total_capacity | sample("smartctl_device_nvme_capacity_bytes"; $d)),
+    (.logical_block_size | sample("smartctl_device_block_size"; "\($d),blocks_type=\"logical\"")),
+    (.physical_block_size | sample("smartctl_device_block_size"; "\($d),blocks_type=\"physical\"")),
+    (.power_on_time | select(. != null) | (.hours // 0) * 3600 + (.minutes // 0) * 60
+        | sample("smartctl_device_power_on_seconds"; $d)),
+    (.temperature // {} | to_entries[] | . as $t
+        | $t.value | sample("smartctl_device_temperature"; "\($d),temperature_type=\"\($t.key | esc)\"")),
+    (.power_cycle_count | sample("smartctl_device_power_cycle_count"; $d)),
+    (.smart_status.passed | flag | sample("smartctl_device_smart_status"; $d)),
+    (select((.device.type | text) == "nvme" or (.device.protocol | text) == "NVMe")
+        | ($health.percentage_used | sample("smartctl_device_percentage_used"; $d)),
+          ($health.available_spare | sample("smartctl_device_available_spare"; $d)),
+          ($health.available_spare_threshold | sample("smartctl_device_available_spare_threshold"; $d)),
+          ($health.critical_warning | sample("smartctl_device_critical_warning"; $d)),
+          ($health.media_errors | sample("smartctl_device_media_errors"; $d)),
+          ($health.num_err_log_entries | sample("smartctl_device_num_err_log_entries"; $d)),
+          # Units of 1000 blocks of 512 bytes, whatever the block size (NVMe
+          # base specification, SMART / Health Information); 0 is not reported.
+          ($health.data_units_read | select(. != null and . > 0) | . * 512000
+              | sample("smartctl_device_bytes_read"; $d)),
+          ($health.data_units_written | select(. != null and . > 0) | . * 512000
+              | sample("smartctl_device_bytes_written"; $d)))
+)'
+
+# smart_version prints smartctl_version's labels from one disk's JSON.
+smart_version='"json_format_version=\"\(.json_format_version | map(tostring) | join("."))\",smartctl_version=\"\(.smartctl.version | map(tostring) | join("."))\",svn_revision=\"\(.smartctl.svn_revision // "")\",build_info=\"\(.smartctl.build_info // "")\""'
+
+# smart_device DISK reads one physical disk's SMART data with smartctl_exporter
+# 0.15.0's smartctl arguments (readjson.go), as DISK, its BSD name.
+# smartctl_exporter itself drops Apple's internal SSD: the SSD has no NVMe
+# error-information log page, which smartctl reports with an error message and
+# exit bit 2, and the exporter rejects any reply with an error message
+# (docs/HOST-METRICS.md). Every disk gets its exit status, so one that stops
+# answering shows instead of vanishing.
+smart_device() {
+    local disk=$1 json=$work/$1.json status=0 dev size
+    dev="device=\"$disk\""
+    bounded "$smartctl_timeout" smartctl --json --info --health --attributes --capabilities \
+        --tolerance=verypermissive --nocheck=standby --format=brief --log=error "/dev/$disk" \
+        >"$json" 2>/dev/null || status=$?
+    # Exit bits 0 (the command line was refused, as for a device type smartctl
+    # cannot drive) and 1 (the device did not open, or is in standby) mean no
+    # data; a read that did not finish or left no JSON counts as bit 1. Bit 2
+    # (a command failed: Apple's missing log page) and bits 3 to 7 (the disk's
+    # own findings) come with data, which is kept.
+    if (( timed_out )); then
+        log "smartctl did not finish reading $disk within ${smartctl_timeout}s"
+        sample smartctl_device_smartctl_exit_status "$dev" 2
+        return 0
+    fi
+    if ! jq -e 'type == "object"' "$json" >/dev/null 2>&1; then
+        log "smartctl left no JSON for $disk (exit $status)"
+        sample smartctl_device_smartctl_exit_status "$dev" $(( status | 2 ))
+        return 0
+    fi
+    sample smartctl_device_smartctl_exit_status "$dev" "$status"
+    if (( status & 3 )); then
+        log "smartctl read nothing from $disk (exit $status)"
+        return 0
+    fi
+    [[ -s $work/version ]] || jq -r "$smart_version" "$json" >"$work/version" 2>/dev/null || true
+    size=$(diskutil info -plist "$disk" | plutil -extract TotalSize raw -o - - 2>/dev/null) || size=null
+    [[ $size =~ ^[0-9]+$ ]] || size=null
+    local family labels value
+    while IFS=$'\t' read -r family labels value; do
+        sample "$family" "$labels" "$value"
+    done < <(jq -r --arg device "$disk" --argjson size "$size" "$smart_samples" "$json" 2>/dev/null || true)
+}
+
+collect_smart() {
+    local work disks disk i=0 name type help
+    command -v smartctl >/dev/null || {
+        log "smartctl is not installed; dotfiles apply installs it with the macos.host-metrics feature"
+        return 1
+    }
+    work=$(mktemp -d "$textfile/.smart.XXXXXX")
+    # Physical disks only: disk images and APFS containers are not devices.
+    disks=$(diskutil list -plist physical) || {
+        rm -rf "$work"
+        log "diskutil list failed"
+        return 1
+    }
+    while disk=$(plutil -extract "WholeDisks.$i" raw -o - - <<<"$disks" 2>/dev/null); do
+        smart_device "$disk"
+        i=$(( i + 1 ))
+    done
+    sample smartctl_devices "" "$i"
+    [[ ! -s $work/version ]] || sample smartctl_version "$(cat "$work/version")" 1
+    # Written even when no disk answered, so the interval holds and a disk
+    # that stopped answering shows its exit status instead of its last reading.
+    while read -r name type help; do
+        family "$name" "$type" "$help"
+    done <<<"$smart_families" >"$textfile/smart.prom.tmp"
+    rm -rf "$work"
+    install smart.prom
+}
+
+cmd_collect() {
+    local interval failed=0
+    interval=$(setting HOST_METRICS_SMART_INTERVAL 60 86400)
+    smartctl_timeout=$(setting HOST_METRICS_SMARTCTL_TIMEOUT 1 300)
+    mkdir -p "$textfile"
+    collect_thermal || failed=1
+    collect_battery || failed=1
+    if smart_due "$interval"; then
+        collect_smart || failed=1
+    fi
+    return "$failed"
+}
+
+# moved prints, for each exporter that published a target, NAME and the
+# address it should have, when its port setting has changed since it started.
+moved() {
+    local name variable file published wanted
+    for name in node-exporter macmon; do
+        file=$targets/$name.json
+        [[ -f $file ]] || continue
+        variable=HOST_METRICS_$(echo "$name" | tr a-z- A-Z_)_PORT
+        wanted=127.0.0.1:$(setting "$variable" 1024 65535)
+        published=$(sed -n 's/.*"targets": \["\([^"]*\)"\].*/\1/p' "$file")
+        [[ $published == "$wanted" ]] || echo "$name $published $wanted"
+    done
+}
+
+# The collector watches the target directory, and logs an error on every
+# refresh while it is missing: apply creates it before the collector reads the
+# fragment, which happens at the next otel-agent converge.
+cmd_check() {
+    local changes detail=
+    [[ -d $targets ]] || detail="no target directory $targets"
+    changes=$(moved)
+    while read -r name published wanted; do
+        [[ -n $name ]] || continue
+        detail+="${detail:+; }$name listens on $published, its setting says $wanted"
+    done <<<"$changes"
+    if [[ -z $detail ]]; then
+        echo '{"state": "ok", "detail": "the target directory exists and each exporter listens where its setting says"}'
+        return 0
+    fi
+    printf '{"state": "drift", "detail": "%s"}\n' "$detail"
+}
+
+# cmd_converge restarts each exporter whose port setting changed. One whose
+# job is not loaded is not running: its target is stale, and launchd starts it
+# on the new port when apply loads it.
+cmd_converge() {
+    local name published wanted label tries
+    mkdir -p "$targets"
+    while read -r name published wanted; do
+        [[ -n $name ]] || continue
+        label=com.ashtonian.$name
+        if ! launchctl print "gui/$UID/$label" >/dev/null 2>&1; then
+            rm -f "$targets/$name.json"
+            continue
+        fi
+        launchctl kickstart -k "gui/$UID/$label"
+        # The entry point publishes the new address as it starts.
+        for (( tries = 0; tries < 50; tries++ )); do
+            grep -q "\"$wanted\"" "$targets/$name.json" 2>/dev/null && break
+            sleep 0.2
+        done
+    done <<<"$(moved)"
+}
+
+cmd_status() {
+    local agent info name address samples file age
+    for agent in $agents; do
+        if info=$(launchctl list "$agent" 2>/dev/null); then
+            if [[ $info == *'"PID" = '* ]]; then info=running; else info="loaded, not running"; fi
+        else
+            info="not loaded"
+        fi
+        printf '%-30s %s\n' "$agent" "$info"
+    done
+    for name in node-exporter macmon; do
+        file=$targets/$name.json
+        if [[ ! -f $file ]]; then
+            printf '%-30s %s\n' "$name" "no target published"
+            continue
+        fi
+        address=$(sed -n 's/.*"targets": \["\([^"]*\)"\].*/\1/p' "$file")
+        if samples=$(curl -fsS -m 5 "http://$address/metrics" 2>/dev/null | grep -c -v '^#'); then
+            printf '%-30s %s, %s samples\n' "$name" "$address" "$samples"
+        else
+            printf '%-30s %s, not answering\n' "$name" "$address"
+        fi
+    done
+    for name in thermal battery smart; do
+        file=$textfile/$name.prom
+        if [[ -f $file ]]; then
+            age=$(( $(date +%s) - $(stat -f %m "$file") ))
+            printf '%-30s %ss old\n' "$name.prom" "$age"
+        else
+            printf '%-30s %s\n' "$name.prom" "absent"
+        fi
+    done
+}
+
+case ${1:-} in
+    node-exporter) cmd_node_exporter ;;
+    macmon) cmd_macmon ;;
+    collect) cmd_collect ;;
+    status) cmd_status ;;
+    check) cmd_check ;;
+    converge) cmd_converge ;;
+    *) die 64 "usage: host-metrics node-exporter | macmon | collect | status | check | converge" ;;
+esac

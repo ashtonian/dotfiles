@@ -1,0 +1,3 @@
+#!/bin/sh
+# Restart the exporters the check found listening on a port their setting no longer names.
+exec "$DOTFILES_DIR/bin/host-metrics" converge

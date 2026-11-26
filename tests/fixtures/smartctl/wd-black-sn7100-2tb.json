@@ -1,0 +1,264 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "Darwin 27.2.0 arm64",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--json",
+      "--info",
+      "--health",
+      "--attributes",
+      "--capabilities",
+      "--tolerance=verypermissive",
+      "--nocheck=standby",
+      "--format=brief",
+      "--log=error",
+      "/dev/disk6"
+    ],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1795680000,
+    "asctime": "Thu Nov 26 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/disk6",
+    "info_name": "/dev/disk6",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "WD_BLACK SN7100 2TB",
+  "serial_number": "WD-SERIAL",
+  "firmware_version": "7615M0WD",
+  "nvme_pci_vendor": {
+    "id": 5559,
+    "subsystem_id": 5559
+  },
+  "nvme_ieee_oui_identifier": 6980,
+  "nvme_total_capacity": 2000398934016,
+  "nvme_unallocated_capacity": 0,
+  "nvme_controller_id": 1,
+  "nvme_version": {
+    "string": "2.0",
+    "value": 131072
+  },
+  "nvme_number_of_namespaces": 1,
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "nvme_firmware_update_capabilities": {
+    "value": 20,
+    "slots": 2,
+    "first_slot_is_read_only": false,
+    "activiation_without_reset": true,
+    "multiple_update_detection": false,
+    "other": 0
+  },
+  "nvme_optional_admin_commands": {
+    "value": 23,
+    "security_send_receive": true,
+    "format_nvm": true,
+    "firmware_download": true,
+    "namespace_management": false,
+    "self_test": true,
+    "directives": false,
+    "mi_send_receive": false,
+    "virtualization_management": false,
+    "doorbell_buffer_config": false,
+    "get_lba_status": false,
+    "command_and_feature_lockdown": false,
+    "other": 0
+  },
+  "nvme_optional_nvm_commands": {
+    "value": 223,
+    "compare": true,
+    "write_uncorrectable": true,
+    "dataset_management": true,
+    "write_zeroes": true,
+    "save_select_feature_nonzero": true,
+    "reservations": false,
+    "timestamp": true,
+    "verify": true,
+    "copy": false,
+    "other": 0
+  },
+  "nvme_log_page_attributes": {
+    "value": 126,
+    "smart_health_per_namespace": false,
+    "commands_effects_log": true,
+    "extended_get_log_page_cmd": true,
+    "telemetry_log": true,
+    "persistent_event_log": true,
+    "supported_log_pages_log": true,
+    "telemetry_data_area_4": true,
+    "other": 0
+  },
+  "nvme_maximum_data_transfer_pages": 128,
+  "nvme_composite_temperature_threshold": {
+    "warning": 90,
+    "critical": 94
+  },
+  "temperature": {
+    "op_limit_max": 90,
+    "critical_limit_max": 94,
+    "current": 33
+  },
+  "nvme_power_states": [
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 0,
+      "relative_read_throughput": 0,
+      "relative_write_latency": 0,
+      "relative_write_throughput": 0,
+      "entry_latency_us": 0,
+      "exit_latency_us": 0,
+      "max_power": {
+        "value": 460,
+        "scale": 2,
+        "units_per_watt": 100
+      },
+      "active_power": {
+        "value": 460,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 0,
+      "relative_read_throughput": 0,
+      "relative_write_latency": 0,
+      "relative_write_throughput": 0,
+      "entry_latency_us": 0,
+      "exit_latency_us": 0,
+      "max_power": {
+        "value": 300,
+        "scale": 2,
+        "units_per_watt": 100
+      },
+      "active_power": {
+        "value": 300,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 0,
+      "relative_read_throughput": 0,
+      "relative_write_latency": 0,
+      "relative_write_throughput": 0,
+      "entry_latency_us": 0,
+      "exit_latency_us": 0,
+      "max_power": {
+        "value": 250,
+        "scale": 2,
+        "units_per_watt": 100
+      },
+      "active_power": {
+        "value": 250,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": true,
+      "relative_read_latency": 3,
+      "relative_read_throughput": 3,
+      "relative_write_latency": 3,
+      "relative_write_throughput": 3,
+      "entry_latency_us": 2000,
+      "exit_latency_us": 3000,
+      "max_power": {
+        "value": 200,
+        "scale": 1,
+        "units_per_watt": 10000
+      }
+    },
+    {
+      "non_operational_state": true,
+      "relative_read_latency": 4,
+      "relative_read_throughput": 4,
+      "relative_write_latency": 4,
+      "relative_write_throughput": 4,
+      "entry_latency_us": 4000,
+      "exit_latency_us": 12000,
+      "max_power": {
+        "value": 50,
+        "scale": 1,
+        "units_per_watt": 10000
+      }
+    },
+    {
+      "non_operational_state": true,
+      "relative_read_latency": 5,
+      "relative_read_throughput": 5,
+      "relative_write_latency": 5,
+      "relative_write_throughput": 5,
+      "entry_latency_us": 176000,
+      "exit_latency_us": 25000,
+      "max_power": {
+        "value": 30,
+        "scale": 1,
+        "units_per_watt": 10000
+      }
+    }
+  ],
+  "smart_status": {
+    "passed": true,
+    "nvme": {
+      "value": 0
+    }
+  },
+  "nvme_smart_health_information_log": {
+    "nsid": -1,
+    "critical_warning": 0,
+    "temperature": 33,
+    "available_spare": 100,
+    "available_spare_threshold": 10,
+    "percentage_used": 2,
+    "data_units_read": 307459533,
+    "data_units_written": 153739791,
+    "host_reads": 19349506469,
+    "host_writes": 1988353538,
+    "controller_busy_time": 12949,
+    "power_cycles": 123,
+    "power_on_hours": 2670,
+    "unsafe_shutdowns": 118,
+    "media_errors": 0,
+    "num_err_log_entries": 0,
+    "warning_temp_time": 0,
+    "critical_comp_time": 0,
+    "temperature_sensors": [
+      40,
+      34
+    ]
+  },
+  "spare_available": {
+    "current_percent": 100,
+    "threshold_percent": 10
+  },
+  "endurance_used": {
+    "current_percent": 2
+  },
+  "power_cycle_count": 123,
+  "power_on_time": {
+    "hours": 2670
+  },
+  "nvme_error_information_log": {
+    "size": 256,
+    "read": 16,
+    "unread": 0
+  }
+}
