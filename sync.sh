@@ -81,16 +81,16 @@ missing_root_entries() {
     done <<<"$wanted"
 }
 
-# sync_brewfile: install what the Brewfiles list and this Mac lacks, never
-# upgrading. A run that cannot ask for a password (a LaunchAgent has no
-# terminal) leaves the entries that install only as root for a terminal, names
-# them in a warning, and installs the rest; HOMEBREW_NO_SUDO stops Homebrew
-# from trying sudo for anything the list missed.
 # Whether this run's package steps installed anything: a LaunchAgent that waits
 # for a program they provide, or a hook that runs one, needs an apply after
 # them (run_mode).
 PACKAGES_INSTALLED=false
 
+# sync_brewfile: install what the Brewfiles list and this Mac lacks, never
+# upgrading. A run that cannot ask for a password (a LaunchAgent has no
+# terminal) leaves the entries that install only as root for a terminal, names
+# them in a warning, and installs the rest; HOMEBREW_NO_SUDO stops Homebrew
+# from trying sudo for anything the list missed.
 sync_brewfile() {
     if ! command -v brew >/dev/null; then
         log "WARN: Homebrew is not installed"
