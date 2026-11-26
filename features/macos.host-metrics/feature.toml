@@ -41,6 +41,12 @@ default = 300
 env = "HOST_METRICS_SMART_INTERVAL"
 doc = "Seconds between SMART readings of each physical disk (60 to 86400). Wear and write counters move slowly; each reading wakes nothing, since a disk in standby is skipped"
 
+[settings."host_metrics.smartctl_timeout"]
+type = "int"
+default = 60
+env = "HOST_METRICS_SMARTCTL_TIMEOUT"
+doc = "Seconds one disk's smartctl read may take (1 to 300) before it is ended and the disk reported as not answering (exit status 2)"
+
 # A port setting changed: restart the exporter on the new port.
 [hooks]
 apply = "hooks/apply"

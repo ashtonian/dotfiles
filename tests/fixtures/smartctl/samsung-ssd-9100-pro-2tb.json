@@ -1,0 +1,235 @@
+{
+  "json_format_version": [
+    1,
+    0
+  ],
+  "smartctl": {
+    "version": [
+      7,
+      5
+    ],
+    "pre_release": false,
+    "svn_revision": "5714",
+    "platform_info": "Darwin 27.2.0 arm64",
+    "build_info": "(local build)",
+    "argv": [
+      "smartctl",
+      "--json",
+      "--info",
+      "--health",
+      "--attributes",
+      "--capabilities",
+      "--tolerance=verypermissive",
+      "--nocheck=standby",
+      "--format=brief",
+      "--log=error",
+      "/dev/disk4"
+    ],
+    "exit_status": 0
+  },
+  "local_time": {
+    "time_t": 1795680000,
+    "asctime": "Thu Nov 26 00:00:00 2026 UTC"
+  },
+  "device": {
+    "name": "/dev/disk4",
+    "info_name": "/dev/disk4",
+    "type": "nvme",
+    "protocol": "NVMe"
+  },
+  "model_name": "Samsung SSD 9100 PRO 2TB",
+  "serial_number": "SAMSUNG-SERIAL",
+  "firmware_version": "0B2QNXH7",
+  "nvme_pci_vendor": {
+    "id": 5197,
+    "subsystem_id": 5197
+  },
+  "nvme_ieee_oui_identifier": 9528,
+  "nvme_total_capacity": 2000398934016,
+  "nvme_unallocated_capacity": 0,
+  "nvme_controller_id": 1,
+  "nvme_version": {
+    "string": "2.0",
+    "value": 131072
+  },
+  "nvme_number_of_namespaces": 1,
+  "smart_support": {
+    "available": true,
+    "enabled": true
+  },
+  "nvme_firmware_update_capabilities": {
+    "value": 22,
+    "slots": 3,
+    "first_slot_is_read_only": false,
+    "activiation_without_reset": true,
+    "multiple_update_detection": false,
+    "other": 0
+  },
+  "nvme_optional_admin_commands": {
+    "value": 23,
+    "security_send_receive": true,
+    "format_nvm": true,
+    "firmware_download": true,
+    "namespace_management": false,
+    "self_test": true,
+    "directives": false,
+    "mi_send_receive": false,
+    "virtualization_management": false,
+    "doorbell_buffer_config": false,
+    "get_lba_status": false,
+    "command_and_feature_lockdown": false,
+    "other": 0
+  },
+  "nvme_optional_nvm_commands": {
+    "value": 93,
+    "compare": true,
+    "write_uncorrectable": false,
+    "dataset_management": true,
+    "write_zeroes": true,
+    "save_select_feature_nonzero": true,
+    "reservations": false,
+    "timestamp": true,
+    "verify": false,
+    "copy": false,
+    "other": 0
+  },
+  "nvme_log_page_attributes": {
+    "value": 127,
+    "smart_health_per_namespace": true,
+    "commands_effects_log": true,
+    "extended_get_log_page_cmd": true,
+    "telemetry_log": true,
+    "persistent_event_log": true,
+    "supported_log_pages_log": true,
+    "telemetry_data_area_4": true,
+    "other": 0
+  },
+  "nvme_maximum_data_transfer_pages": 128,
+  "nvme_composite_temperature_threshold": {
+    "warning": 84,
+    "critical": 88
+  },
+  "temperature": {
+    "op_limit_max": 84,
+    "critical_limit_max": 88,
+    "current": 33
+  },
+  "nvme_power_states": [
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 0,
+      "relative_read_throughput": 0,
+      "relative_write_latency": 0,
+      "relative_write_throughput": 0,
+      "entry_latency_us": 600,
+      "exit_latency_us": 600,
+      "max_power": {
+        "value": 870,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 1,
+      "relative_read_throughput": 1,
+      "relative_write_latency": 1,
+      "relative_write_throughput": 1,
+      "entry_latency_us": 600,
+      "exit_latency_us": 600,
+      "max_power": {
+        "value": 870,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": false,
+      "relative_read_latency": 2,
+      "relative_read_throughput": 2,
+      "relative_write_latency": 2,
+      "relative_write_throughput": 2,
+      "entry_latency_us": 600,
+      "exit_latency_us": 600,
+      "max_power": {
+        "value": 870,
+        "scale": 2,
+        "units_per_watt": 100
+      }
+    },
+    {
+      "non_operational_state": true,
+      "relative_read_latency": 3,
+      "relative_read_throughput": 3,
+      "relative_write_latency": 3,
+      "relative_write_throughput": 3,
+      "entry_latency_us": 2500,
+      "exit_latency_us": 12500,
+      "max_power": {
+        "value": 500,
+        "scale": 1,
+        "units_per_watt": 10000
+      }
+    },
+    {
+      "non_operational_state": true,
+      "relative_read_latency": 4,
+      "relative_read_throughput": 4,
+      "relative_write_latency": 4,
+      "relative_write_throughput": 4,
+      "entry_latency_us": 4000,
+      "exit_latency_us": 46000,
+      "max_power": {
+        "value": 50,
+        "scale": 1,
+        "units_per_watt": 10000
+      }
+    }
+  ],
+  "smart_status": {
+    "passed": true,
+    "nvme": {
+      "value": 0
+    }
+  },
+  "nvme_smart_health_information_log": {
+    "nsid": 0,
+    "critical_warning": 0,
+    "temperature": 33,
+    "available_spare": 100,
+    "available_spare_threshold": 10,
+    "percentage_used": 0,
+    "data_units_read": 5162580,
+    "data_units_written": 6463492,
+    "host_reads": 92838246,
+    "host_writes": 34531236,
+    "controller_busy_time": 92,
+    "power_cycles": 15,
+    "power_on_hours": 174,
+    "unsafe_shutdowns": 12,
+    "media_errors": 0,
+    "num_err_log_entries": 0,
+    "warning_temp_time": 0,
+    "critical_comp_time": 0,
+    "temperature_sensors": [
+      33,
+      33
+    ]
+  },
+  "spare_available": {
+    "current_percent": 100,
+    "threshold_percent": 10
+  },
+  "endurance_used": {
+    "current_percent": 0
+  },
+  "power_cycle_count": 15,
+  "power_on_time": {
+    "hours": 174
+  },
+  "nvme_error_information_log": {
+    "size": 64,
+    "read": 16,
+    "unread": 0
+  }
+}

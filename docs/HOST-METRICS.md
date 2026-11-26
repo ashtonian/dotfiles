@@ -35,16 +35,51 @@ enrollment), which the gateway promotes from the `host.name` the collector
 stamps. `instance` is `127.0.0.1:<port>` on every Mac, so it identifies
 nothing; select by `host_name`.
 
-The SMART series use smartctl_exporter's names and labels, so queries and
-rules written for it apply: `smartctl_device` (info: `device`, `interface`,
-`protocol`, `model_name`, `serial_number`, `firmware_version`),
-`smartctl_device_smartctl_exit_status`, `_smart_status` (1 passed, 0 failed),
-`_temperature{temperature_type="current"}`, `_power_on_seconds`,
-`_power_cycle_count`, `_capacity_bytes`, and for NVMe `_critical_warning`,
-`_available_spare`, `_available_spare_threshold`, `_percentage_used`,
-`_media_errors`, `_num_err_log_entries`, `_bytes_written`, `_bytes_read`.
+The SMART series are smartctl_exporter 0.15.0's (`metrics.go`, `smartctl.go`):
+the same names, labels and help, read with the same `smartctl` arguments and
+computed the same way, so queries and rules written for the exporter apply,
+and switching to it (below) changes nothing that reads them.
+
+| Metric | Labels besides `device` | Value |
+| --- | --- | --- |
+| `smartctl_device` | `interface`, `protocol`, `model_family`, `model_name`, `serial_number`, `ata_additional_product_id`, `firmware_version`, `ata_version`, `sata_version`, `form_factor`, `scsi_vendor`, `scsi_product`, `scsi_revision`, `scsi_version` | 1; `model_family`, `ata_additional_product_id` and an empty `model_name` read `unknown`, as upstream |
+| `smartctl_device_smartctl_exit_status` | | smartctl's exit status, for every disk, read or not (below) |
+| `smartctl_device_capacity_bytes` | | `user_capacity.bytes`, else the NVMe controller's `nvme_total_capacity`, else diskutil's size: smartctl reports no `user_capacity` on macOS, where upstream would export 0 |
+| `smartctl_device_nvme_capacity_bytes` | | `nvme_total_capacity` |
+| `smartctl_device_capacity_blocks`, `smartctl_device_block_size` | `blocks_type` (`logical`, `physical`) for the block size | When smartctl reports them; it does not on macOS |
+| `smartctl_device_power_on_seconds` | | Power-on hours and minutes, in seconds |
+| `smartctl_device_temperature` | `temperature_type`: `current`, and the drive's `op_limit_max` and `critical_limit_max` where it states them | °C |
+| `smartctl_device_power_cycle_count` | | Power cycles |
+| `smartctl_device_smart_status` | | 1 passed, 0 failed |
+| `smartctl_device_percentage_used`, `_available_spare`, `_available_spare_threshold`, `_critical_warning`, `_media_errors`, `_num_err_log_entries` | | NVMe SMART / Health Information log fields |
+| `smartctl_device_bytes_read`, `smartctl_device_bytes_written` | | NVMe data units × 512,000 bytes; left out while the drive reports 0 |
+| `smartctl_devices` | none | Physical disks found |
+| `smartctl_version` | `json_format_version`, `smartctl_version`, `svn_revision`, `build_info`, no `device` | 1 |
+
+Where upstream exports a value smartctl did not report as 0, `collect` leaves
+it out. Upstream declares `percentage_used`, `available_spare`,
+`available_spare_threshold` and `critical_warning` counters although they are
+levels; `collect` declares them gauges, because the collector reads a counter
+that falls as a reset. PromQL reads either the same. The ATA and SCSI families
+(`smartctl_device_attribute`, `_statistics`, `_error_log_count`, the SCSI error
+counters and so on) are not produced: every disk on these Macs is NVMe, and a
+SATA disk behind a USB bridge gets the device-level series only.
+
 `device` is the BSD name (`disk0`), which can change when a drive is
 reconnected: join on `serial_number` to follow a drive.
+
+Every physical disk gets `smartctl_device_smartctl_exit_status`, so a disk that
+stops answering shows instead of vanishing. Its bits are smartctl's:
+
+| Bit | Value | Meaning | Data kept |
+| --- | --- | --- | --- |
+| 0 | 1 | Command line refused, as for a device type smartctl cannot drive | No |
+| 1 | 2 | Device did not open or answer, or is in standby (`--nocheck=standby` does not wake it). A read past `host_metrics.smartctl_timeout`, or output that is not JSON, is reported as this bit too | No |
+| 2 | 4 | A SMART command failed. Apple's internal SSD always sets it: it has no NVMe error-information log page | Yes |
+| 3 to 7 | 8 to 128 | The disk's own findings: SMART says failing, prefail attributes at threshold, past threshold, errors logged, self-test errors | Yes |
+
+A disk with bit 0 or 1 set has only its exit status that run; the others keep
+all their series.
 
 The battery series, written only when the Mac has a battery:
 
@@ -71,6 +106,7 @@ environment variable of the same name wins.
 | `host_metrics.node_exporter_port` | `HOST_METRICS_NODE_EXPORTER_PORT` | Port, 1024 to 65535 | `9100` | Where `node_exporter` listens, on 127.0.0.1 only. Change it where something else holds the port; apply restarts the exporter and the collector follows (no collector change). |
 | `host_metrics.macmon_port` | `HOST_METRICS_MACMON_PORT` | Port, 1024 to 65535 | `9101` | Where `macmon serve` listens, on 127.0.0.1 only; as above. |
 | `host_metrics.smart_interval` | `HOST_METRICS_SMART_INTERVAL` | Seconds, 60 to 86400 | `300` | How often `collect` reads each physical disk's SMART data. Wear and write counters move slowly; a disk in standby is skipped, not woken. |
+| `host_metrics.smartctl_timeout` | `HOST_METRICS_SMARTCTL_TIMEOUT` | Seconds, 1 to 300 | `60` | How long one disk's `smartctl` read may take before it is ended and the disk reported as not answering (exit status 2). A read takes well under a second. |
 | | `HOST_METRICS_STATE` | Directory path | `~/.local/state/host-metrics` | Targets and textfiles. Tests only: the collector's fragment names the default path. |
 
 Fixed in the code, each for the reason given:
@@ -84,12 +120,13 @@ Fixed in the code, each for the reason given:
 | Network: `en*` interfaces | `bin/host-metrics node-exporter` | `--collector.netdev.device-include='^en[0-9]+$'` | Ethernet and Wi-Fi; tunnels, bridges and Thunderbolt bridges add series no panel reads. |
 | No `thermal` collector | `bin/host-metrics node-exporter` | `--no-collector.thermal` | Its 50-odd raw sensor series add nothing macmon's CPU and GPU temperatures and the thermal pressure level do not already give. |
 | Series dropped | `conf.d/host-metrics.yaml` | `metric_relabel_configs` | `node_scrape_collector_duration_seconds`, multicast, collision and no-protocol counters; macmon keeps only the families in the table above (`macmon_all_power_watts` duplicates `chip`). |
-| Queue: 320 MiB of serialized data | `config.yaml` `otlp_http/host` | `queue_size` | About 280 points a minute at about 84 bytes each queued, 34 MB a day: about 10 days at studio's rate, past Mimir's one-week limit with room for more disks. |
+| `smartctl` arguments | `bin/host-metrics` `smart_device` | `--json --info --health --attributes --capabilities --tolerance=verypermissive --nocheck=standby --format=brief --log=error` | smartctl_exporter 0.15.0's (`readjson.go`), so the JSON, and every value computed from it, match what the exporter would read. |
+| Queue: 320 MiB of serialized data | `config.yaml` `otlp_http/host` | `queue_size` | About 290 points a minute at about 84 bytes each queued, 35 MB a day: about 9.5 days at studio's rate, past Mimir's one-week limit with room for more disks. |
 
-About 280 samples a minute per Mac reach Mimir, measured on studio with three
-disks: 246 from `node_exporter` and the textfiles (70 network, 48 CPU, 45
-SMART, 36 disk I/O, the rest memory, load, filesystem and system info), 24
-from macmon, and 5 scrape series per job. Each disk adds 15 SMART series; a
+About 290 samples a minute per Mac reach Mimir, measured on studio with three
+disks: 254 from `node_exporter` and the textfiles (70 network, 53 SMART, 48
+CPU, 36 disk I/O, the rest memory, load, filesystem and system info), 24 from
+macmon, and 5 scrape series per job. A disk adds 15 to 18 SMART series; a
 laptop adds 5 battery series.
 
 ## External Dependencies
@@ -99,6 +136,7 @@ laptop adds 5 battery series.
 | `node_exporter` | 1.13.1 (latest) | Homebrew formula | System metrics and the textfile collector |
 | `macmon` | 0.12.1 (latest) | Homebrew formula, Apple silicon only | Power, temperatures, fans, memory pressure |
 | `smartmontools` | 7.5 (latest) | Homebrew formula | `smartctl --json` for each disk's SMART data |
+| `jq` | 1.7.1 in macOS (`/usr/bin/jq`); Homebrew's 1.8.2 comes first on the jobs' PATH where `brew.base` installed it | base system | Turns smartctl's JSON into samples in one pass per disk; both versions give the same output |
 | `otelcol-contrib` | as pinned in `bin/otel-agent` | the `agents.otel-agent` feature | Scrapes the exporters and forwards to the gateway |
 | `notifyutil`, `ioreg`, `diskutil`, `plutil`, `lsof`, `sysctl`, `launchctl` | base system | macOS | Thermal pressure, battery, disk list, parsing, port checks, job control |
 
@@ -107,13 +145,30 @@ gateway (`k8s/monitoring/otel-gateway`) stores the samples in Mimir, Mimir's
 ruler evaluates the Macs' SSD and battery alerts, and the **Macs** Grafana
 dashboard (Infrastructure) shows them.
 
-smartctl_exporter is not used. Its 0.15.0 release reads every device with
-`smartctl --json`, and treats any smartctl error bit as a failed read: Apple's
-internal SSD has no NVMe error-information log page, which smartctl reports
-with exit status 4, so the exporter drops the one disk that matters most
-(prometheus-community/smartctl_exporter#152, closed; #412 proposes a fix).
-`collect` reads the same JSON, keeps a device whose only error is that one
-(bit 2), and writes the exporter's names.
+### Why not smartctl_exporter, and when to switch to it
+
+smartctl_exporter 0.15.0 drops Apple's internal SSD, the one disk every Mac
+has. It asks smartctl for the error-information log (`--log=error`,
+`readjson.go`), which Apple's SSD does not have; smartctl answers with an
+error message and exit bit 2, and the exporter discards any reply that carries
+an error message (`jsonIsOk`). The report,
+[prometheus-community/smartctl_exporter#152](https://github.com/prometheus-community/smartctl_exporter/issues/152),
+was closed without a fix;
+[#412](https://github.com/prometheus-community/smartctl_exporter/pull/412)
+keeps a reply that has a SMART status despite such a message, and is open.
+
+Switch to smartctl_exporter once a release contains #412 or another fix that
+keeps Apple's SSD. Before switching, check on one Mac that the release exports
+`smartctl_device` for the internal SSD, and run it with
+`--web.listen-address=127.0.0.1:<port>` and one `--smartctl.device=/dev/diskN`
+per disk: its own scan names macOS disks by IOService path, which would change
+the `device` label. Add it to the collector's fragment as a scrape job
+relabelled to `job="mac-node"`, which the cluster's rules select, and remove
+`collect_smart`. What changes for readers:
+`smartctl_device_capacity_bytes` reads 0 on macOS (no `user_capacity`), the
+four NVMe levels above become counters, and values smartctl leaves out are
+exported as 0. A disk the exporter was not given at start, such as a drive
+attached later, is not read until it restarts.
 
 ## API / Interfaces
 
@@ -159,11 +214,23 @@ it.
 
 ## Build / Run / Test
 
-The `desktop` profile enables the feature, and it requires `agents.otel-agent`.
-`dotfiles apply` installs the three formulae, links the fragment, creates the
-target directory, and installs the LaunchAgents once the programs exist and
-the Mac is enrolled with otel-agent (`~/.local/share/otel-agent/host`).
-`dotfiles doctor` lists a job that waits.
+The feature is off by default. It sends to one context's cluster, so that
+context's overlay profile turns it on, for the Macs that send there:
+
+```toml
+# profiles/<overlay>.toml
+[features]
+enable = ["macos.host-metrics"]
+```
+
+It requires `agents.otel-agent`, which it turns on too. `dotfiles apply`
+installs the three formulae, links the fragment, creates the target
+directory, and installs the LaunchAgents once the programs exist and the Mac
+is enrolled with otel-agent (`~/.local/share/otel-agent/host`). `dotfiles
+doctor` lists a job that waits. A Mac that is not enrolled sends nothing: its
+jobs never install. The overlay must name the feature only once this checkout
+has it: a profile that enables an unknown feature fails `dotfiles check`, and
+with it every sync.
 
 The running collector reads the fragment at its next restart, which the next
 sync's `otel-agent converge` does when it sees the config files changed (the
@@ -182,12 +249,17 @@ Tests:
 
 ```sh
 python3 -m unittest tests.test_dotfiles.HostMetrics tests.test_dotfiles.OtelAgent
-python3 -m unittest tests.test_dotfiles.RealFeatures.test_a_desktop_mac_sends_hardware_metrics_once_enrolled_and_cleans_up_when_off
+python3 -m unittest tests.test_dotfiles.RealFeatures.test_hardware_metrics_are_an_overlays_choice_and_wait_for_enrollment
 ```
 
 `HostMetrics` runs `bin/host-metrics` against stand-ins for the exporters and
 for `notifyutil`, `ioreg`, `diskutil`, `smartctl`, `lsof` and `launchctl`, and
-reads the plists it writes with the real `plutil`. To validate the merged
+reads the plists it writes with the real `plutil` and `jq`. The smartctl
+stand-in replays JSON captured from three drives (Apple's AP0512Z, a Samsung
+9100 PRO and a WD_BLACK SN7100, serial numbers replaced) in
+`tests/fixtures/smartctl`, and the tests derive what smartctl_exporter would
+export from those files. To add a drive, capture it with the arguments in the
+config table and replace `serial_number`. To validate the merged
 collector config, run the validation in
 [AGENT-TELEMETRY.md](AGENT-TELEMETRY.md#build--run--test) with a second
 `--config=features/macos.host-metrics/home/.config/otel-agent/conf.d/host-metrics.yaml`.
@@ -226,15 +298,18 @@ collector config, run the validation in
   the setting: run `dotfiles apply`.
 - *`not answering`, job running.* The exporter is starting or hung: `launchctl
   kickstart -k gui/$(id -u)/com.ashtonian.<name>`, then read its `.err` log.
-- *`smart.prom` lacks a disk, and `collect.err` says `smartctl read nothing from
-  diskN (exit 2)`.* The disk was in standby (`--nocheck=standby` does not wake
-  it) or would not open; the next interval tries again. Exit 1 means smartctl
-  does not know the device type (a USB bridge without SAT pass-through): that
-  drive reports no SMART data on a Mac.
+- *A disk has only `smartctl_device_smartctl_exit_status`, and `collect.err`
+  says `smartctl read nothing from diskN (exit 2)`.* The disk was in standby
+  (`--nocheck=standby` does not wake it) or would not open; the next interval
+  tries again. Exit 1 means smartctl cannot drive the device type (a USB
+  bridge without SAT pass-through): that drive reports no SMART data on a Mac.
+- *`collect.err` says `smartctl did not finish reading diskN within 60s`, or
+  `smartctl left no JSON for diskN`.* The disk hung or smartctl failed; it is
+  reported with bit 1 set. Run `smartctl --json --info --health /dev/diskN`
+  by hand; a drive that hangs there needs reconnecting.
 - *`smartctl_device_smartctl_exit_status` is 4 for Apple's SSD.* Normal: the
-  missing error-information log page. Bits 3 and up are the disk's own
-  findings (3 failing, 4 prefail attributes, 6 errors logged, 7 self-test
-  errors); the cluster's rules alert on the health values themselves.
+  missing error-information log page (bit 2). Bits 3 and up are the disk's own
+  findings; the cluster's rules alert on the health values themselves.
 - *No `battery.prom` on a laptop.* `ioreg -rn AppleSmartBattery -a` lacks
   `BatteryInstalled = true`; desktop Macs have a placeholder entry with it
   false, so the file is absent there by design.
@@ -287,4 +362,5 @@ them).
 | [features/macos.host-metrics/hooks/](../features/macos.host-metrics/hooks/) | `check`, `apply` and `teardown` |
 | [features/agents.otel-agent/home/.config/otel-agent/config.yaml](../features/agents.otel-agent/home/.config/otel-agent/config.yaml) | `otlp_http/host`, the exporter and queue the fragment sends through |
 | [bin/otel-agent](../bin/otel-agent) | Passes each `conf.d` fragment to the collector and restarts it when the set changes |
-| [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `HostMetrics`, `OtelAgent`, and the desktop feature in `RealFeatures` |
+| [tests/test_dotfiles.py](../tests/test_dotfiles.py) | `HostMetrics`, `OtelAgent`, and the feature through the real engine in `RealFeatures` |
+| [tests/fixtures/smartctl/](../tests/fixtures/smartctl/) | smartctl's JSON for three drives, as the `HostMetrics` tests replay it |

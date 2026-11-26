@@ -8,7 +8,8 @@
 #   host-metrics macmon          run macmon serve on 127.0.0.1 (a LaunchAgent's entry point)
 #   host-metrics collect         write the files node_exporter's textfile collector
 #                                serves: thermal pressure and battery on every run,
-#                                SMART once HOST_METRICS_SMART_INTERVAL has passed
+#                                SMART once HOST_METRICS_SMART_INTERVAL has passed,
+#                                each smartctl call bounded by HOST_METRICS_SMARTCTL_TIMEOUT
 #   host-metrics status          the three jobs, what the collector scrapes, and how
 #                                old each textfile is
 #   host-metrics check           the feature's check: whether the collector's target
@@ -181,7 +182,8 @@ smart_due() {
     (( age + 30 >= $1 ))
 }
 
-# bounded SECONDS COMMAND... runs COMMAND, ending it once it runs past SECONDS.
+# bounded SECONDS COMMAND... runs COMMAND, ending it once it runs past SECONDS;
+# timed_out says whether it did.
 bounded() {
     local seconds=$1 pid watchdog status=0
     shift
@@ -190,27 +192,20 @@ bounded() {
     (sleep "$seconds" && kill -TERM "$pid" 2>/dev/null) &
     watchdog=$!
     wait "$pid" || status=$?
-    # Ending the watchdog's sleep ends the watchdog, without its kill.
+    # Ending the watchdog's sleep ends the watchdog without its kill, so it
+    # exits 0 only when it ended the command.
     pkill -P "$watchdog" 2>/dev/null || true
-    wait "$watchdog" 2>/dev/null || true
+    timed_out=0
+    if wait "$watchdog" 2>/dev/null; then
+        timed_out=1
+    fi
     return "$status"
-}
-
-json_value() { # json_value FILE KEY
-    plutil -extract "$2" raw -o - "$1" 2>/dev/null
-}
-
-# label VALUE prints VALUE escaped for a label in the text format.
-label() {
-    local value=${1//\\/\\\\}
-    value=${value//\"/\\\"}
-    printf '%s' "${value//$'\n'/\\n}"
 }
 
 # sample NAME LABELS VALUE keeps one sample of a metric family until the
 # families are written; a missing value adds nothing.
 sample() {
-    [[ $3 =~ ^-?[0-9]+$ ]] || return 0
+    [[ $3 =~ ^-?[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?$ ]] || return 0
     printf '%s{%s} %s\n' "$1" "$2" "$3" >>"$work/$1"
 }
 
@@ -222,55 +217,136 @@ family() {
     cat "$work/$1"
 }
 
-# smart_device DISK reads one physical disk's SMART data, under the names and
-# labels smartctl_exporter uses, with DISK (its BSD name) as `device`.
-# smartctl_exporter itself drops Apple's internal SSD: Apple's controller has
-# no error-information log page, which smartctl reports as an error and the
-# exporter treats as a failed read (docs/HOST-METRICS.md).
+# The SMART families: smartctl_exporter 0.15.0's names, labels and help
+# (metrics.go), for what a Mac's disks report. The TYPE of four NVMe levels
+# is gauge where upstream says counter: through the collector, a counter that
+# falls reads as a reset. NAME TYPE HELP, in the order written.
+smart_families='smartctl_version gauge smartctl version
+smartctl_devices gauge Number of devices configured or dynamically discovered
+smartctl_device gauge Device info
+smartctl_device_smartctl_exit_status gauge Exit status of smartctl on device
+smartctl_device_capacity_blocks gauge Device capacity in blocks
+smartctl_device_capacity_bytes gauge Device capacity in bytes
+smartctl_device_nvme_capacity_bytes gauge NVMe device total capacity bytes
+smartctl_device_block_size gauge Device block size
+smartctl_device_power_on_seconds counter Device power on seconds
+smartctl_device_temperature gauge Device temperature celsius
+smartctl_device_power_cycle_count counter Device power cycle count
+smartctl_device_smart_status gauge General smart status
+smartctl_device_percentage_used gauge Device write percentage used
+smartctl_device_available_spare gauge Normalized percentage (0 to 100%) of the remaining spare capacity available
+smartctl_device_available_spare_threshold gauge When the Available Spare falls below the threshold indicated in this field, an asynchronous event completion may occur. The value is indicated as a normalized percentage (0 to 100%)
+smartctl_device_critical_warning gauge This field indicates critical warnings for the state of the controller
+smartctl_device_media_errors counter Contains the number of occurrences where the controller detected an unrecovered data integrity error. Errors such as uncorrectable ECC, CRC checksum failure, or LBA tag mismatch are included in this field
+smartctl_device_num_err_log_entries counter Contains the number of Error Information log entries over the life of the controller
+smartctl_device_bytes_read counter Bytes the host read
+smartctl_device_bytes_written counter Bytes the host wrote'
+
+# smart_samples turns one disk's smartctl JSON into FAMILY<TAB>LABELS<TAB>VALUE
+# lines, computed as smartctl_exporter 0.15.0 computes them (smartctl.go),
+# except that a value smartctl did not report is left out rather than sent as
+# 0, and smartctl_device_capacity_bytes falls back to the NVMe controller's
+# capacity, then to diskutil's ($size): smartctl reports no user_capacity on
+# macOS.
+# shellcheck disable=SC2016 # jq's variables, not the shell's
+smart_samples='
+def text: if . == null then "" else tostring | gsub("^\\s+|\\s+$"; "") end;
+def esc: text | gsub("[[:cntrl:]]"; "") | gsub("\\\\"; "\\\\") | gsub("\""; "\\\"");
+def sample($family; $labels): select(type == "number") | "\($family)\t\($labels)\t\(.)";
+def flag: if type == "boolean" then (if . then 1 else 0 end) else . end;
+("device=\"\($device | esc)\"") as $d
+| .nvme_smart_health_information_log as $health
+| (
+    ([
+        $d,
+        "interface=\"\(.device.type | esc)\"",
+        "protocol=\"\(.device.protocol | esc)\"",
+        "model_family=\"\(.model_family // "unknown" | esc)\"",
+        "model_name=\"\((.model_name // .scsi_model_name) | text | if . == "" then "unknown" else . end | esc)\"",
+        "serial_number=\"\(.serial_number | esc)\"",
+        "ata_additional_product_id=\"\(.ata_additional_product_id // "unknown" | esc)\"",
+        "firmware_version=\"\(.firmware_version | esc)\"",
+        "ata_version=\"\(.ata_version.string | esc)\"",
+        "sata_version=\"\(.sata_version.string | esc)\"",
+        "form_factor=\"\(.form_factor.name | esc)\"",
+        "scsi_vendor=\"\(.scsi_vendor | esc)\"",
+        "scsi_product=\"\(.scsi_product | esc)\"",
+        "scsi_revision=\"\(.scsi_revision | esc)\"",
+        "scsi_version=\"\(.scsi_version | esc)\""
+    ] | join(",") as $info | 1 | sample("smartctl_device"; $info)),
+    (.user_capacity.blocks | sample("smartctl_device_capacity_blocks"; $d)),
+    ((.user_capacity.bytes // .nvme_total_capacity // $size) | sample("smartctl_device_capacity_bytes"; $d)),
+    (.nvme_total_capacity | sample("smartctl_device_nvme_capacity_bytes"; $d)),
+    (.logical_block_size | sample("smartctl_device_block_size"; "\($d),blocks_type=\"logical\"")),
+    (.physical_block_size | sample("smartctl_device_block_size"; "\($d),blocks_type=\"physical\"")),
+    (.power_on_time | select(. != null) | (.hours // 0) * 3600 + (.minutes // 0) * 60
+        | sample("smartctl_device_power_on_seconds"; $d)),
+    (.temperature // {} | to_entries[] | . as $t
+        | $t.value | sample("smartctl_device_temperature"; "\($d),temperature_type=\"\($t.key | esc)\"")),
+    (.power_cycle_count | sample("smartctl_device_power_cycle_count"; $d)),
+    (.smart_status.passed | flag | sample("smartctl_device_smart_status"; $d)),
+    (select((.device.type | text) == "nvme" or (.device.protocol | text) == "NVMe")
+        | ($health.percentage_used | sample("smartctl_device_percentage_used"; $d)),
+          ($health.available_spare | sample("smartctl_device_available_spare"; $d)),
+          ($health.available_spare_threshold | sample("smartctl_device_available_spare_threshold"; $d)),
+          ($health.critical_warning | sample("smartctl_device_critical_warning"; $d)),
+          ($health.media_errors | sample("smartctl_device_media_errors"; $d)),
+          ($health.num_err_log_entries | sample("smartctl_device_num_err_log_entries"; $d)),
+          # Units of 1000 blocks of 512 bytes, whatever the block size (NVMe
+          # base specification, SMART / Health Information); 0 is not reported.
+          ($health.data_units_read | select(. != null and . > 0) | . * 512000
+              | sample("smartctl_device_bytes_read"; $d)),
+          ($health.data_units_written | select(. != null and . > 0) | . * 512000
+              | sample("smartctl_device_bytes_written"; $d)))
+)'
+
+# smart_version prints smartctl_version's labels from one disk's JSON.
+smart_version='"json_format_version=\"\(.json_format_version | map(tostring) | join("."))\",smartctl_version=\"\(.smartctl.version | map(tostring) | join("."))\",svn_revision=\"\(.smartctl.svn_revision // "")\",build_info=\"\(.smartctl.build_info // "")\""'
+
+# smart_device DISK reads one physical disk's SMART data with smartctl_exporter
+# 0.15.0's smartctl arguments (readjson.go), as DISK, its BSD name.
+# smartctl_exporter itself drops Apple's internal SSD: the SSD has no NVMe
+# error-information log page, which smartctl reports with an error message and
+# exit bit 2, and the exporter rejects any reply with an error message
+# (docs/HOST-METRICS.md). Every disk gets its exit status, so one that stops
+# answering shows instead of vanishing.
 smart_device() {
-    local disk=$1 json=$work/$1.json status=0 info value dev
-    bounded 60 smartctl --json --all --nocheck=standby "/dev/$disk" >"$json" 2>/dev/null || status=$?
-    # Bit 0: the command line was refused (no SMART support known for the
-    # device type); bit 1: the device did not open, or is in standby. Bit 2,
-    # a SMART command failed, is what Apple's SSD reports for that log page.
+    local disk=$1 json=$work/$1.json status=0 dev size
+    dev="device=\"$disk\""
+    bounded "$smartctl_timeout" smartctl --json --info --health --attributes --capabilities \
+        --tolerance=verypermissive --nocheck=standby --format=brief --log=error "/dev/$disk" \
+        >"$json" 2>/dev/null || status=$?
+    # Exit bits 0 (the command line was refused, as for a device type smartctl
+    # cannot drive) and 1 (the device did not open, or is in standby) mean no
+    # data; a read that did not finish or left no JSON counts as bit 1. Bit 2
+    # (a command failed: Apple's missing log page) and bits 3 to 7 (the disk's
+    # own findings) come with data, which is kept.
+    if (( timed_out )); then
+        log "smartctl did not finish reading $disk within ${smartctl_timeout}s"
+        sample smartctl_device_smartctl_exit_status "$dev" 2
+        return 0
+    fi
+    if ! jq -e 'type == "object"' "$json" >/dev/null 2>&1; then
+        log "smartctl left no JSON for $disk (exit $status)"
+        sample smartctl_device_smartctl_exit_status "$dev" $(( status | 2 ))
+        return 0
+    fi
+    sample smartctl_device_smartctl_exit_status "$dev" "$status"
     if (( status & 3 )); then
         log "smartctl read nothing from $disk (exit $status)"
         return 0
     fi
-    dev="device=\"$disk\""
-    info="$dev,interface=\"$(label "$(json_value "$json" device.type || true)")\""
-    info+=",protocol=\"$(label "$(json_value "$json" device.protocol || true)")\""
-    info+=",model_name=\"$(label "$(json_value "$json" model_name || true)")\""
-    info+=",serial_number=\"$(label "$(json_value "$json" serial_number || true)")\""
-    info+=",firmware_version=\"$(label "$(json_value "$json" firmware_version || true)")\""
-    sample smartctl_device "$info" 1
-    sample smartctl_device_smartctl_exit_status "$dev" "$status"
-    case $(json_value "$json" smart_status.passed || true) in
-        true) sample smartctl_device_smart_status "$dev" 1 ;;
-        false) sample smartctl_device_smart_status "$dev" 0 ;;
-    esac
-    sample smartctl_device_temperature "$dev,temperature_type=\"current\"" "$(json_value "$json" temperature.current || true)"
-    value=$(json_value "$json" power_on_time.hours || true)
-    [[ ! $value =~ ^[0-9]+$ ]] || sample smartctl_device_power_on_seconds "$dev" $(( value * 3600 ))
-    sample smartctl_device_power_cycle_count "$dev" "$(json_value "$json" power_cycle_count || true)"
-    sample smartctl_device_capacity_bytes "$dev" "$(diskutil info -plist "$disk" | plutil -extract TotalSize raw -o - - 2>/dev/null || true)"
-
-    local health=nvme_smart_health_information_log
-    sample smartctl_device_critical_warning "$dev" "$(json_value "$json" $health.critical_warning || true)"
-    sample smartctl_device_available_spare "$dev" "$(json_value "$json" $health.available_spare || true)"
-    sample smartctl_device_available_spare_threshold "$dev" "$(json_value "$json" $health.available_spare_threshold || true)"
-    sample smartctl_device_percentage_used "$dev" "$(json_value "$json" $health.percentage_used || true)"
-    sample smartctl_device_media_errors "$dev" "$(json_value "$json" $health.media_errors || true)"
-    sample smartctl_device_num_err_log_entries "$dev" "$(json_value "$json" $health.num_err_log_entries || true)"
-    # A data unit is 1000 blocks of 512 bytes (NVMe 1.4, 5.14.1.2).
-    value=$(json_value "$json" $health.data_units_written || true)
-    [[ ! $value =~ ^[0-9]+$ ]] || sample smartctl_device_bytes_written "$dev" $(( value * 512000 ))
-    value=$(json_value "$json" $health.data_units_read || true)
-    [[ ! $value =~ ^[0-9]+$ ]] || sample smartctl_device_bytes_read "$dev" $(( value * 512000 ))
+    [[ -s $work/version ]] || jq -r "$smart_version" "$json" >"$work/version" 2>/dev/null || true
+    size=$(diskutil info -plist "$disk" | plutil -extract TotalSize raw -o - - 2>/dev/null) || size=null
+    [[ $size =~ ^[0-9]+$ ]] || size=null
+    local family labels value
+    while IFS=$'\t' read -r family labels value; do
+        sample "$family" "$labels" "$value"
+    done < <(jq -r --arg device "$disk" --argjson size "$size" "$smart_samples" "$json" 2>/dev/null || true)
 }
 
 collect_smart() {
-    local work disks disk i=0
+    local work disks disk i=0 name type help
     command -v smartctl >/dev/null || {
         log "smartctl is not installed; dotfiles apply installs it with the macos.host-metrics feature"
         return 1
@@ -286,25 +362,13 @@ collect_smart() {
         smart_device "$disk"
         i=$(( i + 1 ))
     done
+    sample smartctl_devices "" "$i"
+    [[ ! -s $work/version ]] || sample smartctl_version "$(cat "$work/version")" 1
     # Written even when no disk answered, so the interval holds and a disk
-    # that stopped answering drops out instead of repeating its last reading.
-    {
-        family smartctl_device gauge 'Device info.'
-        family smartctl_device_smartctl_exit_status gauge 'Exit status of smartctl for the device.'
-        family smartctl_device_smart_status gauge 'General SMART status: 1 passed, 0 failed.'
-        family smartctl_device_temperature gauge 'Temperature in degrees Celsius.'
-        family smartctl_device_power_on_seconds counter 'Power-on time in seconds.'
-        family smartctl_device_power_cycle_count counter 'Power cycles.'
-        family smartctl_device_capacity_bytes gauge 'Capacity in bytes.'
-        family smartctl_device_critical_warning gauge 'NVMe critical-warning bitmask.'
-        family smartctl_device_available_spare gauge 'NVMe spare capacity left, in percent.'
-        family smartctl_device_available_spare_threshold gauge 'NVMe spare capacity threshold, in percent.'
-        family smartctl_device_percentage_used gauge 'NVMe estimate of rated endurance used, in percent.'
-        family smartctl_device_media_errors counter 'NVMe unrecovered data-integrity errors.'
-        family smartctl_device_num_err_log_entries counter 'NVMe error-information log entries.'
-        family smartctl_device_bytes_written counter 'Bytes the host wrote.'
-        family smartctl_device_bytes_read counter 'Bytes the host read.'
-    } >"$textfile/smart.prom.tmp"
+    # that stopped answering shows its exit status instead of its last reading.
+    while read -r name type help; do
+        family "$name" "$type" "$help"
+    done <<<"$smart_families" >"$textfile/smart.prom.tmp"
     rm -rf "$work"
     install smart.prom
 }
@@ -312,6 +376,7 @@ collect_smart() {
 cmd_collect() {
     local interval failed=0
     interval=$(setting HOST_METRICS_SMART_INTERVAL 60 86400)
+    smartctl_timeout=$(setting HOST_METRICS_SMARTCTL_TIMEOUT 1 300)
     mkdir -p "$textfile"
     collect_thermal || failed=1
     collect_battery || failed=1

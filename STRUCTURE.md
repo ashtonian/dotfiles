@@ -89,7 +89,7 @@ A feature's `hooks/` holds the scripts its `[hooks]` and `[check]` tables name
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
 | `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene`; setting `disk_hygiene.cache_drive` |
-| `macos.host-metrics` | desktop | darwin | Brewfile: `node_exporter`, `macmon`, `smartmontools`; `~/.config/otel-agent/conf.d/host-metrics.yaml`; LaunchAgents `com.ashtonian.node-exporter`, `com.ashtonian.macmon`, `com.ashtonian.host-metrics` (once otel-agent is enrolled); settings `host_metrics.*`; check and apply hooks keep the scrape targets right; requires `agents.otel-agent` |
+| `macos.host-metrics` | an overlay profile | darwin | Brewfile: `node_exporter`, `macmon`, `smartmontools`; `~/.config/otel-agent/conf.d/host-metrics.yaml`; LaunchAgents `com.ashtonian.node-exporter`, `com.ashtonian.macmon`, `com.ashtonian.host-metrics` (once otel-agent is enrolled); settings `host_metrics.*`; check and apply hooks keep the scrape targets right; requires `agents.otel-agent` |
 | `macos.local-network` | an overlay profile | darwin | Root-owned `/Library/Preferences/com.apple.network.local-network.plist` through `bin/dotfiles-local-network` hooks (`sudo`); settings `local_network.ethernet`, `local_network.wifi`; the check reports `pending` until the restart that puts them into effect |
 | `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions`; check and apply hooks keep the listed folders excluded |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |

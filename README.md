@@ -739,7 +739,7 @@ per harness and repository. Setup and operations:
 
 ### Host metrics
 
-On desktop Macs, `macos.host-metrics` runs `node_exporter` and `macmon serve` on
+Where an overlay profile turns it on, `macos.host-metrics` runs `node_exporter` and `macmon serve` on
 loopback and writes thermal pressure, battery and SMART readings for them to
 serve (`bin/host-metrics`). The telemetry collector scrapes them every minute
 and forwards the samples through their own disk queue to the cluster, where the

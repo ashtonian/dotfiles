@@ -1679,8 +1679,15 @@ else:
         self.assertFalse((self.launchd / 'com.ashtonian.otel-agent').exists(), 'unloaded too')
 
     @unittest.skipUnless(sys.platform == 'darwin', 'macos.host-metrics is a macOS feature')
-    def test_a_desktop_mac_sends_hardware_metrics_once_enrolled_and_cleans_up_when_off(self):
+    def test_hardware_metrics_are_an_overlays_choice_and_wait_for_enrollment(self):
         brewfile = self.converge('base,dev,desktop')
+        self.assertNotIn('# macos.host-metrics', brewfile, 'no public profile turns it on')
+        machine = self.home / '.config/dotfiles/machine.toml'
+        manifest = machine.read_text()
+        machine.write_text(manifest + '\n[features]\nenable = ["macos.host-metrics"]\n')
+        p = self.dotfiles('apply')
+        self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
+        brewfile = (self.home / '.config/dotfiles/generated/Brewfile').read_text()
         for formula in ('node_exporter', 'macmon', 'smartmontools'):
             self.assertIn(f'brew "{formula}" # macos.host-metrics', brewfile)
         fragment = self.home / '.config/otel-agent/conf.d/host-metrics.yaml'
@@ -1688,7 +1695,7 @@ else:
         self.assertTrue((self.home / '.config/otel-agent/config.yaml').is_symlink(), 'beside the collector config')
         env = (self.home / '.config/dotfiles/generated/env.sh').read_text()
         for name, value in (('HOST_METRICS_NODE_EXPORTER_PORT', 9100), ('HOST_METRICS_MACMON_PORT', 9101),
-                            ('HOST_METRICS_SMART_INTERVAL', 300)):
+                            ('HOST_METRICS_SMART_INTERVAL', 300), ('HOST_METRICS_SMARTCTL_TIMEOUT', 60)):
             self.assertIn(f"{name}='{value}'; export {name}", env)
         self.assertTrue((self.home / '.local/state/host-metrics/targets').is_dir(), 'the apply hook made it')
         labels = ('com.ashtonian.node-exporter', 'com.ashtonian.macmon', 'com.ashtonian.host-metrics')
@@ -1701,8 +1708,7 @@ else:
         state = self.home / '.local/state/host-metrics/targets'
         (state / 'node-exporter.json').write_text('[]\n')
         (self.home / 'Library/Logs/host-metrics').mkdir(parents=True)
-        machine = self.home / '.config/dotfiles/machine.toml'
-        machine.write_text(machine.read_text() + '\n[features]\ndisable = ["macos.host-metrics"]\n')
+        machine.write_text(manifest)
         p = self.dotfiles('apply')
         self.assertEqual(p.returncode, 0, p.stdout + p.stderr)
         self.assertFalse(fragment.exists() or fragment.is_symlink())
@@ -3264,6 +3270,8 @@ class HostMetrics(Fixture):
 
     SCRIPT = ROOT / 'bin/host-metrics'
     FRAGMENT = FEATURES / 'macos.host-metrics/home/.config/otel-agent/conf.d/host-metrics.yaml'
+    # smartctl's JSON for studio's three drives, serial numbers replaced.
+    DRIVES = ROOT / 'tests/fixtures/smartctl'
 
     def setUp(self):
         super().setUp()
@@ -3274,7 +3282,8 @@ class HostMetrics(Fixture):
         self.fake = self.path / 'fake'
         self.fake.mkdir()
         self.env.update(HOME=str(self.home), FAKE=str(self.fake), HOST_METRICS_NODE_EXPORTER_PORT='9100',
-                        HOST_METRICS_MACMON_PORT='9101', HOST_METRICS_SMART_INTERVAL='300')
+                        HOST_METRICS_MACMON_PORT='9101', HOST_METRICS_SMART_INTERVAL='300',
+                        HOST_METRICS_SMARTCTL_TIMEOUT='60')
         self.env.pop('HOST_METRICS_STATE', None)
         for name in ('node_exporter', 'macmon'):
             self.cli(name, 'printf "%s\\n" "$0" "$@"')
@@ -3285,6 +3294,7 @@ class HostMetrics(Fixture):
         self.cli('diskutil', 'case "$1" in list) cat "$FAKE/disks.plist" ;; info) cat "$FAKE/info-$3.plist" ;; esac')
         self.cli('smartctl', 'printf "%s\\n" "$*" >> "$FAKE/smartctl-calls"\n'
                  'for last; do :; done; disk=${last#/dev/}\n'
+                 '[ ! -f "$FAKE/hang-$disk" ] || sleep 30\n'
                  'cat "$FAKE/smart-$disk.json"; exit "$(cat "$FAKE/smart-$disk.exit")"')
         self.disks()
 
@@ -3293,22 +3303,47 @@ class HostMetrics(Fixture):
                               capture_output=True, text=True, timeout=30)
 
     def disks(self, *disks):
-        """diskutil's physical disks: each (name, bytes, smartctl's JSON, exit status)."""
+        """diskutil's physical disks: each (name, bytes, smartctl's output, exit status),
+        the output a dict for JSON or a string as it is."""
         (self.fake / 'disks.plist').write_bytes(plistlib.dumps({'WholeDisks': [d[0] for d in disks]}))
         for name, size, report, status in disks:
             (self.fake / f'info-{name}.plist').write_bytes(plistlib.dumps({'TotalSize': size}))
-            (self.fake / f'smart-{name}.json').write_text(json.dumps(report))
+            (self.fake / f'smart-{name}.json').write_text(report if isinstance(report, str) else json.dumps(report))
             (self.fake / f'smart-{name}.exit').write_text(str(status))
 
-    def nvme(self, model, serial, used, written_units):
-        return {'device': {'name': 'ignored', 'type': 'nvme', 'protocol': 'NVMe'},
-                'model_name': model, 'serial_number': serial, 'firmware_version': '1.0',
-                'smart_status': {'passed': True}, 'temperature': {'current': 31},
-                'power_on_time': {'hours': 3121}, 'power_cycle_count': 321,
-                'nvme_smart_health_information_log': {
-                    'critical_warning': 0, 'available_spare': 100, 'available_spare_threshold': 99,
-                    'percentage_used': used, 'data_units_written': written_units, 'data_units_read': 7,
-                    'media_errors': 0, 'num_err_log_entries': 0}}
+    def drive(self, name):
+        report = json.loads((self.DRIVES / f'{name}.json').read_text())
+        return report, report['smartctl']['exit_status']
+
+    def expected_samples(self, device, report, size):
+        """What smartctl_exporter 0.15.0 would export for this NVMe drive (smartctl.go),
+        computed from its JSON here, values smartctl did not report left out."""
+        health = report['nvme_smart_health_information_log']
+        d = f'device="{device}"'
+        info = ','.join([d, 'interface="nvme"', 'protocol="NVMe"', 'model_family="unknown"',
+                         f'model_name="{report["model_name"]}"', f'serial_number="{report["serial_number"]}"',
+                         'ata_additional_product_id="unknown"', f'firmware_version="{report["firmware_version"]}"',
+                         'ata_version=""', 'sata_version=""', 'form_factor=""', 'scsi_vendor=""', 'scsi_product=""',
+                         'scsi_revision=""', 'scsi_version=""'])
+        samples = [f'smartctl_device{{{info}}} 1',
+                   f'smartctl_device_smartctl_exit_status{{{d}}} {report["smartctl"]["exit_status"]}',
+                   f'smartctl_device_capacity_bytes{{{d}}} {report.get("nvme_total_capacity", size)}']
+        if 'nvme_total_capacity' in report:
+            samples.append(f'smartctl_device_nvme_capacity_bytes{{{d}}} {report["nvme_total_capacity"]}')
+        samples.append(f'smartctl_device_power_on_seconds{{{d}}} {report["power_on_time"]["hours"] * 3600}')
+        samples += [f'smartctl_device_temperature{{{d},temperature_type="{kind}"}} {value}'
+                    for kind, value in report['temperature'].items()]
+        samples += [f'smartctl_device_power_cycle_count{{{d}}} {report["power_cycle_count"]}',
+                    f'smartctl_device_smart_status{{{d}}} 1']
+        for field in ('percentage_used', 'available_spare', 'available_spare_threshold', 'critical_warning',
+                      'media_errors', 'num_err_log_entries'):
+            samples.append(f'smartctl_device_{field}{{{d}}} {health[field]}')
+        samples += [f'smartctl_device_bytes_read{{{d}}} {health["data_units_read"] * 512000}',
+                    f'smartctl_device_bytes_written{{{d}}} {health["data_units_written"] * 512000}']
+        return samples
+
+    def samples(self, lines, device):
+        return [line for line in lines if f'device="{device}"' in line]
 
     def textfile_lines(self, name):
         return (self.textfile / name).read_text().splitlines()
@@ -3392,40 +3427,77 @@ class HostMetrics(Fixture):
             samples = [line for line in self.textfile_lines('battery.prom') if not line.startswith('#')]
             self.assertEqual(samples, expected)
 
-    def test_smart_uses_smartctl_exporter_names_for_every_disk_that_answers(self):
-        apple = self.nvme('APPLE SSD AP0512Z', 'apple-serial', 7, 429601058)
-        external = self.nvme('Example "Pro" 2TB', 'ext-serial', 0, 10)
-        self.disks(('disk0', 500277792768, apple, 4),   # Apple's SSD: no error-information log page
-                   ('disk4', 2000398934016, external, 0),
-                   ('disk6', 1, {}, 2))                 # asleep, or would not open
+    def test_smart_reports_each_drive_as_smartctl_exporter_would_apples_included(self):
+        apple, apple_status = self.drive('apple-ssd-ap0512z')
+        samsung, samsung_status = self.drive('samsung-ssd-9100-pro-2tb')
+        wd, wd_status = self.drive('wd-black-sn7100-2tb')
+        self.assertEqual(apple_status, 4, "Apple's SSD has no error-information log page")
+        self.disks(('disk0', 500277792768, apple, apple_status),
+                   ('disk4', 2000398934016, samsung, samsung_status),
+                   ('disk6', 2000398934016, wd, wd_status))
+        p = self.run_metrics('collect')
+        self.assertEqual(p.returncode, 0, p.stderr)
+        self.assertEqual(p.stderr, '', 'exit bit 2 alone is no failure')
+        lines = self.textfile_lines('smart.prom')
+        for device, report in (('disk0', apple), ('disk4', samsung), ('disk6', wd)):
+            self.assertEqual(sorted(self.samples(lines, device)), sorted(self.expected_samples(device, report, 500277792768)),
+                             device)
+        self.assertIn('smartctl_devices{} 3', lines)
+        self.assertIn('smartctl_version{json_format_version="1.0",smartctl_version="7.5",svn_revision="5714",'
+                      'build_info="(local build)"} 1', lines)
+        families = [line.split()[2] for line in lines if line.startswith('# TYPE')]
+        self.assertEqual(len(families), len(set(families)), 'one HELP and TYPE per family')
+        self.assertEqual(families[:4], ['smartctl_version', 'smartctl_devices', 'smartctl_device',
+                                        'smartctl_device_smartctl_exit_status'])
+        self.assertIn('# TYPE smartctl_device_bytes_written counter', lines)
+        self.assertIn('# TYPE smartctl_device_available_spare gauge', lines, 'a level that can fall')
+        self.assertEqual(self.fake.joinpath('smartctl-calls').read_text().splitlines()[0],
+                         '--json --info --health --attributes --capabilities --tolerance=verypermissive '
+                         '--nocheck=standby --format=brief --log=error /dev/disk0', "smartctl_exporter's arguments")
+
+    def test_a_disk_that_does_not_answer_shows_its_exit_status_and_the_others_keep_their_data(self):
+        apple, status = self.drive('apple-ssd-ap0512z')
+        standby = {'json_format_version': [1, 0],
+                   'smartctl': {'version': [7, 5], 'messages': [
+                       {'string': 'Device is in STANDBY mode, exit(2)', 'severity': 'information'}], 'exit_status': 2},
+                   'device': {'name': '/dev/disk3', 'type': 'nvme', 'protocol': 'NVMe'}}
+        odd = dict(apple, model_name='Example "Pro" \\ 2TB')
+        self.disks(('disk0', 500277792768, apple, status),
+                   ('disk3', 1, standby, 2),
+                   ('disk5', 1, '{"json_format_version": [1, 0], "smartctl": {', 0),  # cut short
+                   ('disk7', 1, odd, 0))
         p = self.run_metrics('collect')
         self.assertEqual(p.returncode, 0, p.stderr)
         lines = self.textfile_lines('smart.prom')
-        for line in ('smartctl_device{device="disk0",interface="nvme",protocol="NVMe",model_name="APPLE SSD AP0512Z",'
-                     'serial_number="apple-serial",firmware_version="1.0"} 1',
-                     'smartctl_device{device="disk4",interface="nvme",protocol="NVMe",model_name="Example \\"Pro\\" 2TB",'
-                     'serial_number="ext-serial",firmware_version="1.0"} 1',
-                     'smartctl_device_smartctl_exit_status{device="disk0"} 4',
-                     'smartctl_device_smart_status{device="disk0"} 1',
-                     'smartctl_device_percentage_used{device="disk0"} 7',
-                     'smartctl_device_bytes_written{device="disk0"} 219955741696000',
-                     'smartctl_device_bytes_read{device="disk4"} 3584000',
-                     'smartctl_device_power_on_seconds{device="disk0"} 11235600',
-                     'smartctl_device_temperature{device="disk0",temperature_type="current"} 31',
-                     'smartctl_device_capacity_bytes{device="disk4"} 2000398934016',
-                     'smartctl_device_available_spare_threshold{device="disk0"} 99'):
-            self.assertIn(line, lines)
-        self.assertFalse([line for line in lines if 'disk6' in line], 'a disk that did not answer has no samples')
-        self.assertIn('smartctl read nothing from disk6 (exit 2)', p.stderr)
-        families = [line.split()[2] for line in lines if line.startswith('# TYPE')]
-        self.assertEqual(len(families), len(set(families)), 'one HELP and TYPE per family')
-        self.assertEqual(lines.count('# TYPE smartctl_device_bytes_written counter'), 1)
+        self.assertEqual(self.samples(lines, 'disk3'), ['smartctl_device_smartctl_exit_status{device="disk3"} 2'])
+        self.assertEqual(self.samples(lines, 'disk5'), ['smartctl_device_smartctl_exit_status{device="disk5"} 2'],
+                         'output that is not JSON counts as not answering')
+        self.assertEqual(sorted(self.samples(lines, 'disk0')), sorted(self.expected_samples('disk0', apple, 500277792768)))
+        self.assertIn('model_name="Example \\"Pro\\" \\\\ 2TB"', self.samples(lines, 'disk7')[0], 'escaped')
+        self.assertIn('smartctl_devices{} 4', lines)
+        self.assertIn('smartctl read nothing from disk3 (exit 2)', p.stderr)
+        self.assertIn('smartctl left no JSON for disk5 (exit 0)', p.stderr)
+
+    def test_a_smartctl_read_past_its_timeout_is_ended_and_reported_as_not_answering(self):
+        apple, status = self.drive('apple-ssd-ap0512z')
+        self.disks(('disk0', 500277792768, apple, status), ('disk4', 1, apple, status))
+        (self.fake / 'hang-disk4').touch()
+        self.env['HOST_METRICS_SMARTCTL_TIMEOUT'] = '1'
+        started = time.monotonic()
+        p = self.run_metrics('collect')
+        self.assertLess(time.monotonic() - started, 15)
+        self.assertEqual(p.returncode, 0, p.stderr)
+        lines = self.textfile_lines('smart.prom')
+        self.assertEqual(self.samples(lines, 'disk4'), ['smartctl_device_smartctl_exit_status{device="disk4"} 2'])
+        self.assertIn('smartctl_device_percentage_used{device="disk0"} 7', lines)
+        self.assertIn('smartctl did not finish reading disk4 within 1s', p.stderr)
 
     def test_smart_waits_for_its_interval(self):
-        self.disks(('disk0', 1, self.nvme('m', 's', 1, 1), 0))
+        apple, status = self.drive('apple-ssd-ap0512z')
+        self.disks(('disk0', 1, apple, status))
         calls = lambda: (self.fake / 'smartctl-calls').read_text().splitlines()
         self.assertEqual(self.run_metrics('collect').returncode, 0)
-        self.assertEqual(calls(), ['--json --all --nocheck=standby /dev/disk0'])
+        self.assertEqual(len(calls()), 1)
         self.assertEqual(self.run_metrics('collect').returncode, 0)
         self.assertEqual(len(calls()), 1, 'not again within the interval')
         earlier = time.time() - 290  # within the margin for a late run

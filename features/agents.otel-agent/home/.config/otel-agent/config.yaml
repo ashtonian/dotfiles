@@ -94,8 +94,8 @@ processors:
 # for its own volume and a backlog in one never starves another. Queues are
 # measured in serialized bytes and sized for a week off the LAN at studio's
 # rate: log events are about 860 bytes each (~80 MB/day), agent metric points
-# about 480 bytes (~270 MB/day), hardware metric points about 84 bytes (~280 a
-# minute, ~34 MB/day). Loki and Mimir refuse data more than a week old, which
+# about 480 bytes (~270 MB/day), hardware metric points about 84 bytes (~290 a
+# minute, ~35 MB/day). Loki and Mimir refuse data more than a week old, which
 # bounds a lossless outage whatever the queue holds. When a queue is full, new
 # data is dropped and counted in otelcol_exporter_enqueue_failed_*.
 exporters:
@@ -131,7 +131,7 @@ exporters:
       enabled: true
       storage: file_storage/queue
       sizer: bytes
-      queue_size: 335544320 # 320 MiB, about 10 days
+      queue_size: 335544320 # 320 MiB, about 9.5 days
 
 service:
   extensions: [health_check, file_storage/queue]
