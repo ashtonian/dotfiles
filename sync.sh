@@ -81,6 +81,11 @@ missing_root_entries() {
     done <<<"$wanted"
 }
 
+# Whether this run's package steps installed anything: a LaunchAgent that waits
+# for a program they provide, or a hook that runs one, needs an apply after
+# them (run_mode).
+PACKAGES_INSTALLED=false
+
 # sync_brewfile: install what the Brewfiles list and this Mac lacks, never
 # upgrading. A run that cannot ask for a password (a LaunchAgent has no
 # terminal) leaves the entries that install only as root for a terminal, names
@@ -120,6 +125,7 @@ sync_brewfile() {
             fi
         fi
         log "INFO: Installing missing packages from ${file##*/}"
+        PACKAGES_INSTALLED=true
         if ! run_logged env "${env[@]}" brew bundle install --no-upgrade --file="$file"; then
             log "ERROR: Package installation failed for ${file##*/}"
             result=1
@@ -140,6 +146,7 @@ sync_mise_tools() {
         return 0
     fi
     log "INFO: Installing the tools mise's configuration names"
+    PACKAGES_INSTALLED=true
     if ! run_logged mise -C "$HOME" install --yes; then
         log "ERROR: mise could not install every tool; run: mise -C ~ install"
         return 1
@@ -720,13 +727,21 @@ run_mode() {
             # leaves links to their old paths until it runs, and apply reads
             # the overlays too. The telemetry collector converges on the files
             # apply linked. The Brewfile apply generates is installed next,
-            # then mise's tools (mise is one of the packages), then Claude Code
-            # where it is missing (jq, which reads the features, is a package).
+            # then mise's tools (mise is one of the packages). When they
+            # installed anything, apply runs again, as install.sh does: a
+            # feature this run turned on gets the LaunchAgents that wait for
+            # its programs now, not at the next sync. Then Claude Code where
+            # it is missing (jq, which reads the features, is a package).
             sync_checkouts || status=1
             apply_features || status=1
             sync_otel_agent || status=1
             sync_brewfile || status=1
             sync_mise_tools || status=1
+            if [[ "$PACKAGES_INSTALLED" == true ]]; then
+                log "INFO: Applying again for the packages this run installed"
+                apply_features || status=1
+                sync_otel_agent || status=1
+            fi
             sync_claude_code || status=1
             sync_github_mcp || status=1
             sync_auxiliary_repos || status=1
