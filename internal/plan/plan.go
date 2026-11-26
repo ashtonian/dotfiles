@@ -1,6 +1,6 @@
 // Package plan turns the enabled features into what a machine should have:
-// links, managed copies, generated outputs, local stubs, LaunchAgents and app
-// settings.
+// links, managed copies, generated outputs, local stubs, LaunchAgents, app
+// settings and the features' own hooks and checks.
 package plan
 
 import (
@@ -14,6 +14,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/ashtonian/dotfiles/internal/launchd"
 	"github.com/ashtonian/dotfiles/internal/manifest"
@@ -111,8 +112,25 @@ func (p Pref) SetBy() string {
 	return p.Origin
 }
 
+// Hook is an enabled feature's [hooks] and [check], with absolute paths; see
+// manifest.Hooks and manifest.Check.
+type Hook struct {
+	Feature      string
+	Apply        string // empty for none
+	Teardown     string // empty for none
+	Sudo         bool
+	Timeout      time.Duration
+	Check        string // empty for none
+	CheckTimeout time.Duration
+	// Env holds NAME=value for each of the feature's settings that names an
+	// environment variable, so a hook sees what the generated env.sh exports.
+	Env []string
+}
+
 // Plan is the desired state for one machine.
 type Plan struct {
+	// Enabled lists the enabled features, in dependency order.
+	Enabled      []string
 	Links        []Link
 	Copies       []Copy
 	Generated    []File
@@ -130,6 +148,9 @@ type Plan struct {
 	// Retire lists old install paths to remove when they are still links into
 	// the repository.
 	Retire []string
+	// Hooks lists the enabled features that have hooks or a check, in
+	// feature order.
+	Hooks []Hook
 }
 
 // Build plans the enabled features, in dependency order. values holds the
@@ -137,7 +158,7 @@ type Plan struct {
 // replace the values the features' prefs files give, lowest precedence first.
 func Build(features map[string]*manifest.Feature, order []string, values map[string]any,
 	overrides []resolve.PrefLayer, env Env) (*Plan, error) {
-	p := &Plan{}
+	p := &Plan{Enabled: slices.Clone(order)}
 	owner := map[string]string{} // target -> feature, to catch two features claiming one file
 	claim := func(target, feature string) error {
 		if prev, ok := owner[target]; ok {
@@ -253,6 +274,13 @@ func Build(features map[string]*manifest.Feature, order []string, values map[str
 				}
 				p.Prefs = append(p.Prefs, pref)
 			}
+		}
+		hook, ok, err := featureHook(f, values, env.Home)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			p.Hooks = append(p.Hooks, hook)
 		}
 	}
 
@@ -611,27 +639,76 @@ func generatedNames() []string {
 // declares an environment name and has a value, unless the variable is
 // already set. A path starting with ~/ is written relative to $HOME, so the
 // file stays valid for any user.
+// featureHook plans f's hooks and check; false when it has neither.
+func featureHook(f *manifest.Feature, values map[string]any, home string) (Hook, bool, error) {
+	if f.Hooks.Apply == "" && f.Hooks.Teardown == "" && f.Check.Script == "" {
+		return Hook{}, false, nil
+	}
+	h := Hook{Feature: f.ID, Sudo: f.Hooks.Sudo, Timeout: f.Hooks.RunTimeout(), CheckTimeout: f.Check.RunTimeout()}
+	for _, script := range []struct {
+		key, rel string
+		dest     *string
+	}{
+		{"hooks.apply", f.Hooks.Apply, &h.Apply},
+		{"hooks.teardown", f.Hooks.Teardown, &h.Teardown},
+		{"check.script", f.Check.Script, &h.Check},
+	} {
+		if script.rel == "" {
+			continue
+		}
+		path := filepath.Join(f.Dir, filepath.FromSlash(script.rel))
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0o100 == 0 {
+			return Hook{}, false, fmt.Errorf("%w: %s: %s %s is not an executable file", ErrPlan, f.ID, script.key, script.rel)
+		}
+		*script.dest = path
+	}
+	for _, e := range exportedSettings(f, values) {
+		value := e.value
+		if e.homeRelative {
+			value = filepath.Join(home, value)
+		}
+		h.Env = append(h.Env, e.env+"="+value)
+	}
+	sort.Strings(h.Env)
+	return h, true, nil
+}
+
+// exported is a setting value a feature exports under an environment name.
+type exported struct {
+	setting, env, value string
+	// homeRelative marks a path value given as ~/<value>.
+	homeRelative bool
+}
+
+// exportedSettings lists f's settings that name an environment variable and
+// have a value.
+func exportedSettings(f *manifest.Feature, values map[string]any) []exported {
+	var out []exported
+	for name, s := range f.Settings {
+		v, ok := values[name]
+		if s.Env == "" || !ok {
+			continue
+		}
+		e := exported{setting: name, env: s.Env, value: fmt.Sprint(v)}
+		if val, isString := v.(string); isString && s.Type == "path" && strings.HasPrefix(val, "~/") {
+			e.value, e.homeRelative = strings.TrimPrefix(val, "~/"), true
+		}
+		out = append(out, e)
+	}
+	return out
+}
+
 func writeExports(b *bytes.Buffer, features map[string]*manifest.Feature, order []string, values map[string]any) {
 	var lines []string
 	for _, id := range order {
-		for name, s := range features[id].Settings {
-			v, ok := values[name]
-			if s.Env == "" || !ok {
-				continue
-			}
-			var rendered string
-			switch val := v.(type) {
-			case string:
-				if s.Type == "path" && strings.HasPrefix(val, "~/") {
-					rendered = `"$HOME"/` + shellQuote(strings.TrimPrefix(val, "~/"))
-				} else {
-					rendered = shellQuote(val)
-				}
-			default:
-				rendered = shellQuote(fmt.Sprint(val))
+		for _, e := range exportedSettings(features[id], values) {
+			rendered := shellQuote(e.value)
+			if e.homeRelative {
+				rendered = `"$HOME"/` + rendered
 			}
 			// A value the shell inherited wins, as a variable set by hand would.
-			lines = append(lines, fmt.Sprintf(`[ -n "${%[1]s:-}" ] || %[1]s=%[2]s; export %[1]s # %[3]s`, s.Env, rendered, name))
+			lines = append(lines, fmt.Sprintf(`[ -n "${%[1]s:-}" ] || %[1]s=%[2]s; export %[1]s # %[3]s`, e.env, rendered, e.setting))
 		}
 	}
 	if len(lines) == 0 {

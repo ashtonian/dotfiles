@@ -13,6 +13,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/BurntSushi/toml"
 
@@ -75,6 +76,10 @@ type Feature struct {
 	// means, such as a stow link. apply removes each one that is still a link
 	// into the repository and that no feature installs now.
 	Retire []string `toml:"retire"`
+	// Hooks and Check cover state no provides type can: what a script
+	// converges, or a setup step the owner runs once.
+	Hooks Hooks `toml:"hooks"`
+	Check Check `toml:"check"`
 
 	// Dir is the absolute directory holding feature.toml.
 	Dir string `toml:"-"`
@@ -117,6 +122,60 @@ type Provides struct {
 	// LaunchAgent lists launchd jobs for the user's GUI session. They are
 	// installed on macOS only; elsewhere the rest of the feature applies.
 	LaunchAgent []LaunchAgent `toml:"launch_agent"`
+}
+
+// Hooks are a feature's own scripts, relative to its directory. apply runs
+// Apply while the feature's check reports anything but ok, and Teardown once
+// the feature is no longer enabled.
+type Hooks struct {
+	// Apply converges what the check reports on. It needs a check, which
+	// decides whether it runs and confirms that it worked.
+	Apply string `toml:"apply"`
+	// Teardown reverses Apply, and removes what the feature's setup step
+	// left (an enrollment, local credentials). apply keeps a copy of it while
+	// the feature is enabled and runs that copy once the feature is not, even
+	// after the feature is deleted from the repository; so it may use the
+	// repository's shared scripts (DOTFILES_DIR), but never the feature's own
+	// files. It must be safe to run twice.
+	Teardown string `toml:"teardown"`
+	// Sudo marks hooks that need administrator rights, which they take with
+	// sudo themselves. They run only from `dotfiles apply --sudo`, with the
+	// owner's terminal; an unattended run reports them as problems.
+	Sudo bool `toml:"sudo"`
+	// Timeout bounds one hook run, as a Go duration; DefaultHookTimeout when
+	// empty.
+	Timeout string `toml:"timeout"`
+}
+
+// Check is a script, relative to the feature's directory, that reports the
+// feature's own state without changing anything. It prints one JSON object,
+// {"state": "ok|drift|missing|error", "detail": "..."}, and exits 0.
+type Check struct {
+	Script string `toml:"script"`
+	// Timeout bounds one run, as a Go duration; DefaultCheckTimeout when empty.
+	Timeout string `toml:"timeout"`
+}
+
+// Hook and check run bounds. A sudo hook waits for its password prompt
+// within its timeout.
+const (
+	DefaultHookTimeout  = 5 * time.Minute
+	DefaultCheckTimeout = 10 * time.Second
+	maxHookTimeout      = time.Hour
+	maxCheckTimeout     = 2 * time.Minute
+)
+
+// RunTimeout is Timeout as a duration; validateFeature has checked it.
+func (h Hooks) RunTimeout() time.Duration { return durationOr(h.Timeout, DefaultHookTimeout) }
+
+// RunTimeout is Timeout as a duration; validateFeature has checked it.
+func (c Check) RunTimeout() time.Duration { return durationOr(c.Timeout, DefaultCheckTimeout) }
+
+func durationOr(s string, def time.Duration) time.Duration {
+	if d, err := time.ParseDuration(s); err == nil && s != "" {
+		return d
+	}
+	return def
 }
 
 // LaunchAgent is a launchd job that apply installs into ~/Library/LaunchAgents
@@ -536,6 +595,9 @@ func validateFeature(f *Feature, dirName string) error {
 			}
 		}
 	}
+	if err := validateHooks(f.Hooks, f.Check); err != nil {
+		return err
+	}
 	for _, list := range [][]string{f.Provides.Tap, f.Provides.Brew, f.Provides.Cask, f.Provides.Flatpak, f.Provides.Vscode, f.Provides.Go} {
 		for _, name := range list {
 			if !packagePattern.MatchString(name) {
@@ -581,6 +643,46 @@ func validateFeature(f *Feature, dirName string) error {
 				return fmt.Errorf("setting %q is a secret, so it cannot be exported to the environment", name)
 			}
 		}
+	}
+	return nil
+}
+
+func validateHooks(h Hooks, c Check) error {
+	for _, script := range []struct{ key, path string }{
+		{"hooks.apply", h.Apply}, {"hooks.teardown", h.Teardown}, {"check.script", c.Script},
+	} {
+		if script.path == "" {
+			continue
+		}
+		if err := checkRelative(script.path); err != nil {
+			return fmt.Errorf("%s: %w", script.key, err)
+		}
+	}
+	if h.Apply != "" && c.Script == "" {
+		return errors.New("hooks.apply needs a check.script, which decides when it runs and confirms it worked")
+	}
+	if h.Sudo && h.Apply == "" && h.Teardown == "" {
+		return errors.New("hooks.sudo marks the apply and teardown hooks, and there are none")
+	}
+	if h.Timeout != "" && h.Apply == "" && h.Teardown == "" {
+		return errors.New("hooks.timeout bounds the apply and teardown hooks, and there are none")
+	}
+	if c.Timeout != "" && c.Script == "" {
+		return errors.New("check.timeout needs a check.script")
+	}
+	if err := checkTimeout("hooks.timeout", h.Timeout, maxHookTimeout); err != nil {
+		return err
+	}
+	return checkTimeout("check.timeout", c.Timeout, maxCheckTimeout)
+}
+
+func checkTimeout(key, s string, max time.Duration) error {
+	if s == "" {
+		return nil
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 || d > max {
+		return fmt.Errorf("%s %q must be a duration above 0 and at most %s", key, s, max)
 	}
 	return nil
 }

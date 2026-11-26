@@ -2,6 +2,7 @@ package apply
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +32,9 @@ type machine struct {
 	// machineTOML, when set, is the machine manifest's text, for its [prefs]
 	// table; disable still turns features off.
 	machineTOML string
+	// sudo runs as `apply --sudo`, with stdin as the hooks' terminal.
+	sudo  bool
+	stdin io.Reader
 }
 
 func newMachine(t *testing.T) *machine {
@@ -105,6 +109,7 @@ func (m *machine) env() Env {
 	if m.launchd != nil {
 		env.Launchd = m.launchd
 	}
+	env.Sudo, env.HookStdin = m.sudo, m.stdin
 	return env
 }
 

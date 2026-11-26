@@ -554,8 +554,8 @@ the Claude Code subagents' tool lists include Bash, so the same holds there.
 
 `~/.config/agent-delegation/policy.md` says what the session hands them and what
 it keeps on its own model, and that their reports are leads to check, not facts.
-A `SessionStart` hook in each harness's managed settings, written by
-`bin/dotfiles-agents install` (see [Agent shells](#agent-shells)), prints it
+A `SessionStart` hook in each harness's managed settings, installed by
+`dotfiles apply --sudo` (see [Agent shells](#agent-shells)), prints it
 into the context of every top-level session, whichever way it starts: the
 launchers, a bare `claude` or `codex`, `claude -p` and `codex exec`, a
 resume, `/clear`, a fork, or after compaction. Subagents start through
@@ -570,8 +570,8 @@ restart.
 | `gptmore`, `gptmax`, a bare `codex`, `codex exec` | Yes, at start and after each compaction |
 | A `scout`, `reader` or other subagent | No |
 
-`dotfiles-agents check` (exit 1) shows a Mac whose managed files predate the
-hook; until `install` runs there, its sessions start without the policy.
+`dotfiles doctor` reports a Mac whose managed files predate the hook; until
+`dotfiles apply --sudo` runs there, its sessions start without the policy.
 
 `claude-subagent-economics [--days N] [--projects DIR]` (default 30 days,
 `~/.claude/projects`) prices the recent `scout`, `reader`, Explore and
@@ -613,7 +613,7 @@ does anything aimed at other repositories.
 | Harness | Registration | When the hook fails |
 | ------- | ------------ | ------------------- |
 | Claude Code | The plugin `~/.claude/skills/repo-guard/`, linked by the feature: a plugin folder there loads in every session as `repo-guard@skills-dir`, with no install step | `onFailure: "block"` blocks the call on a crash or after 10 s |
-| Codex | `[[hooks.PreToolUse]]` in `/etc/codex/config.toml`, written by `bin/dotfiles-agents install` (see [Agent shells](#agent-shells)). Hooks in the system layer are managed: they run without a trust prompt, and a user config cannot turn them off. Without the feature the hook passes | Codex lets a failed hook through, so the registered command turns any exit other than 0 or 2 into a block. A hook still running after 10 s is killed and the call goes ahead |
+| Codex | `[[hooks.PreToolUse]]` in `/etc/codex/config.toml`, installed by `dotfiles apply --sudo` (see [Agent shells](#agent-shells)). Hooks in the system layer are managed: they run without a trust prompt, and a user config cannot turn them off. Without the feature the hook passes | Codex lets a failed hook through, so the registered command turns any exit other than 0 or 2 into a block. A hook still running after 10 s is killed and the call goes ahead |
 
 This repository lists no protected repository. Each context's overlay links its
 own list to `~/.config/repo-guard/protected.d/<context>.txt` (see
@@ -647,13 +647,26 @@ plain commands, so a model-written `cd build` cannot jump to another tree and
 
 ### Agent shells
 
-Claude Code and Codex run model-written commands in bash, not zsh. Install the
-system configs once per machine (they need sudo):
+Claude Code and Codex run model-written commands in bash, not zsh. Two
+root-owned system configs set that up, one per feature: `agents.claude.bash`
+and `agents.codex.bash`, which the dev profile enables. They stay owned by
+root on purpose: they turn attribution off and register repo-guard and the
+delegation hook, so an agent running as the user cannot rewrite them.
 
 ```sh
-~/.dotfiles/bin/dotfiles-agents install   # write both files
-~/.dotfiles/bin/dotfiles-agents check     # compare them with the repository; exit 1 on drift
+dotfiles apply --sudo   # install or update both files; sudo asks for your password
+dotfiles doctor         # reports a file that is missing or differs from the repository
 ```
+
+Every apply and doctor compares the installed files with the repository, through
+the features' checks (`bin/dotfiles-agents check --json`). Sync never prompts
+for a password, so after a pull that changes either file it reports
+``agents.claude.bash: drift: … differs from the repository; run `dotfiles apply --sudo` `` and
+the next shell you open says so too (see
+[Shell notice](docs/OPERATIONS.md#shell-notice)). Turning a feature off removes
+its file at the next `dotfiles apply --sudo`.
+`bin/dotfiles-agents install|check|uninstall [claude|codex]` does the same by
+hand.
 
 | File | Effect |
 | ---- | ------ |
@@ -847,7 +860,8 @@ current Go before the migration reaches it; see
    step (`otel-agent enroll`, OpenCode's local files);
    apply loads each once its step has run
 
-6. **Agent shells**: `~/.dotfiles/bin/dotfiles-agents install` (see [Agent shells](#agent-shells))
+6. **Agent shells and other root-owned files**: `dotfiles apply --sudo` (see [Agent shells](#agent-shells));
+   `dotfiles doctor` and the shell notice say when it is needed again
 
 Also log in to gh with the scopes and storage in
 [Git identity and signing](docs/OPERATIONS.md#git-identity-and-signing), and register the signing

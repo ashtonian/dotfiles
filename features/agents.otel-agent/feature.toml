@@ -20,3 +20,7 @@ when_exists = [
   "~/.local/share/otel-agent/token",
   "~/.local/share/otel-agent/host",
 ]
+
+# Turning the feature off removes the enrollment `bin/otel-agent enroll` made.
+[hooks]
+teardown = "hooks/teardown"

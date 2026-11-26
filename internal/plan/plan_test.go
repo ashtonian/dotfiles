@@ -1,8 +1,10 @@
 package plan
 
 import (
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -383,5 +385,55 @@ func TestLinkGeneratedRefusals(t *testing.T) {
 			require.ErrorIs(t, err, ErrPlan)
 			assert.Contains(t, err.Error(), tt.want)
 		})
+	}
+}
+
+func TestHooksArePlannedWithTheirSettings(t *testing.T) {
+	root := t.TempDir()
+	home := filepath.Join(root, "home")
+	f := feature(t, root, manifest.Feature{ID: "tool",
+		Hooks:    manifest.Hooks{Apply: "hooks/apply", Teardown: "hooks/teardown", Sudo: true},
+		Check:    manifest.Check{Script: "hooks/check", Timeout: "3s"},
+		Settings: map[string]manifest.Setting{"tool.dir": {Type: "path", Env: "TOOL_DIR"}},
+	}, map[string]string{"hooks/apply": "#!/bin/sh\n", "hooks/teardown": "#!/bin/sh\n", "hooks/check": "#!/bin/sh\n"})
+	for _, rel := range []string{"hooks/apply", "hooks/teardown", "hooks/check"} {
+		require.NoError(t, os.Chmod(filepath.Join(f.Dir, rel), 0o755))
+	}
+	env := Env{Home: home, GeneratedDir: filepath.Join(root, "gen"), GOOS: "linux"}
+	features := map[string]*manifest.Feature{"tool": f}
+
+	p, err := Build(features, []string{"tool"}, map[string]any{"tool.dir": "~/data"}, nil, env)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"tool"}, p.Enabled)
+	assert.Equal(t, []Hook{{Feature: "tool", Apply: filepath.Join(f.Dir, "hooks/apply"), Teardown: filepath.Join(f.Dir, "hooks/teardown"),
+		Sudo: true, Timeout: manifest.DefaultHookTimeout, Check: filepath.Join(f.Dir, "hooks/check"), CheckTimeout: 3 * time.Second,
+		Env: []string{"TOOL_DIR=" + filepath.Join(home, "data")}}}, p.Hooks)
+
+	require.NoError(t, os.Chmod(filepath.Join(f.Dir, "hooks/check"), 0o644))
+	_, err = Build(features, []string{"tool"}, nil, nil, env)
+	require.ErrorIs(t, err, ErrPlan)
+	assert.Contains(t, err.Error(), "check.script hooks/check is not an executable file")
+}
+
+// The repository's own profiles must plan on every platform they reach; CI
+// runs the bootstrap test on macOS only, so Linux has no other check.
+func TestTheRepositoryProfilesPlanOnEveryPlatform(t *testing.T) {
+	repo := manifest.Root{Dir: filepath.Join("..", "..")}
+	features, err := manifest.LoadFeatures(repo)
+	require.NoError(t, err)
+	profiles, err := manifest.LoadProfiles(repo)
+	require.NoError(t, err)
+	for _, goos := range []string{"darwin", "linux"} {
+		for _, name := range slices.Sorted(maps.Keys(profiles)) {
+			machine := &manifest.Machine{Profiles: slices.Compact([]string{"base", name})}
+			t.Run(goos+"/"+name, func(t *testing.T) {
+				result, err := resolve.Resolve(features, profiles, machine, goos)
+				require.NoError(t, err)
+				root := t.TempDir()
+				_, err = Build(features, result.Runnable(features), result.Values(), result.PrefLayers,
+					Env{Home: filepath.Join(root, "home"), GeneratedDir: filepath.Join(root, "gen"), GOOS: goos})
+				require.NoError(t, err)
+			})
+		}
 	}
 }

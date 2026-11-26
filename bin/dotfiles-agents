@@ -7,9 +7,15 @@
 #===============================================================================
 #
 # USAGE:
-#   dotfiles-agents install     write both files (asks for sudo when needed)
-#   dotfiles-agents check       compare the installed files with what install writes
-#   dotfiles-agents uninstall   remove both files
+#   dotfiles-agents install [claude|codex]   write both files, or one (asks for sudo when needed)
+#   dotfiles-agents check [claude|codex] [--json]
+#                                            compare the installed files with what install
+#                                            writes; --json prints the result as a feature
+#                                            check does (dotfiles apply and doctor run it)
+#   dotfiles-agents uninstall [claude|codex] remove both files, or one
+#
+# The features agents.claude.bash and agents.codex.bash run these as their
+# hooks: `dotfiles apply --sudo` installs a file whose check reports drift.
 #
 # Claude Code: a managed-settings drop-in sets CLAUDE_CODE_SHELL to a current
 # bash and hides all attribution (`"attribution": false`, Claude Code 2.1.281
@@ -34,7 +40,8 @@
 # Subagents start through SubagentStart instead, so they never see it. The hook
 # reads the file each time, so a policy edit needs no reinstall.
 #
-# EXIT STATUS: 0 ok; 1 check found a missing or changed file; 64 usage;
+# EXIT STATUS: 0 ok; 1 check found a missing or changed file (check --json
+# exits 0 and says so in its result); 64 usage;
 # 69 no bash 4 or later, or an unsupported OS; 73 a file this script did not
 # write is in the way; 74 a file could not be written.
 set -euo pipefail
@@ -49,7 +56,22 @@ claude_file="$claude_dir/50-dotfiles.json"
 codex_file="$root/etc/codex/config.toml"
 marker='Managed by ~/.dotfiles (bin/dotfiles-agents)'
 
-die() { printf 'dotfiles-agents: %s\n' "$2" >&2; exit "$1"; }
+# die <status> <message>. Under check --json the message is the check's error
+# result instead, since the engine reads a result from a check that exits 0.
+die() {
+    if [[ ${json:-0} == 1 ]]; then
+        json_result error "$2"
+        exit 0
+    fi
+    printf 'dotfiles-agents: %s\n' "$2" >&2
+    exit "$1"
+}
+
+# json_result <state> <detail>: one feature check result (manifest.Check).
+json_result() {
+    local detail=${2//\\/\\\\}
+    printf '{"state": "%s", "detail": "%s"}\n' "$1" "${detail//\"/\\\"}"
+}
 
 # A bash new enough for model-written commands. macOS's /bin/bash is 3.2.
 agent_bash() {
@@ -169,16 +191,29 @@ write() { # write <file> <content>
     printf 'installed  %s\n' "$file"
 }
 
-check_one() { # check_one <file> <content>
+# check_one <file> <content>: print the file's state, and record it for --json.
+check_one() {
+    local state=ok
     if [[ ! -f "$1" ]]; then
-        printf 'missing    %s\n' "$1"
-        return 1
+        state=missing
+    elif [[ "$(cat "$1")" != "${2%$'\n'}" ]]; then
+        state=changed
     fi
-    if [[ "$(cat "$1")" != "${2%$'\n'}" ]]; then
-        printf 'changed    %s\n' "$1"
-        return 1
-    fi
-    printf 'ok         %s\n' "$1"
+    checked+=("$state $1")
+    [[ $json == 1 ]] || printf '%-10s %s\n' "$state" "$1"
+    [[ $state == ok ]]
+}
+
+# check_json: the checked files as one feature check result (manifest.Check).
+check_json() {
+    local entry state=ok detail=""
+    for entry in "${checked[@]}"; do
+        case "${entry%% *}" in
+            missing) state=missing; detail+="${detail:+; }${entry#* } is missing" ;;
+            changed) [[ $state == missing ]] || state=drift; detail+="${detail:+; }${entry#* } differs from the repository" ;;
+        esac
+    done
+    json_result "$state" "$detail"
 }
 
 remove() {
@@ -188,28 +223,51 @@ remove() {
     printf 'removed    %s\n' "$1"
 }
 
+usage='usage: dotfiles-agents install|check|uninstall [claude|codex] (check also takes --json)'
+json=0
+checked=()
+
 main() {
-    local bash_path claude codex status=0
-    case "${1:-}" in
+    local command=${1:-} bash_path target status=0
+    local -a targets=(claude codex)
+    shift || true
+    while (( $# )); do
+        case "$1" in
+            claude | codex) targets=("$1") ;;
+            --json) [[ $command == check ]] || die 64 "$usage"; json=1 ;;
+            *) die 64 "$usage" ;;
+        esac
+        shift
+    done
+    case "$command" in
         install | check)
             bash_path=$(agent_bash) || die 69 "no bash 4 or later found; install it with Homebrew"
-            claude=$(render_claude "$bash_path")$'\n'
-            codex=$(render_codex)$'\n'
-            if [[ $1 == install ]]; then
-                write "$claude_file" "$claude"
-                write "$codex_file" "$codex"
-            else
-                check_one "$claude_file" "$claude" || status=1
-                check_one "$codex_file" "$codex" || status=1
+            for target in "${targets[@]}"; do
+                if [[ $command == install ]]; then
+                    write "$(file_of "$target")" "$(render_of "$target" "$bash_path")"$'\n'
+                else
+                    check_one "$(file_of "$target")" "$(render_of "$target" "$bash_path")"$'\n' || status=1
+                fi
+            done
+            if [[ $json == 1 ]]; then
+                check_json
+                return 0
             fi
             ;;
         uninstall)
-            remove "$claude_file"
-            remove "$codex_file"
+            for target in "${targets[@]}"; do
+                remove "$(file_of "$target")"
+            done
             ;;
-        *) die 64 "usage: dotfiles-agents install|check|uninstall" ;;
+        *) die 64 "$usage" ;;
     esac
     return "$status"
+}
+
+file_of() { if [[ $1 == claude ]]; then printf '%s' "$claude_file"; else printf '%s' "$codex_file"; fi; }
+
+render_of() { # render_of <target> <bash path>
+    if [[ $1 == claude ]]; then render_claude "$2"; else render_codex; fi
 }
 
 main "$@"

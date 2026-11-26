@@ -1,0 +1,3 @@
+#!/bin/sh
+# check.script: whether the installed file is what install writes.
+exec "$DOTFILES_DIR/bin/dotfiles-agents" check claude --json

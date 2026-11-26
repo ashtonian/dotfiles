@@ -16,7 +16,7 @@ This file maps the checked-in implementation.
 ├── internal/manifest/       # Feature, profile and machine manifests from the repository and overlays; strict parsing and validation
 ├── internal/resolve/        # Defaults, profiles, machine overrides; requirements, conflicts, platforms, settings
 ├── internal/plan/           # Links, managed copies, generated outputs, stubs, LaunchAgents and app settings to install
-├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, app settings, state, teardown, locking
+├── internal/apply/          # Converge on a plan; unfold old stow links, retire, adopt, LaunchAgents, app settings, feature hooks and checks, state, teardown, locking
 ├── internal/launchd/        # LaunchAgent plist reading; launchctl print, bootstrap and bootout in gui/<uid>
 ├── internal/prefs/          # App settings owned key by key: prefs files, and the Muxy and Claude Code stores
 ├── internal/atomicfile/     # Write beside, then rename into place
@@ -53,6 +53,8 @@ Each directory under `features/` is one feature; `home/` mirrors `$HOME`, and
 the old stow package linked a file, so `apply` removes the link on a machine
 where the feature is off. A `launch_agent` is a plist template under the
 feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
+A feature's `hooks/` holds the scripts its `[hooks]` and `[check]` tables name
+([MACHINE-FEATURES.md](docs/MACHINE-FEATURES.md#hooks-and-checks)).
 
 | Feature | Profiles | Platforms | Installs |
 | ------- | -------- | --------- | -------- |
@@ -60,12 +62,14 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `agents.claude` | dev | all | `~/.claude/rules/claude-code.md`, `~/.claude/statusline-p10k.sh`, `~/.local/bin/claude-subagent-economics`; zshrc fragment: `claudemore`, `claudemax`, `claudefleet`, `claudeclean`; requires `agents.delegation` and `agents.rules`; sync installs Claude Code natively where it is on |
 | `agents.claude.theme` | dev | all | copies `~/.claude/themes/dracula.json`; Claude Code setting `theme` |
 | `agents.codex` | dev | darwin | `~/.codex/AGENTS.md` (a link to `generated/AGENTS.md`); `agent_rules` fragment `codex-rules.md`; LaunchAgent `com.ashtonian.codex-remote-control` (with the codex cask); zshrc fragment: `gptmore`, `gptmax`; requires `agents.delegation` and `agents.rules` |
+| `agents.claude.bash` | dev | darwin, linux | Root-owned `managed-settings.d/50-dotfiles.json` through `bin/dotfiles-agents` hooks (`sudo`): checked by every apply, installed by `dotfiles apply --sudo`, removed when off |
+| `agents.codex.bash` | dev | darwin, linux | Root-owned `/etc/codex/config.toml`, the same way |
 | `agents.rules` | dev (required) | all | `~/.claude/CLAUDE.md`; the first `agent_rules` fragment |
 | `agents.delegation` | dev (required) | all | `~/.config/agent-delegation/policy.md`, `~/.claude/agents/{scout,reader}.md`, `~/.codex/agents/{scout,reader}.toml` |
 | `agents.gascity` | opt-in | darwin | [Gas City fleet](features/agents.gascity/README.md), its Homebrew dependencies, reviewer prompt, `fleet-slot-check` and `fleet-plan` |
 | `agents.repo-guard` | dev | all | `~/.local/bin/repo-guard`, `~/.claude/skills/repo-guard/` (its Claude Code plugin; the Codex registration is `bin/dotfiles-agents`'s; lists come from overlays) |
-| `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup) |
-| `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`) |
+| `agents.opencode` | desktop | all | `~/.config/opencode`; on macOS LaunchAgent `com.ashtonian.opencode` (after its local setup); its teardown hook removes that setup |
+| `agents.otel-agent` | desktop | darwin | `~/.config/otel-agent`; LaunchAgent `com.ashtonian.otel-agent` (after `otel-agent enroll`); its teardown hook removes the enrollment, collector and queue |
 | `backup.mackup.config` | desktop | darwin, linux | `~/.mackup.cfg` |
 | `browser.passkeys-off` | desktop | darwin | `~/.local/share/browser-extensions/passkeys-off` (copy), `~/.local/bin/passkeys-off` |
 | `brew.activity-trackers` | desktop | darwin | Brewfile: 1 brew, 1 cask, 2 vscode |
@@ -78,12 +82,12 @@ feature's `launchagents/`, installed into `~/Library/LaunchAgents` and loaded.
 | `brew.mas` | desktop, work | darwin | Brewfile: 1 brew, 8 mas |
 | `brew.mas.personal` | desktop | darwin | Brewfile: 3 mas |
 | `brew.vscode` | dev | darwin | Brewfile: 52 vscode |
-| `dotfiles.sync` | base | darwin | LaunchAgent `com.dotfiles.sync` |
+| `dotfiles.sync` | base | darwin | LaunchAgent `com.dotfiles.sync`; zshrc fragment: the [shell notice](docs/OPERATIONS.md#shell-notice) of the last apply's problems |
 | `dotfiles.update` | base | darwin | LaunchAgent `com.dotfiles.update` |
 | `git` | base | darwin, linux | `~/.config/git`; stubs `~/.gitconfig` (an existing one is kept) |
 | `git.keychain` | base | darwin | gitconfig fragment |
 | `macos.disk-hygiene` | base | darwin | LaunchAgent `com.ashtonian.disk-hygiene`; setting `disk_hygiene.cache_drive` |
-| `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions` |
+| `macos.spotlight` | base | darwin | `~/.config/spotlight`, `~/.local/bin/spotlight-exclusions`; check and apply hooks keep the listed folders excluded |
 | `shell.env` | base | darwin, linux | `~/.config/shell`; stubs `~/.bashrc`, `~/.bash_profile` |
 | `shell.zsh` | base | darwin, linux | `~/.config/zsh`; stubs `~/.zshenv`, `~/.zprofile`, `~/.zshrc`, `~/.zlogin` |
 | `ssh` | base | darwin, linux | `~/.ssh/dotfiles.conf`; stubs `~/.ssh/config` (its Include before any `Host` or `Match`) |
@@ -180,7 +184,7 @@ respect `AWS_SHARED_CREDENTIALS_FILE` and `AWS_CONFIG_FILE`.
 | -------- | ---------------- |
 | [bin/aws-profile](bin/aws-profile) | assume PROFILE REGION reads credential JSON on stdin; rename OLD NEW renames sections |
 | [bin/dotfiles-update.sh](bin/dotfiles-update.sh) | Weekly stages that each run and report on their own: Homebrew (update, upgrades retried item by item after a failed run, cleanup, advisory doctor), the Go pin on the canary, Zinit, full sync; all under the sync lock |
-| [bin/dotfiles-agents](bin/dotfiles-agents) | Install or check the Claude Code managed-settings drop-in (bash for agent commands, attribution off, the delegation policy at session start) and the Codex system config (bash for agent commands, repo-guard and the delegation policy as managed hooks) |
+| [bin/dotfiles-agents](bin/dotfiles-agents) | Install, check (`--json` for the `agents.*.bash` feature checks) or uninstall the Claude Code managed-settings drop-in (bash for agent commands, attribution off, the delegation policy at session start) and the Codex system config (bash for agent commands, repo-guard and the delegation policy as managed hooks) |
 | [features/agents.claude/bin/claude-subagent-economics](features/agents.claude/bin/claude-subagent-economics) | Price recent subagent runs from Claude Code transcripts and the break-even size of re-reading what they cited; `--days`, `--projects` |
 | [features/agents.claude/zshrc.zsh](features/agents.claude/zshrc.zsh) | `claudemore`, `claudemax`: named Remote Control sessions without claude.ai connectors (unless `CLAUDE_CONNECTORS=1`) and with drive-local scratch; `claudefleet` opens gitstead's `fleet`; `claudeclean` drops session files of exited sessions |
 | [features/agents.codex/zshrc.zsh](features/agents.codex/zshrc.zsh) | `gptmore`, `gptmax`: Codex sessions on the local app-server in the current directory, without ChatGPT apps unless `CODEX_CONNECTORS=1` |

@@ -193,24 +193,63 @@ env     = ""                  # export the value under this name in the generate
 values  = []                  # string settings only: the values allowed; any other is a resolve error, which `dotfiles check` reports
 
 [hooks]
-apply    = ""                 # idempotent converge script, settings passed as env
-teardown = ""                 # reverses apply
-sudo     = false              # apply needs root; runs only from `dotfiles apply --sudo`
+apply    = ""                 # converge script, run while the check reports anything but ok; needs check.script
+teardown = ""                 # reverses apply; recorded by apply, run once the feature is off
+sudo     = false              # the hooks need an administrator; they run only from `dotfiles apply --sudo`
+timeout  = "5m"               # each hook run; at most 1h
 
 [check]
 script  = ""                  # prints one JSON object: {"state": "ok|drift|missing|error", "detail": "..."}
-timeout = "2s"
+timeout = "10s"               # at most 2m
 ```
 
 The engine (`cmd/dotfiles`, rollout step 4) parses manifests strictly: an
 unknown key is an error, so a feature never silently does less than it says.
-`winget`, `pwsh` and `schedules`, and the `[hooks]` and `[check]` tables, arrive
-with rollout steps 6 and 7; until then the engine rejects them.
+`winget`, `pwsh` and `schedules` arrive with rollout steps 6 and 7; until then
+the engine rejects them.
 
 Generic checks cover every `provides` type, so most features need no check
 script: packages are installed, links point at the repo, managed copies match
 their manifest hash, a scheduled job is registered and its last exit was 0, a
 fragment is in the generated output.
+
+### Hooks and checks
+
+State that no `provides` type describes, such as a root-owned file, an app's own
+registry or a service enrollment, takes the feature's own scripts. Each path is
+relative to the feature directory and must be an executable file, or the plan
+fails (`dotfiles check` reports it).
+
+- **`check.script`** runs on every apply and every doctor (a doctor is a dry
+  run). It exits 0 and prints exactly one JSON object, `{"state": …,
+  "detail": …}`, with no other fields; `ok` means there is nothing to do. Any
+  other exit status, other output, more than 64 KiB, or a run past
+  `check.timeout` (10 s) is a problem for the feature.
+- **`hooks.apply`** runs while the check reports anything but `ok`, and the
+  check runs again after it: a result still not `ok` is a problem (`hooks.apply
+  ran, and the check still reports …`). It needs a check, so the engine never
+  runs a hook to find out whether it was needed. A dry run reports `would hook
+  <feature> -> <state>: <detail>`; a check without an apply hook reports its
+  result as a problem.
+- **`hooks.sudo`** marks hooks that need an administrator. Outside `dotfiles
+  apply --sudo`, apply runs the check and reports its result with ``; run
+  `dotfiles apply --sudo` `` instead of running the hook, so sync and doctor
+  never prompt. `--sudo` hands the terminal to those hooks for `sudo` to ask for
+  the password; the engine itself never runs as root.
+- **`hooks.teardown`** is copied into apply's state (`applied.json`) on each run
+  with the feature enabled, and that copy runs once the feature is not enabled:
+  turned off, dropped from a profile, or deleted from the repository. It may
+  call the repository's shared scripts (`$DOTFILES_DIR/bin`), never the
+  feature's own files, and must be safe to run twice. A teardown that fails,
+  or a sudo one outside `apply --sudo`, keeps its record and is reported; the
+  next apply runs it again.
+
+Hooks and checks run in the home directory with apply's environment, each
+setting that has an `env` name (paths expanded), `HOME`, `DOTFILES_DIR` (the
+repository) and `DOTFILES_FEATURE`. Their output goes to apply's standard error.
+They run after links, copies and app settings, which a hook may use, and before
+LaunchAgents load; teardowns run last, once a removed feature's jobs have
+stopped.
 
 ### LaunchAgents
 
@@ -253,7 +292,9 @@ current jobs until then.
 Disabling a feature reverses each `provides` type: remove its links and
 managed copies, put back the app settings it set, unload and remove its LaunchAgents, unregister its scheduled jobs (`launchctl bootout`,
 `systemctl --user disable --now`, `Unregister-ScheduledTask`), drop its
-fragments from the generated outputs, and run its `teardown` hook. Packages
+fragments from the generated outputs, and run its `teardown` hook (the copy
+recorded at the last apply that had it enabled; see
+[Hooks and checks](#hooks-and-checks)). Packages
 are not uninstalled automatically, because another tool or the user may rely
 on them. The status page lists installed packages no enabled feature wants,
 and `dotfiles prune --packages` removes them on request.
@@ -456,7 +497,9 @@ never stops the steps after it.
 Every scheduled job runs the `dotfiles` binary directly with an explicit
 `PATH` (on macOS including `/opt/homebrew/bin` and `/opt/homebrew/sbin`), never
 through `bash -l`. Failures post a desktop notification where the OS has one,
-and always show on the status page.
+and always show on the status page. Until the scheduler lands, apply's problems
+reach the next interactive shell instead
+([OPERATIONS.md](OPERATIONS.md#shell-notice)).
 Oh My Zsh is used only as zinit snippets; a full `~/.oh-my-zsh` checkout is
 reported by `doctor` as unused.
 
@@ -987,13 +1030,13 @@ page lists it as a manual step until done.
 
 | Feature | Mechanism |
 | --- | --- |
-| `agents.claude.bash` | A `dotfiles.json` drop-in in the OS's managed-settings directory (see [Platforms](#platforms)) sets `CLAUDE_CODE_SHELL` to bash on macOS and Linux, and `CLAUDE_CODE_GIT_BASH_PATH` on Windows. It also sets `"attribution": false`, so no commit trailer, PR line or session link is added and no CLAUDE.md or project setting can bring them back, and registers the `SessionStart` hook that prints the delegation policy into every top-level session. Installed once with admin rights as a copy of the tracked file, which `apply` keeps in sync. Today `bin/dotfiles-agents install` writes it |
+| `agents.claude.bash` | A `dotfiles.json` drop-in in the OS's managed-settings directory (see [Platforms](#platforms)) sets `CLAUDE_CODE_SHELL` to bash on macOS and Linux, and `CLAUDE_CODE_GIT_BASH_PATH` on Windows. It also sets `"attribution": false`, so no commit trailer, PR line or session link is added and no CLAUDE.md or project setting can bring them back, and registers the `SessionStart` hook that prints the delegation policy into every top-level session. Its hooks run `bin/dotfiles-agents` with `sudo = true`: every apply and doctor checks the installed file against the tracked one and reports a missing or changed file, `dotfiles apply --sudo` installs it, and turning the feature off removes it. The dev profile enables it. Requires `agents.claude` |
 | `agents.rules` | Links the rules every agent follows as `~/.claude/CLAUDE.md` and hands the same file to Codex as the first `agent_rules` fragment. `agents.claude` and `agents.codex` require it |
 | `agents.claude` | Links Claude Code's own rules (`~/.claude/rules/claude-code.md`), the status line script, and `claude-subagent-economics`; owns the `settings.json` keys every machine shares (`claude.toml`: model, effort, auto-compact, status line); its `zshrc` fragment defines `claudemore` and `claudemax`, which leave the claude.ai connectors out unless `CLAUDE_CONNECTORS=1`. Requires `agents.delegation` |
 | `agents.codex` | Adds Codex's own rules (`codex-rules.md`) as an `agent_rules` fragment and links `~/.codex/AGENTS.md` to `generated/AGENTS.md`. The `com.ashtonian.codex-remote-control` LaunchAgent runs `bin/codex-app-server`; its `zshrc` fragment defines `gptmore` and `gptmax`, which pass `--disable apps` unless `CODEX_CONNECTORS=1`. macOS only. Requires `agents.delegation` |
 | `agents.delegation` | Links the delegation policy (`~/.config/agent-delegation/policy.md`) and the `scout` and `reader` subagents twice: as Claude Code user subagents (`~/.claude/agents/*.md`) and as Codex roles (`~/.codex/agents/*.toml`) with the same descriptions and instructions. `bin/dotfiles-agents` registers the managed `SessionStart` hooks that print the policy into every top-level Claude Code and Codex session |
 | `agents.repo-guard` | Links the hook `~/.local/bin/repo-guard` and its Claude Code plugin `~/.claude/skills/repo-guard/`, where Claude Code loads a plugin folder with no install step; `bin/dotfiles-agents` registers the same script as a managed Codex hook in `/etc/codex/config.toml`. The hook denies commits, tags, pushes and GitHub writes to the repositories in `~/.config/repo-guard/protected.d/*.txt`, one list linked by each overlay; the public feature ships none |
-| `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so. The same file registers repo-guard and the delegation policy's `SessionStart` hook. Codex 0.171 has no local setting for commit and PR attribution, so there is no counterpart to `agents.claude.bash`'s `"attribution": false`: the ChatGPT account's commit attribution setting decides it |
+| `agents.codex.bash` | The system config (`/etc/codex/config.toml`) sets `[features] shell_snapshot = false` and `AGENT_SHELL`; `zshenv.zsh` hands `$ZSH_EXECUTION_STRING` to bash when `AGENT_SHELL` is set, on macOS and on Linux hosts whose login shell is zsh. On Windows, Codex runs PowerShell, and its instructions say so. The same file registers repo-guard and the delegation policy's `SessionStart` hook. Installed, checked and removed by `bin/dotfiles-agents` hooks like `agents.claude.bash`'s; the dev profile enables it. It does not require `agents.codex`, which is macOS only, since Codex on Linux reads the file too. Codex 0.171 has no local setting for commit and PR attribution, so there is no counterpart to `agents.claude.bash`'s `"attribution": false`: the ChatGPT account's commit attribution setting decides it |
 | `shell.core` | Interactive-only behaviour (zoxide `cd`, aliases, `AUTO_CD`) loads only in real terminal sessions |
 | `shell.core` | `env.sh` applies PATH once per process tree; nested shells keep entries the parent added |
 
@@ -1272,8 +1315,8 @@ Each step is a pull request with its tests and docs.
      home, along with the untracked files still left in the old tree that
      `$HOME` links to); move host-only values into host profiles. The
      machine-local `~/.gitconfig.local`, `~/.ssh/config.local`, `~/.zshrc.local`
-     and `Brewfile.local` stay as they are. `config.sh` moves with step 6,
-     which brings the hooks it needs. The LaunchAgents moved into their
+     and `Brewfile.local` stay as they are. `config.sh` moves into features'
+     `apply` hooks with step 6. The LaunchAgents moved into their
      features ahead of it (`launch_agent`): only `install.sh` installed them,
      so a Mac set up another way, or since a new agent landed, ran without
      them.
@@ -1281,7 +1324,9 @@ Each step is a pull request with its tests and docs.
    `dotfiles-update.sh`, on launchd and systemd user timers, with per-step
    results, notifications, `doctor --automation` and the status page. Sync's
    `otel-agent converge` step becomes the `agents.otel-agent` feature's
-   `apply` hook.
+   `apply` hook. The `[hooks]` and `[check]` tables, `apply --sudo` and the
+   shell notice landed ahead of it, with the root-owned agent configs and
+   Spotlight's exclusions as their first users.
 7. **Windows.** The symlink test and managed-copy fallback, Task Scheduler,
    WinGet configuration, Credential Manager, the PowerShell profile stub, the
    Claude Code and Codex configs, `install.ps1`, and the Windows CI job.

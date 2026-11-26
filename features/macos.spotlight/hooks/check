@@ -1,0 +1,3 @@
+#!/bin/sh
+# The feature's check (manifest.Check): every configured folder excluded.
+exec "$DOTFILES_DIR/features/macos.spotlight/home/.local/bin/spotlight-exclusions" check --json

@@ -1,0 +1,6 @@
+#!/bin/sh
+# hooks.teardown, once the server's LaunchAgent is gone: remove the local
+# setup (gateway URL, LiteLLM key, server password) and the server's logs.
+# Standalone: apply runs a copy of it.
+set -eu
+rm -rf -- "$HOME/.local/share/opencode/homelab" "$HOME/Library/Logs/opencode"

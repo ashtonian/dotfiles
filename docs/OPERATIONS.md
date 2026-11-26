@@ -22,7 +22,7 @@ relocate the installer or rewrite LaunchAgent templates.
 | `CLAUDE_CODE_INSTALLER_URL` | URL | `https://claude.ai/install.sh` | Anthropic's native Claude Code installer, which sync downloads and runs on a machine with `agents.claude` when `~/.local/bin/claude` is missing; set it in the `dotfiles.sync` template's `EnvironmentVariables` |
 | `CLAUDE_CODE_INSTALL_TIMEOUT` | Seconds | `900` | How long that installer may run before sync stops it, with everything it started, and fails the step; its own downloads have no timeout |
 | `UPDATE_LOCK_WAIT` | Whole seconds | `1800` | How long `dotfiles-update.sh` waits for a sync (or another update) in progress to release the sync lock, `logs/sync.flock`, before it fails without updating anything. `0` fails at once. A scheduled sync never waits: one that finds the lock held skips its run |
-| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/applied.json` is what `dotfiles apply` installed, LaunchAgents included (`bin/disk-hygiene` reads their log paths from it), and `dotfiles/apply.lock` serialises runs |
+| `XDG_STATE_HOME` | Directory path | `~/.local/state` | `dotfiles/applied.json` is what `dotfiles apply` installed, LaunchAgents included (`bin/disk-hygiene` reads their log paths from it), plus a copy of each enabled feature's `teardown` hook; `dotfiles/apply.lock` serialises runs; `dotfiles/attention` holds the problems the last apply reported, for the [shell notice](#shell-notice) |
 | `XDG_CONFIG_HOME` | Directory path | `~/.config` | Not followed: the engine, sync and the installer always use `~/.config` (the stubs and the shared git and ssh configs name it), with `~/.config/dotfiles/machine.toml` as this machine's manifest and `~/.config/dotfiles/generated/` for the generated outputs. `zshrc.zsh` loads its modules from its own directory. git reads `$XDG_CONFIG_HOME/git/config`, so `dotfiles doctor` reports a value other than `~/.config` |
 | `DOTFILES` | Directory path | `~/.dotfiles` | Zsh's shell-library source directory |
 | `XDG_DATA_HOME` | Directory path | `~/.local/share` | Zinit installation and weekly update lookup; mise's tools and shims (`mise/`) |
@@ -65,7 +65,8 @@ relocate the installer or rewrite LaunchAgent templates.
 | `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS` | `1` | `1` in interactive zsh (feature `agents.claude`'s fragment) | Turns on Claude Code's agent teams for sessions started from a terminal |
 | `REPO_GUARD_LIST` | File path | unset: every `~/.config/repo-guard/protected.d/*.txt` | repo-guard's protected repositories, one `owner/name` per line; when set, the only list read. Empty protects nothing. Set it in the environment a session starts with; the hook reads the harness's environment, not a command's. A Codex session on the app-server gets the server's environment, so there it cannot be set per session |
 | `DOTFILES_ENV_PATH` | PATH value | set by `env.sh` | The PATH `env.sh` last composed. A nested shell whose PATH still ends with it keeps PATH unchanged, so directories a command put first stay first; do not set it by hand |
-| `DOTFILES_SYSTEM_ROOT` | Directory path | empty (`/`) | Prefix for every path `bin/dotfiles-agents` writes; for testing and packaging |
+| `DOTFILES_SYSTEM_ROOT` | Directory path | empty (`/`) | Prefix for every path `bin/dotfiles-agents` reads and writes, so the `agents.*.bash` checks and hooks run against it too; for testing and packaging |
+| `SPOTLIGHT_EXCLUSIONS_STORE` | File path | unset: Spotlight's own list | A JSON list `spotlight-exclusions` (and so the `macos.spotlight` hooks) uses in place of Spotlight's exclusion list; for tests, which must not change this Mac's index |
 
 The `dotfiles` engine's flags:
 
@@ -79,6 +80,7 @@ The `dotfiles` engine's flags:
 | `--profiles` | Comma-separated names | none (required) | `init`: the profiles to write, in order |
 | `--force` | Boolean | `false` | `init`: replace an existing manifest |
 | `--dry-run` | Boolean | `false` | `apply`: report what would change, change nothing (`doctor` always does this) |
+| `--sudo` | Boolean | `false` | `apply`: also run the hooks of features marked `sudo = true` (the root-owned agent configs), with the terminal as their input so `sudo` can ask for the password. Without it apply reports them as problems. Not with `--dry-run` |
 | `--lock-wait` | Duration | `1m` | `apply`, `adopt`: how long to wait for another run's `apply.lock` |
 | `--git-timeout` | Duration | `30s` | `apply`, `doctor`, `status`: how long each git call per checkout may take; apply needs each checkout's tracked-file list so unfolding never moves a tracked file |
 | `--launchctl-timeout` | Duration | `30s` | `apply`, `doctor`: how long one launchctl call may take; a bootstrap is tried five times, 0.25 s to 1 s apart |
@@ -786,6 +788,25 @@ showing a large MEM is compressor accounting, not the leak.
 Don't start the screen saver to test the change: it locks the screen of
 whoever is at the Mac.
 
+## Shell notice
+
+Sync applies unattended, so a problem it hits (a root-owned file to update with
+`dotfiles apply --sudo`, a hook that failed) would otherwise sit in
+`logs/sync.log`. Every apply that is not a dry run writes its problems to
+`~/.local/state/dotfiles/attention` (mode 0600), one `<path>: <detail>` per
+line, and removes the file when there are none. The `dotfiles.sync` feature's
+zshrc fragment reads it when an interactive shell starts and prints, on
+standard error:
+
+```text
+dotfiles: 2 problem(s) need you; the first: agents.claude.bash: drift: … run `dotfiles apply --sudo`
+dotfiles: see all with: dotfiles doctor
+```
+
+It reads one small file and runs nothing, so it adds no measurable startup
+time. The notice stops once an apply reports no problems; deleting the file
+silences it until the next apply.
+
 ## Feature engine troubleshooting
 
 Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
@@ -824,8 +845,15 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | `unfold` and `move-home` in the output | Expected once per machine: a directory the old stow layout had linked into the repository becomes a real directory, and the untracked files tools wrote through it (such as gh's `hosts.yml`) move into it. Tracked files are never moved. A leftover `<dir>.dotfiles-unfold-<pid>` directory means a run died mid-unfold: compare it with `<dir>`, move any missing file into `<dir>`, then delete it. |
 | Exit status 2 | The manifests are invalid or contradict each other; the message names the file, key or features. |
 | `another dotfiles apply holds ...apply.lock` | Another run is in progress (sync, or a manual run). Wait, or raise `--lock-wait`. The lock is released when that process exits; never delete the file by hand. |
-| `state ... has version N; this dotfiles build reads versions 1 to 2` | A newer engine wrote the state file (version 2 added the app settings' records). This build stops rather than save over it and lose what it does not know. Update the checkout (`git pull`) and rebuild `dotfiles`. Never delete or hand-edit the file to get past it: it holds the values teardown puts back. |
+| `state ... has version N; this dotfiles build reads versions 1 to 3` | A newer engine wrote the state file (version 2 added the app settings' records, version 3 the teardown hooks). This build stops rather than save over it and lose what it does not know. Update the checkout (`git pull`) and rebuild `dotfiles`. Never delete or hand-edit the file to get past it: it holds the values teardown puts back. |
 | `state ... has no version; dotfiles did not write it` | Something other than dotfiles wrote `~/.local/state/dotfiles/applied.json`, or it was edited by hand. Restore it from a backup if there is one. Moving it aside makes the next apply treat every installed file as unknown (reported, never overwritten) and forget the app settings' earlier values. |
+| ``<feature>: drift: …; run `dotfiles apply --sudo` `` (or `missing:`) | A feature whose hooks need an administrator, such as `agents.claude.bash`, found its state out of date: usually a pull changed a root-owned agent config. Sync never prompts, so run `dotfiles apply --sudo` in a terminal; `sudo` asks for the password. |
+| ``<feature>: turned off, and its teardown needs administrator rights; run `dotfiles apply --sudo` `` | The feature was turned off or deleted and its recorded teardown must run as an administrator. Run `dotfiles apply --sudo`. Until then the record stays in `applied.json` and the file it removes stays in place. |
+| `<feature>: hooks.apply ran, and the check still reports <state>: <detail>` | The hook exited 0 without fixing what the check reports. Its output is on the apply's standard error (in `logs/sync.log` for sync); run the feature's `hooks/check` and `hooks/apply` by hand with `DOTFILES_DIR` set to the repository to see both sides. |
+| `<feature>: check.script printed "…", not one JSON object with state and detail` | The feature's check broke its contract ([MACHINE-FEATURES.md](MACHINE-FEATURES.md#hooks-and-checks)): it must exit 0 and print exactly `{"state": "ok\|drift\|missing\|error", "detail": "…"}`. Fix the script; diagnostics go to standard error. |
+| `<feature>: check.script did not finish within 10s` (or `hooks.apply … 5m0s`) | The script hung or waited for input it cannot get. A hook that legitimately takes longer sets `[hooks] timeout` or `[check] timeout` in its `feature.toml`. |
+| `<feature>: turned off, and hooks.teardown exited with status N; the next apply runs it again` | The recorded teardown failed; its output is above. The next apply retries it. A teardown that can never succeed (what it removes is already gone some other way) still has to exit 0: fix it in the repository. |
+| `<feature>: check.script hooks/check is not an executable file` (exit 2) | The script is missing or lost its executable bit: `chmod +x features/<id>/hooks/check` and commit. |
 | `waiting <label>: installs once <path> exists` (doctor) | Expected until the agent's setup step runs: install the package, or run the step the [LaunchAgents table](#launchagents) names. The next apply installs and loads it. |
 | `waiting <label>: reloads ...` or `unloads ...` (doctor) | Expected: the job is running, so apply left the reload or removal for a later run. If it stays for days, `launchctl print "gui/$(id -u)/<label>"` shows whether a run is stuck. |
 | `<label>.plist: edited here since dotfiles last wrote it` | Someone changed the installed plist; launchd keeps running that version. Move the change into the template in `features/<id>/launchagents/` (every Mac gets it), or delete the installed file; the next apply writes the template and reloads the job. |
@@ -849,14 +877,14 @@ Run `dotfiles doctor`; it changes nothing and lists each problem with its path.
 | Symptom | Check and recovery |
 | ------- | ------------------ |
 | `claudemore: command not found` (or `gptmore`) | The launchers live in the generated zshrc fragment of `agents.claude` (`agents.codex` for the GPT ones, macOS only), which the dev profile enables. Run `dotfiles apply` (sync runs it) and open a new shell; `grep -c 'agents.claude' ~/.config/dotfiles/generated/zshrc.zsh` should be 1. |
-| A session behaves as if it had no delegation policy (never uses `scout` or `reader`) | Claude Code: `/hooks` must list a managed `SessionStart` hook running `cat ~/.config/agent-delegation/policy.md`; Codex: `/hooks` must list it with source system. If either is missing, `~/.dotfiles/bin/dotfiles-agents check` prints `changed` or `missing`: run `dotfiles-agents install` (sudo). If the hook is there, the `agents.delegation` link is missing or broken: `dotfiles doctor` names it and `dotfiles apply` restores it. The hook adds nothing when the file is absent. A running session gets the policy at its next compaction, `/clear` or resume. |
+| A session behaves as if it had no delegation policy (never uses `scout` or `reader`) | Claude Code: `/hooks` must list a managed `SessionStart` hook running `cat ~/.config/agent-delegation/policy.md`; Codex: `/hooks` must list it with source system. If either is missing, `dotfiles doctor` reports `agents.claude.bash` or `agents.codex.bash` with `drift` or `missing`: run `dotfiles apply --sudo`. If the hook is there, the `agents.delegation` link is missing or broken: `dotfiles doctor` names it and `dotfiles apply` restores it. The hook adds nothing when the file is absent. A running session gets the policy at its next compaction, `/clear` or resume. |
 | `/agents` lists no `scout` or `reader` | `~/.claude/agents/scout.md` and `reader.md` must link into `features/agents.delegation/home/`. Run `dotfiles doctor`, then `dotfiles apply`; a running session picks new subagent files up only after a restart. |
 | Codex's `spawn_agent` offers no `scout` or `reader` role | `~/.codex/agents/scout.toml` and `reader.toml` must link into `features/agents.delegation/home/`. A malformed role file is skipped with a startup warning (`Ignoring malformed agent role definition`); `codex debug prompt-input hi \| grep -o -E '(scout\|reader): \{'` prints one line per role that loaded. |
 | A launched session still shows `mcp__claude_ai_*` tools | It was started with `CLAUDE_CONNECTORS=1`, by plain `claude`, or before this launcher. Check with `ps -E -o command= -p <pid> \| tr ' ' '\n' \| grep ENABLE_CLAUDEAI`; restart it with `claudemore`. |
 | A `gptmore` session still has ChatGPT app tools | It was started with `CODEX_CONNECTORS=1`, by plain `codex`, or before this launcher. `ps -o command= -p <pid>` of the client shows `--disable apps` when the launcher left them out; restart it with `gptmore`. |
 | `Background server has incompatible feature settings` / `This session requires apps to be disabled` | Check the client's `--remote` argument: `gptmore` and `gptmax` use the dedicated endpoint printed by `~/.dotfiles/bin/codex-app-server --print-endpoint`. A client using `unix://` is checking Codex's shared daemon settings. Run `dotfiles apply`, restart the Codex service when its sessions are idle, and open a new shell to load the updated launchers. |
 | A command is denied with `Changes to <owner>/<name> need the user's explicit permission` | repo-guard matched a protected repository: the command names it, or runs in or points git at a clone of it. `claude plugin list` shows `repo-guard@skills-dir`; Codex's `/hooks` shows the `PreToolUse` hook from `/etc/codex/config.toml` as managed. The lists are `~/.config/repo-guard/protected.d/*.txt`. If the change is permitted, run it yourself, or start a Claude Code session with `REPO_GUARD_LIST=` (empty). If the repository should not be protected, remove it from its overlay's list. |
-| Codex runs a protected write without a denial | Codex's `/hooks` must list the repo-guard hook with source system. If it is missing, `bin/dotfiles-agents check` reports `/etc/codex/config.toml` missing or changed: run `dotfiles-agents install`. If it is listed, `ls -l ~/.local/bin/repo-guard` must resolve into `features/agents.repo-guard/` (without it the hook passes): `dotfiles apply`. A hook that ran past 10 s lets the call through; the session shows it as a failed hook. |
+| Codex runs a protected write without a denial | Codex's `/hooks` must list the repo-guard hook with source system. If it is missing, `dotfiles doctor` reports `agents.codex.bash` with `/etc/codex/config.toml` missing or changed: run `dotfiles apply --sudo`. If it is listed, `ls -l ~/.local/bin/repo-guard` must resolve into `features/agents.repo-guard/` (without it the hook passes): `dotfiles apply`. A hook that ran past 10 s lets the call through; the session shows it as a failed hook. |
 | `PreToolUse:Bash hook error` naming `repo-guard: <list>:<n>: '<line>' is not owner/name` | A protected list has a bad line, so every write-shaped command is blocked. Fix the line in the overlay that owns the list; reads keep working meanwhile. `cannot read the protected list` means a listed file is unreadable or `REPO_GUARD_LIST` names a missing file. |
 | `repo-guard: jq is not installed` | Every Bash command is blocked while a protected list exists, because the hook cannot read its input. Install jq (`brew.base` lists it; macOS 15 and later also ship `/usr/bin/jq`). |
 | `failed; blocking because onFailure is "block"` or `timed out` for repo-guard, or Codex shows `repo-guard: exited <n>; blocking the command` | The hook crashed (or, in Claude Code, ran past 10 s). Run `features/agents.repo-guard/guard_test.sh`; it prints each failing case. Exit 127 in Codex means `~/.local/bin/repo-guard` is a dangling link: `dotfiles apply`. |
