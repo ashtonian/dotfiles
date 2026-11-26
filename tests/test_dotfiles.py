@@ -1335,6 +1335,25 @@ class SyncCheckouts(Checkouts):
         self.assertEqual(p.stdout.count('INFO: Syncing personal'), 1, 'each overlay is synced once per run')
 
 
+ENGINE_SOURCES = ('go.mod', 'go.sum', 'cmd', 'internal')
+
+
+def copy_engine_sources(repo):
+    """Copy the engine's sources into REPO, a dotfiles checkout of a test's own, so that
+    sync builds the real engine there."""
+    for name in ENGINE_SOURCES:
+        if (ROOT / name).is_dir():
+            shutil.copytree(ROOT / name, repo / name)
+        else:
+            shutil.copy2(ROOT / name, repo / name)
+
+
+def go_caches():
+    """This machine's Go build and module caches, for a test whose HOME is its own."""
+    return {name: subprocess.run(['go', 'env', name], capture_output=True, text=True, check=True).stdout.strip()
+            for name in ('GOCACHE', 'GOMODCACHE')}
+
+
 def feature(id):
     return {f'features/{id}/feature.toml': f'id = "{id}"\ndescription = "{id}"\ncategory = "tools"\n'}
 
@@ -1355,21 +1374,14 @@ class SyncOverlayGate(Checkouts):
         self.overlay = home / '.dotfiles-overlays/personal'
         self.engine = home / '.local/bin/dotfiles'
         self.machine = home / '.config/dotfiles/machine.toml'
-        go = {name: subprocess.run(['go', 'env', name], capture_output=True, text=True, check=True).stdout.strip()
-              for name in ('GOCACHE', 'GOMODCACHE')}
         self.env.pop('XDG_CONFIG_HOME', None)
         self.env.update(DOTFILES_DIR=str(self.repo), DOTFILES_BIN=str(self.engine),
-                        DOTFILES_SYSTEM_ROOT=str(self.path / 'system'), **go)
+                        DOTFILES_SYSTEM_ROOT=str(self.path / 'system'), **go_caches())
         self.machine.parent.mkdir(parents=True)
         self.machine.write_text('overlays = ["personal"]\nprofiles = ["base", "personal"]\n')
         (self.repo / 'logs').mkdir()
-        sources = ('go.mod', 'go.sum', 'cmd', 'internal')
-        for name in sources:
-            if (ROOT / name).is_dir():
-                shutil.copytree(ROOT / name, self.repo / name)
-            else:
-                shutil.copy2(ROOT / name, self.repo / name)
-        self.run_git(self.repo, 'add', *sources)
+        copy_engine_sources(self.repo)
+        self.run_git(self.repo, 'add', *ENGINE_SOURCES)
         self.commit(self.repo, {**feature('tool.one'), 'profiles/base.toml': enabling('tool.one')}, 'engine')
         self.with_origin(self.repo)
         self.run_git(self.path, 'init', '-q', '-b', 'master', str(self.overlay))
