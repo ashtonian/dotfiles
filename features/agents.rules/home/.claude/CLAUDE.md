@@ -93,8 +93,10 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 ## Simplicity & Readability
 
-- Structure code for the human reading it next: clear parameters, clear package boundaries, dependencies defined and passed explicitly up front, obvious call hierarchies.
-- Avoid syntactic sugar, deep nesting, and clever boolean logic. The plain version that reads top to bottom wins.
+- **Optimize for reading and changing the code, not for brevity.** Code is read and modified far more often than it is written. Structure it for the human reading it next: clear parameters, clear package boundaries, dependencies defined and passed explicitly up front, obvious call hierarchies.
+- **Linear, explicit data flow.** Avoid syntactic sugar, compressed expressions, deep nesting, and clever boolean logic. The plain version that reads top to bottom, without mentally taking anything apart, wins.
+- **Minimize syntactic coupling.** Adding instrumentation, a validation or a parameter, or widening a variable's scope, is a local edit, not a restructuring of the statements around it. Each statement can be moved, duplicated, inspected, debugged and changed with ordinary editor operations.
+- **No speculative performance.** Don't trade readability for a gain you haven't shown. The evidence is compiler output (escape analysis, inlining, generated code) or a profile read per *Analyze the profiles*; a benchmark number alone is not.
 - **Keep code comments minimal.** Comment WHY, never what — the code already says what. Cover the non-obvious and stop; cut narration, restatement of the next line, and hedging. This is the common failure mode: comments are routinely far too verbose. (READMEs and package docs are the exception — keep those thorough, see Documentation.)
 - **No premature abstraction.** Write generalized, reusable code only once you actually need it in more than one place. This does not weaken DRY: deduplicate *knowledge*, not code that merely looks alike.
 
@@ -190,10 +192,32 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 ## Go
 
+### Statements & Readability
+
+Each statement does one thing, so code reads top to bottom and a log line, a check or a breakpoint goes in without restructuring the statement around it.
+
+- **Separate execution from control flow.** Assign first, then branch: no init clause in an `if` or `switch` header. That covers error checks, map lookups, type assertions and every other call result. A condition or switch tag may call a predicate (a function returning `bool`) or `len`/`cap` directly, as in `if errors.Is(err, ErrNotFound)`; any other call result is assigned first. A `for` loop's init clause and a type switch's binding (`switch v := x.(type)`) are exempt.
+- **Separate initialization from returning.** Assign a constructed value, call result, conversion or computed value to a meaningfully named variable, then return the variable. Error construction and wrapping count.
+- **Return existing values directly.** Don't add a variable for an existing variable or field, a constant, a sentinel error, `nil`, a zero value (`T{}`) or a basic literal. A value used more than once with the same meaning gets one name, as a variable or constant. Two computations that only look alike, or that would behave differently merged, stay separate: two `time.Now()` calls are two readings.
+- **One conceptual operation per statement.** Don't combine operations to save lines. Name the parts of a complex expression as intermediate variables instead of nesting calls.
+- **Keep the happy path unindented.** Guard clauses, early `return` and `continue`; no `else` after a block that returns.
+- **Avoid variable shadowing.** A name keeps one identity and meaning throughout its scope. Reusing `err` for successive calls in one scope is fine; redeclaring an outer name in an inner block is not.
+- **Existing code.** Where a repository's linter enforces these rules, CI holds the whole tree to them. Elsewhere they apply to new and changed code: when you change a file, bring the whole file into line in its own commit, ahead of the behaviour change, and never leave a file mixing the two styles.
+
+```go
+node, err := s.store.GetNode(ctx, id)
+if err != nil {
+	err = fmt.Errorf("getting node %s: %w", id, err)
+	return nil, err
+}
+view := newNodeView(node)
+return view, nil
+```
+
 ### Style & Patterns
 
 - Prefer the **functional options pattern** (`WithX()`) when constructors have 3+ optional parameters.
-- Constructor functions accept interfaces: `func NewService(store Store, logger *slog.Logger) *Service`.
+- Constructor functions accept interfaces for substitutable dependencies: `func NewService(store Store, logger *slog.Logger) *Service`.
 - **Fat mains.** `main` is the composition root: keep dependency construction, wiring, configuration, and lifecycle explicit there; keep business logic in packages. Go has no idiomatic container — no wire, fx, dig, or `App`/container/init abstraction hiding the application's structure.
 - Define interfaces where they are **consumed**, not where they are implemented.
 - Types are deliberate; interfaces usually emerge from real usage. Think through how a type will be used before writing it, but do not architect ahead of need.
@@ -202,14 +226,14 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 - Pass `context.Context` as the first parameter to any function that does I/O or may block.
 - Never store `context.Context` in a struct field.
-- Pass context through the entire call chain — handler to service to DB/external call. Do not create `context.Background()` mid-chain unless there is an explicit reason (fire-and-forget async).
+- Pass context through the entire call chain — handler to service to DB/external call. Never create `context.Background()` mid-chain: work that must outlive its caller derives from `context.WithoutCancel(ctx)`, which keeps the caller's ids and trace but not its cancellation, and sets its own deadline.
 
 ### Timeouts & Connections
 
 - All outbound HTTP calls, database queries, and external service connections must have explicit timeouts — via context deadline or client-level config. Never use a bare `http.Client{}`.
-- Connection pools (`pgxpool`, HTTP transport) must have configured max lifetime, idle timeout, and pool size.
-- Protect shared mutable state with `sync.Mutex`, `sync.Map`, or channels.
-- Goroutines must have a clear shutdown path via `context.WithCancel` or `context.WithTimeout`.
+- Connection pools (`pgxpool`, HTTP transport) must have configured max lifetime (where the pool has one), idle timeout, and pool size.
+- Protect shared mutable state with a `sync` or `sync/atomic` type, or channels.
+- Goroutines must have a clear shutdown path through context cancellation, a deadline or an explicit lifecycle, and whoever starts one waits for it to return (`errgroup`, `sync.WaitGroup`).
 
 ### Error Handling
 
@@ -225,7 +249,7 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 - **`log/slog` only, through `slog.NewJSONHandler`.** No `logrus`, stdlib `log`, or `fmt.Println` for operational logging.
 - **The level lives in a `slog.LevelVar`** so it can be changed at runtime without a restart. **The default is `Warn`:** a healthy service at the default level writes its startup entry and nothing else.
-- **One startup entry, always.** Every process logs `starting` at `Info` with its service, version, effective log level and non-secret config (secrets shown only as set/unset). Write it straight to the handler (`logger.Handler().Handle`) so the level gate can't drop it.
+- **One startup entry, always.** Every process logs `starting` at `Info` with its service, version, effective log level and non-secret config (secrets shown only as set/unset). Write it straight to the handler (`logger.Handler().Handle`) so the level gate can't drop it, and handle the error it returns.
 - **Injected, never global.** `main` builds the logger and passes it through constructors. No package-global logger, no `init()`, and library code never calls the package-level `slog.Info`/`slog.Default()`. `main` may `slog.SetDefault` the same logger solely so third-party code that logs through the default lands in the same JSON stream.
 - **Messages are fixed strings.** Variable data goes in attributes, never formatted into the message: `logger.Info("saving tenant", slog.String("tenant_id", id))`, not `logger.Info(fmt.Sprintf("saving tenant %s", id))`. Errors go in as `slog.Any("error", err)` with the operation as the message.
 - **Levels.** Exactly five: the stdlib four plus `Trace`. Each lower level adds the detail the one above leaves out, so whoever lowers the level gets progressively more to debug with:
@@ -252,7 +276,7 @@ When opening an issue or commenting on a project I don't own, write the way an e
 - Do not mock unless genuinely necessary (e.g., simulating hard-to-reproduce errors). When you do, use hand-rolled mocks implementing interfaces — no mock generation frameworks.
 - Use table-driven tests with `t.Run(tt.name, ...)` when testing multiple inputs against the same logic.
 - Use `testify/assert` for assertions.
-- Tests must pass with `-race`.
+- Tests must pass with `-race` wherever the race detector runs.
 - Do not write unnecessary tests, and never test the standard library or third-party code.
 - Assert behavior, not implementation. Avoid brittle assertions coupled to source details or live data (e.g. an exact page count from a wiki).
 - Never depend on real wall-clock time — inject a clock or restructure the test.
@@ -263,4 +287,4 @@ When opening an issue or commenting on a project I don't own, write the way an e
 
 - Use Prometheus client types: `Counter` for monotonic values, `Histogram` for latency/size, `Gauge` for up-and-down values.
 - Metric names: `snake_case` with unit suffix (`_seconds`, `_bytes`, `_total`), prefixed by service/subsystem.
-- No high-cardinality labels (user IDs, request IDs). Labels must be bounded sets.
+- No high-cardinality labels (user IDs, request IDs, any unbounded identifier). Label values come from bounded sets.
